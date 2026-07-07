@@ -1,72 +1,53 @@
 #pragma once
 
+#include "DBusMessage.h"
+#include "DBusReply.h"
+
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <queue>
 #include <unistd.h>
 
 #include <algorithm>
 #include <boost/asio.hpp>
+#include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <cstdlib>
 #include <format>
 #include <optional>
 #include <stdexcept>
 
-class DBusConnection
-{
- private:
+class DBusConnection {
+private:
   boost::asio::io_context m_ioContext;
   boost::asio::ip::udp::socket m_socket;
 
- private:
-  std::string ParseDBusAddress()
-  {
-    // Looks something like: unix:path=/run/user/1000/bus
-    std::string_view const dbusAddress{getenv("DBUS_SESSION_BUS_ADDRESS")};
+  // Send a channel to send replies back to the user to the ReadLoop() coroutine
+  boost::asio::experimental::channel<void(boost::system::error_code, boost::asio::experimental::channel<void(boost::system::error_code, DBusReply)>*)>
+      m_replyChannel;
 
-    if (!dbusAddress.starts_with("unix:"))
-    {
-      throw std::runtime_error{"Only support unix sockets for DBus-daemon connections"};
-    }
+  // Send messages to the SendLoop() coroutine
+  boost::asio::experimental::channel<void(boost::system::error_code,
+                                          DBusMessage)>
+      m_sendLoop;
 
-    return std::string{dbusAddress.substr(dbusAddress.find("=") + 1)};
-  }
+  uint32_t m_serial;
+  std::string m_uniqueConnection;
 
-  std::string HexEncodeString(std::string const& str)
-  {
-    std::string newStr;
-    std::ranges::for_each(str, [&newStr](unsigned char c) { newStr += std::format("{:x}", c); });
-    return newStr;
-  }
+private:
+  boost::asio::awaitable<void> AuthenticateDBusConnection();
+  boost::asio::awaitable<void> Connect();
+  boost::asio::awaitable<void> SendLoop();
+  boost::asio::awaitable<void> ReadLoop();
 
- public:
+public:
   DBusConnection(std::optional<std::string> dbusEndpoint = std::nullopt)
-    : m_ioContext()
-    , m_socket(m_ioContext)
-  {
-    // Connect to DBus daemon
-    boost::asio::ip::udp::endpoint endpoint{boost::asio::ip::make_address(ParseDBusAddress()), 0};
-    m_socket.connect(endpoint);
-
-    // First send a single '\0' byte
-    m_socket.send('\0');
-
-    // Next we must authenticate ourselves, we use the EXTERNAL authentication method
-    m_socket.send(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid()))));
-
-    // Now we expect to see OK <guid>
-    std::string reply{};
-    m_socket.receive(boost::asio::buffer(reply));
-
-    if (!reply.starts_with("OK"))
-    {
-      throw std::runtime_error{"Authentication failed!"};
-    }
-
-    // Yippee! All worked, so now start our DBus Connection!
-    m_socket.send("BEGIN\r\n");
+      : m_ioContext(), m_socket(m_ioContext), m_sendLoop(m_ioContext, 10),
+        m_replyChannel(m_ioContext, 10), m_serial{1}, m_uniqueConnection{} {
+    boost::asio::co_spawn(m_ioContext, Connect(), boost::asio::detached);
   }
 
-  ~DBusConnection()
-  {
-    ::unlink("/tmp/dbus-test");
-  }
+  boost::asio::awaitable<std::optional<DBusReply>> SendMessage(DBusMessage const &message);
+
+  ~DBusConnection() { ::unlink("/tmp/dbus-test"); }
 };

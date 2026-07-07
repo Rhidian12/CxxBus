@@ -5,9 +5,7 @@
 
 #include "DBus.h"
 
-struct MarshalTestSuite : ::testing::Test
-{
-};
+struct MarshalTestSuite : ::testing::Test {};
 
 // clang-format off
 
@@ -663,6 +661,60 @@ TEST_F(MarshalTestSuite, MarshalStructContainingMapContainingStructContainingMap
                 0x02, 0x00, 0x00, 0x00,  // MapB entry key = 2
                 0x14, 0x00, 0x00, 0x00,  // MapB entry value = 20
             }));
+}
+
+struct PerfScope
+{
+  std::string                           identifier {};
+  std::chrono::steady_clock::time_point start;
+ 
+  PerfScope(std::string identifier)
+    : identifier {std::move(identifier)}
+    , start {std::chrono::steady_clock::now()}
+  {
+  }
+ 
+  ~PerfScope()
+  {
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    std::cout << identifier << " Performance : " << duration << " ms" << std::endl;
+  }
+};
+
+  using PowerTemperatureRuntimeMatrix = std::tuple<uint32_t, uint32_t, uint32_t>;
+  using DetailedBankInfo = std::tuple<std::string, std::vector<PowerTemperatureRuntimeMatrix>>;
+  using DetailedPlateInfo = std::tuple<std::string, std::map<uint32_t, DetailedBankInfo>>;
+
+
+void Performance(std::map<uint32_t, DetailedPlateInfo> const & map)
+{
+  PerfScope scope{"MarshalDBusType"};
+  MarshalDBusType(map);
+}
+
+TEST_F(MarshalTestSuite, PerfTest)
+{
+
+std::map<uint32_t, DetailedPlateInfo> map{};
+  for (uint32_t i{}; i < 18; ++i)
+  {
+    map[i] = std::make_tuple("plate" + std::to_string(i), std::map<uint32_t, DetailedBankInfo>{});
+    for (uint32_t l{}; l < 3; ++l)
+    {
+      DetailedBankInfo bank{std::make_tuple("bank" + std::to_string(i), std::vector<PowerTemperatureRuntimeMatrix>{})};
+      for (uint32_t j{}; j < 24; ++j)
+      {
+        for (uint32_t k{}; k < 32; ++k)
+        {
+          std::get<1>(bank).push_back(std::make_tuple(j, k, 0));
+        }
+      }
+ 
+      std::get<1>(map[i]).insert({l, bank});
+    }
+  }
+
+  Performance(map);
 }
 
 
