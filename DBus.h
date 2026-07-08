@@ -95,6 +95,44 @@ enum class DBusTypeCodes : uint8_t
   INVALID = 255  // Internal Usage. Not part of DBus Spec.
 };
 
+inline bool IsDBusBasicFixedTypeCode(unsigned char c)
+{
+  switch (static_cast<DBusTypeCodes>(c))
+  {
+    case DBusTypeCodes::BYTE:
+    case DBusTypeCodes::BOOLEAN:
+    case DBusTypeCodes::INT16:
+    case DBusTypeCodes::UINT16:
+    case DBusTypeCodes::INT32:
+    case DBusTypeCodes::UINT32:
+    case DBusTypeCodes::INT64:
+    case DBusTypeCodes::UINT64:
+    case DBusTypeCodes::DOUBLE:
+    case DBusTypeCodes::UNIX_FD:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsDBusBasicStringlikeTypeCode(unsigned char c)
+{
+  switch (static_cast<DBusTypeCodes>(c))
+  {
+    case DBusTypeCodes::STRING:
+    case DBusTypeCodes::OBJECT_PATH:
+    case DBusTypeCodes::SIGNATURE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsDBusBasicTypeCode(unsigned char c)
+{
+  return IsDBusBasicFixedTypeCode(c) || IsDBusBasicStringlikeTypeCode(c);
+}
+
 struct HeaderField
 {
   HeaderFieldCode decimalCode;
@@ -373,17 +411,18 @@ class Variant
   template <IsDBusType T>
     requires(!std::is_same_v<std::remove_cvref_t<T>, Variant>)
   explicit Variant(T&& value)
-    : m_variantData{.signature = GetTypeSignature<std::remove_cvref_t<T>>(),
-                    .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-                    .data = std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{std::forward<T>(value)},
-                                                                 CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
-                    .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { MarshalDBusTypeImpl(*static_cast<std::remove_cvref_t<T>*>(data), dbusType); },
-                    .copyFunc =
-                        [](void* otherData)
-                    {
-                      return std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
-                                                                  CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
-                    }}
+    : m_variantData{
+          .signature = GetTypeSignature<std::remove_cvref_t<T>>(),
+          .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
+          .data = std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{std::forward<T>(value)},
+                                                       CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
+          .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { MarshalDBusTypeImpl(*static_cast<std::remove_cvref_t<T>*>(data), dbusType); },
+          .copyFunc =
+              [](void* otherData)
+          {
+            return std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
+                                                        CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
+          }}
   {
     GetSizeOfDBusType(value, m_variantData.dataSize);
   }
@@ -817,22 +856,25 @@ std::vector<byte> MarshalDBusType(T const& value)
   return dbusType;
 }
 
-template<IsDBusBasicType T>
-T UnmarshalDBusBasicType(std::vector<byte> const& dbusType, std::string signature)
+template <IsDBusBasicType T>
+T UnmarshalDBusBasicType(std::vector<byte> const& dbusType, char const signature)
 {
-  
 }
 
-template<IsDBusType T>
-T UnmarshalDBusType(std::vector<byte> const& dbusType, std::string signature) // Copy signature so we can modify it
+template <IsDBusType T>
+T UnmarshalDBusType(std::vector<byte> const& dbusType, std::string signature)  // Copy signature so we can modify it
 {
   if constexpr (IsDBusBasicType<T>)
   {
-
+    if (!IsDBusBasicTypeCode(signature[0]))
+    {
+      throw std::runtime_error{std::format("Type {} and Signature {} do not match", "T", signature)};
+    }
+    return UnmarshalDBusBasicType<T>(dbusType, signature[0]);
   }
 }
 
-inline void UnmarshalDBusMessage(std::vector<byte> const & dbusMessage)
+inline void UnmarshalDBusMessage(std::vector<byte> const& dbusMessage)
 {
   // Signature of a DBus Header is yyyyuua(yv)
   // y = byte
@@ -849,6 +891,4 @@ inline void UnmarshalDBusMessage(std::vector<byte> const & dbusMessage)
   // by the sender to identify the reply correspending to this request. Must be
   // non-zero value Array of struct of byte, variant are the header fields. The
   // message type specifies which fields are required
-
-  
 }
