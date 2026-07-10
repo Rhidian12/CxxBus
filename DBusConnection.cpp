@@ -28,11 +28,11 @@ namespace
 boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
 {
   // First send a single '\0' byte
-  co_await m_socket.async_send('\0', boost::asio::use_awaitable);
+  co_await m_socket.async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
 
   // Next we must authenticate ourselves, we use the EXTERNAL
   // authentication method
-  co_await m_socket.async_send(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid()))), boost::asio::use_awaitable);
+  co_await m_socket.async_send(boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))), boost::asio::use_awaitable);
 
   // Now we expect to see OK <guid>
   std::string reply{};
@@ -44,7 +44,7 @@ boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
   }
 
   // Yippee! All worked, so now start our DBus Connection!
-  co_await m_socket.async_send("BEGIN\r\n", boost::asio::use_awaitable);
+  co_await m_socket.async_send(boost::asio::buffer("BEGIN\r\n"), boost::asio::use_awaitable);
 }
 
 boost::asio::awaitable<void> DBusConnection::Connect()
@@ -75,7 +75,7 @@ boost::asio::awaitable<void> DBusConnection::SendLoop()
   {
     auto message = co_await m_sendLoop.async_receive(boost::asio::use_awaitable);
 
-    co_await m_socket.async_send(message.Serialize(m_serial), boost::asio::use_awaitable);
+    co_await m_socket.async_send(boost::asio::buffer(message.Serialize(m_serial)), boost::asio::use_awaitable);
   }
 }
 

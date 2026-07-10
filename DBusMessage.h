@@ -16,9 +16,15 @@ private:
   std::vector<uint8_t> m_messageBody;
 
 public:
+  DBusMessage() = default;
   DBusMessage(std::string const &method, std::string const &path,
               std::string const &interface)
       : m_method(method), m_path(path), m_interface(interface) {}
+
+  DBusMessage(DBusMessage const &) = default;
+  DBusMessage(DBusMessage &&) = default;
+  DBusMessage &operator=(DBusMessage const &) = default;
+  DBusMessage &operator=(DBusMessage &&) = default;
 
   // Adds a value to the message body
   template <IsDBusType T> void AddParameter(T &&value);

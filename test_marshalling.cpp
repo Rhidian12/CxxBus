@@ -547,6 +547,64 @@ TEST_F(MarshalTestSuite, MarshalStructContainingVariantAlignsValueToBufferOffset
 }
 
 // ---------------------------------------------------------------------
+// MULTIPLE COMPLETE TYPES (e.g. a message body signature like "yu"):
+// a bare sequence of complete types. This is NOT a STRUCT -- signature
+// has no surrounding parens, and there is no 8-byte alignment
+// requirement placed on the sequence as a whole. Each field still uses
+// its own natural alignment relative to wherever the sequence starts.
+// ---------------------------------------------------------------------
+ 
+TEST_F(MarshalTestSuite, MarshalMultipleCompleteTypes)
+{
+  // Signature "yu" (NOT "(yu)"). At offset 0 this happens to produce
+  // byte-identical output to the equivalent STRUCT test above, since
+  // MarshalDBusType always starts fresh at offset 0 -- which is
+  // trivially 8-aligned regardless of which rule applies. The
+  // difference between this type and std::tuple only becomes visible
+  // in the signature string itself (no parens) and in where each is
+  // legal to appear (this type cannot be used as an array element,
+  // variant payload, struct field, or dict-entry value -- only as a
+  // whole message body or a method's argument list).
+  auto data = MarshalDBusType(
+      MultipleCompleteTypes<uint8_t, uint32_t>(static_cast<uint8_t>(0x01), static_cast<uint32_t>(0x11223344)));
+ 
+  EXPECT_EQ(data,
+            (std::vector<byte>{0x01, 0x00, 0x00, 0x00,        // byte + pad to 4-byte boundary
+                                0x44, 0x33, 0x22, 0x11}));     // uint32
+}
+ 
+TEST_F(MarshalTestSuite, MarshalMultipleCompleteTypesWithNoInterFieldPadding)
+{
+  // Signature "ii": two INT32 fields, both already 4-byte aligned
+  // back-to-back, so no padding appears anywhere -- unlike a STRUCT,
+  // there's also no leading alignment step to trivially satisfy or
+  // violate, since this type has no alignment requirement of its own.
+  auto data = MarshalDBusType(MultipleCompleteTypes<int32_t, int32_t>(10, -10));
+ 
+  EXPECT_EQ(data,
+            (std::vector<byte>{0x0A, 0x00, 0x00, 0x00,          // first int32 = 10
+                                0xF6, 0xFF, 0xFF, 0xFF}));       // second int32 = -10
+}
+ 
+TEST_F(MarshalTestSuite, MarshalMultipleCompleteTypesSkipsPaddingBetweenFields)
+{
+  // Signature "ys": a byte followed by a string. The string's UINT32
+  // length field needs 4-byte alignment, so 3 padding bytes sit
+  // between the byte and the string -- this is the field's own
+  // alignment requirement, unrelated to the (nonexistent) alignment
+  // of MultipleCompleteTypes itself.
+  auto data = MarshalDBusType(
+      MultipleCompleteTypes<uint8_t, std::string>(static_cast<uint8_t>(0xAA), std::string("Hi!")));
+ 
+  EXPECT_EQ(data,
+            (std::vector<byte>{
+                0xAA, 0x00, 0x00, 0x00,             // byte (0xAA) + 3 pad bytes
+                0x03, 0x00, 0x00, 0x00,             // string length = 3
+                'H', 'i', '!', 0x00,                // "Hi!" + NUL
+            }));
+}
+
+// ---------------------------------------------------------------------
 // Deeply nested composites: maps of maps, structs of structs, and
 // structs/maps alternating. Each level re-triggers the same alignment
 // rules already exercised individually above (ARRAY needs 4-byte
