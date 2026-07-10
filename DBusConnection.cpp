@@ -1,6 +1,8 @@
 #include "DBusConnection.h"
 
 #include <boost/asio/awaitable.hpp>
+#include <iostream>
+#include "DBus.h"
 
 namespace
 {
@@ -60,13 +62,28 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 
   // Get our unique bus name
   std::optional<DBusReply> reply = co_await SendMessage(DBusMessage{"Hello", "/org/freedesktop/DBus", "org.freedesktop.DBus"});
+  if (reply.has_value())
+  {
+    m_uniqueConnection = reply->Get<std::string>();
+  }
+
+  std::cout << "Unique Connection ID: " << m_uniqueConnection << "\n";
 
   // [TODO]: Should be a user-passed flag
   // Now, request a well-known name from the dbus-daemon
-  DBusMessage message{"RequestName", "/org/freedesktop/DBus", "org.freedesktop.DBus"};
-  message.AddParameter(std::string{"RhidianTest"});
-  message.AddParameter(static_cast<uint32_t>(0x1));  // AllowReplacement
-  co_await SendMessage(message);
+  DBusMessage message{MultipleCompleteTypes<std::string, uint32_t>{std::string{"RhidianTest"}, static_cast<uint32_t>(0x1)}, "RequestName",
+                      "/org/freedesktop/DBus", "org.freedesktop.DBus"};
+  reply = co_await SendMessage(message);
+
+  if (reply.has_value())
+  {
+    if (reply->Get<uint32_t>() == 1)
+    {
+      m_wellKnownName = "RhidianTest";
+
+      std::cout << "Well-known name: " << m_wellKnownName << "\n";
+    }
+  }
 }
 
 boost::asio::awaitable<void> DBusConnection::SendLoop()

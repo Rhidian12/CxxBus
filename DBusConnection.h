@@ -19,7 +19,7 @@
 
 class DBusConnection {
 private:
-  boost::asio::io_context m_ioContext;
+  boost::asio::io_context & m_ioContext;
   boost::asio::ip::udp::socket m_socket;
 
   // Send a channel to send replies back to the user to the ReadLoop() coroutine
@@ -33,6 +33,7 @@ private:
 
   uint32_t m_serial;
   std::string m_uniqueConnection;
+  std::string m_wellKnownName;
 
 private:
   boost::asio::awaitable<void> AuthenticateDBusConnection();
@@ -41,8 +42,8 @@ private:
   boost::asio::awaitable<void> ReadLoop();
 
 public:
-  DBusConnection(std::optional<std::string> dbusEndpoint = std::nullopt)
-      : m_ioContext(), m_socket(m_ioContext), m_sendLoop(m_ioContext, 10),
+  DBusConnection(boost::asio::io_context & ioService)
+      : m_ioContext(ioService), m_socket(m_ioContext), m_sendLoop(m_ioContext, 10),
         m_replyChannel(m_ioContext, 10), m_serial{1}, m_uniqueConnection{} {
     boost::asio::co_spawn(m_ioContext, Connect(), boost::asio::detached);
   }

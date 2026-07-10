@@ -476,6 +476,12 @@ class MultipleCompleteTypes
   {
     return m_types;
   }
+
+  template<size_t I>
+  auto GetType() const
+  {
+    return std::get<I>(m_types);
+  }
 };
 
 template <IsSerializableDBusType T>
@@ -735,7 +741,7 @@ void GetMapSize(T const& value, uint32_t& size)
   }
 }
 
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 void GetSizeOfDBusType(T const& value, uint32_t& size)
 {
   if constexpr (IsDBusBasicFixedType<T>)
@@ -791,6 +797,12 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
       GetSizeOfDBusType<Signature>(Signature{""}, size);
       AddPaddingToSize(size, value.GetDataAlignment());
       size += value.GetDataSize();
+    }
+    else if constexpr(IsDBusDeserializedVariant<T>)
+    {
+      GetSizeOfDBusType<Signature>(value.GetSignature(), size);
+      AddPaddingToSize(size, GetAlignmentOfDBusType<typename T::type>());
+      size += GetSizeOfDBusType(value.Get(), size);
     }
     else
     {
@@ -1550,23 +1562,4 @@ T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
                                               dbusType.size(), dbusType.size() - arrPointer)};
   }
   return value;
-}
-
-inline void UnmarshalDBusMessage(std::vector<byte> const& dbusMessage)
-{
-  // Signature of a DBus Header is yyyyuua(yv)
-  // y = byte
-  // u = uint32_t
-  // a = array
-  // v = variant
-
-  // 1st byte is Endianness. ASCII 'l' for little-endian, 'B' for big-endian
-  // 2nd byte is message type
-  // 3rd byte is bitwise-OR flags
-  // 4th byte is major protocol version, is always 1
-  // 1st uint32_t is length in bytes of the message body, starting from the end
-  // of the header 2nd uint32_t is the serial of this message, used as a cookie
-  // by the sender to identify the reply correspending to this request. Must be
-  // non-zero value Array of struct of byte, variant are the header fields. The
-  // message type specifies which fields are required
 }
