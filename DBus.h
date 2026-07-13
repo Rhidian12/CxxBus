@@ -222,9 +222,15 @@ template <typename T, template <typename...> typename Template>
 concept IsSpecialisation = detail::IS_SPECIALISATION<std::remove_cvref_t<T>, Template>;
 
 template <typename T>
-concept IsDBusBasicFixedType =
-    std::same_as<T, uint8_t> || std::same_as<T, bool> || std::same_as<T, int16_t> || std::same_as<T, uint16_t> || std::same_as<T, int32_t> ||
-    std::same_as<T, uint32_t> || std::same_as<T, int64_t> || std::same_as<T, uint64_t> || std::same_as<T, float> || std::same_as<T, double>;
+inline constexpr bool IsDBusBasicFixedType_v =
+    std::disjunction_v<std::is_same<T, uint8_t>, std::is_same<T, bool>,
+                        std::is_same<T, int16_t>, std::is_same<T, uint16_t>,
+                        std::is_same<T, int32_t>, std::is_same<T, uint32_t>,
+                        std::is_same<T, int64_t>, std::is_same<T, uint64_t>,
+                        std::is_same<T, float>, std::is_same<T, double>>;
+
+template <typename T>
+concept IsDBusBasicFixedType = IsDBusBasicFixedType_v<T>;
 
 template <typename T>
 concept IsString = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
@@ -539,7 +545,7 @@ constexpr uint8_t GetAlignmentOfDBusType()
 template <IsSerializableDBusType T>
 void MarshalDBusTypeImpl(T const& value, std::vector<byte>& dbusType);
 
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 void GetSizeOfDBusType(T const& value, uint32_t& size);
 
 struct InPlaceT
