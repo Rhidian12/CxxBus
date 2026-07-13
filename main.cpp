@@ -1,10 +1,16 @@
 #include <boost/asio/io_context.hpp>
+#include <iostream>
+
 #include "DBusConnection.h"
 
 int main()
 {
-    boost::asio::io_context ioService;
-    DBusConnection conn{ioService};
+  boost::asio::io_context ioService;
+  DBusConnection conn{ioService};
 
-    ioService.run();
+  std::cout << "Running IOService\n";
+
+  ioService.run();
+
+  std::cout << "IOService finished\n";
 }

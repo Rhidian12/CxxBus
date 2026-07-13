@@ -22,333 +22,8 @@
 #include <vector>
 
 #include "ConstexprTypeName.h"
-
-using byte = uint8_t;
-
-enum class DBusMessageType : uint8_t
-{
-  INVALID = 0,
-  METHOD_CALL = 1,    // May prompt a reply
-  METHOD_RETURN = 2,  // Method reply with returned data
-  ERROR = 3,          // Error reply. If first argument exists and is a string, it is an error message
-  SIGNAL = 4,         // Signal emission
-
-  OPTIONAL = 254,  // Internal Usage. Not part of DBus Spec.
-  NONE = 255,      // Internal Usage. Not part of DBus Spec.
-};
-
-enum class Endianness : uint8_t
-{
-  LITTLE_ENDIAN_TYPE = 'l',
-  BIG_ENDIAN_TYPE = 'B'
-};
-
-enum class DBusMessageFlags : uint8_t
-{
-  NONE = 0,
-  NO_REPLY_EXPECTED = 0x1,               // We don't expect replies, even if it can have replies
-  NO_AUTO_START = 0x2,                   // The bus must not launch an owner for the destination name in response to this message
-  ALLOW_INTERACTIVE_AUTHORIZATION = 0x4  // We are informing the receiver of our message that we are prepared to wait for interactive authorization
-};
-
-enum class HeaderFieldCode : uint8_t
-{
-  INVALID = 0,
-  PATH = 1,          // The object to send a call to, or the object a signal is emitted from. Controlled by message sender
-  INTERFACE = 2,     // The interface to invoke a method call on, or the interface a signal is emitted from. Optional for method calls, required for signals.
-                     // Controlled by message sender.
-  MEMBER = 3,        // The member, either method name or signal name. Controlled by message sender
-  ERROR_NAME = 4,    // The name of the error that occurred.
-  REPLY_SERIAL = 5,  // The serial number of the message this message is a reply to. Controlled by the message sender.
-  DESTINATION = 6,   // Name of the connection message is intended for. Controlled by the message sender.
-  SENDER = 7,        // Unique name of the sending connection. On a message bus, controlled by the message bus, otherwise controlled by message sender.
-  SIGNATURE = 8,     // Signature of the message body. If not present, assume signature is "" (meaning body must be 0-length). Controlled by message sender
-  UNIX_FDS =
-      9,  // Number of Unix file descriptors that accompany the message. If not present, assume no FDs accompany the message. Controlled by message sender.
-
-  NONE = 255  // Internal Usage. Not part of DBus Spec.
-};
-
-enum class DBusTypeCodes : uint8_t
-{
-  BYTE = 'y',     // uint8_t
-  BOOLEAN = 'b',  // boolean
-  INT16 = 'n',
-  UINT16 = 'q',
-  INT32 = 'i',
-  UINT32 = 'u',
-  INT64 = 'x',
-  UINT64 = 't',
-  DOUBLE = 'd',
-  UNIX_FD = 'h',  // uint32_t representing Unix FD
-
-  STRING = 's',
-  OBJECT_PATH = 'o',  // DBus Object Path
-  SIGNATURE = 'g',    // Zero or more Single Complete Types
-
-  ARRAY = 'a',         // Start of Array
-  STRUCT = 'r',        // Not actually used in the DBus protocol. Used to represent the general concept of a struct
-  STRUCT_BEGIN = '(',  // Beginning of a Struct definition
-  STRUCT_END = ')',    // End of a struct definition
-  VARIANT = 'v',       // Variant. Type of the value is part of the value itself
-  DICT = 'e',          // Not actually used in the DBus protocol. Used to represent the general concept of a dict.
-  DICT_BEGIN = '{',    // Beginning of a dict definition
-  DICT_END = '}',      // End of a dict definition
-
-  INVALID = 255  // Internal Usage. Not part of DBus Spec.
-};
-
-inline bool IsDBusBasicFixedTypeCode(unsigned char c)
-{
-  switch (static_cast<DBusTypeCodes>(c))
-  {
-    case DBusTypeCodes::BYTE:
-    case DBusTypeCodes::BOOLEAN:
-    case DBusTypeCodes::INT16:
-    case DBusTypeCodes::UINT16:
-    case DBusTypeCodes::INT32:
-    case DBusTypeCodes::UINT32:
-    case DBusTypeCodes::INT64:
-    case DBusTypeCodes::UINT64:
-    case DBusTypeCodes::DOUBLE:
-    case DBusTypeCodes::UNIX_FD:
-      return true;
-    default:
-      return false;
-  }
-}
-
-inline bool IsDBusBasicStringlikeTypeCode(unsigned char c)
-{
-  switch (static_cast<DBusTypeCodes>(c))
-  {
-    case DBusTypeCodes::STRING:
-    case DBusTypeCodes::OBJECT_PATH:
-    case DBusTypeCodes::SIGNATURE:
-      return true;
-    default:
-      return false;
-  }
-}
-
-inline bool IsDBusBasicTypeCode(unsigned char c)
-{
-  return IsDBusBasicFixedTypeCode(c) || IsDBusBasicStringlikeTypeCode(c);
-}
-
-inline bool IsDBusContainerTypeCode(unsigned char c)
-{
-  switch (static_cast<DBusTypeCodes>(c))
-  {
-    case DBusTypeCodes::ARRAY:
-    case DBusTypeCodes::STRUCT_BEGIN:
-    case DBusTypeCodes::STRUCT_END:
-    case DBusTypeCodes::DICT_BEGIN:
-    case DBusTypeCodes::DICT_END:
-    case DBusTypeCodes::VARIANT:
-      return true;
-    default:
-      return false;
-  }
-}
-
-inline bool IsDBusTypeCode(unsigned char c)
-{
-  return IsDBusBasicTypeCode(c) || IsDBusContainerTypeCode(c);
-}
-
-inline bool IsDBusTypeCode(std::string const & str)
-{
-  for (unsigned char c : str)
-  {
-    if (!IsDBusTypeCode(c))
-    {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-inline bool AreDBusTypeCodeBracketsEven(std::string const& str)
-{
-  int32_t counter{};
-
-  for (unsigned char c : str)
-  {
-    switch (static_cast<DBusTypeCodes>(c))
-    {
-      case DBusTypeCodes::DICT_BEGIN:
-      case DBusTypeCodes::STRUCT_BEGIN:
-        ++counter;
-        break;
-      case DBusTypeCodes::STRUCT_END:
-      case DBusTypeCodes::DICT_END:
-        --counter;
-        break;
-      default:
-        break;
-    }
-  }
-
-  return counter == 0;
-}
-
-struct HeaderField
-{
-  HeaderFieldCode decimalCode;
-  DBusTypeCodes type;  // dbus type
-  std::array<DBusMessageType, 2> requiredMessageType;
-};
-
-class Signature;
-class ObjectPath;
-class Variant;
-template <typename T>
-class DeserializedVariant;
-template <typename... Ts>
-class MultipleCompleteTypes;
-
-namespace detail
-{
-  template <typename T, template <typename...> typename Template>
-  constexpr bool IS_SPECIALISATION = false;
-
-  template <template <typename...> typename Template, typename... Args>
-  constexpr bool IS_SPECIALISATION<Template<Args...>, Template> = true;
-}  // namespace detail
-
-template <typename T, template <typename...> typename Template>
-concept IsSpecialisation = detail::IS_SPECIALISATION<std::remove_cvref_t<T>, Template>;
-
-template <typename T>
-inline constexpr bool IsDBusBasicFixedType_v =
-    std::disjunction_v<std::is_same<T, uint8_t>, std::is_same<T, bool>,
-                        std::is_same<T, int16_t>, std::is_same<T, uint16_t>,
-                        std::is_same<T, int32_t>, std::is_same<T, uint32_t>,
-                        std::is_same<T, int64_t>, std::is_same<T, uint64_t>,
-                        std::is_same<T, float>, std::is_same<T, double>>;
-
-template <typename T>
-concept IsDBusBasicFixedType = IsDBusBasicFixedType_v<T>;
-
-template <typename T>
-concept IsString = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
-
-template <typename T>
-concept IsDBusBasicStringlikeType = IsString<T> || std::same_as<T, ObjectPath> || std::same_as<T, Signature>;
-
-template <typename T>
-concept IsDBusMultipleCompleteTypes = IsSpecialisation<T, MultipleCompleteTypes>;
-
-template <typename T>
-concept IsDBusBasicType = IsDBusBasicFixedType<T> || IsDBusBasicStringlikeType<T> || IsDBusMultipleCompleteTypes<T>;
-
-template <typename T>
-concept IsDBusArray = IsSpecialisation<T, std::vector>;
-
-template <typename T>
-concept IsDBusStruct = IsSpecialisation<T, std::tuple>;
-
-template <typename T>
-concept IsDBusVariant = std::is_same_v<T, Variant>;
-
-template <typename T>
-concept IsDBusDeserializedVariant = IsSpecialisation<T, DeserializedVariant>;
-
-template <typename T>
-concept IsDBusMap = IsSpecialisation<T, std::map>;
-
-template <typename T>
-concept IsDBusContainer = IsDBusArray<T> || IsDBusMap<T> || IsDBusStruct<T> || IsDBusVariant<T> || IsDBusDeserializedVariant<T>;
-
-template <typename T>
-concept IsSerializableDBusType =
-    IsDBusBasicType<std::remove_cvref_t<T>> || IsDBusContainer<std::remove_cvref_t<T>> && !IsDBusDeserializedVariant<std::remove_cvref_t<T>>;
-
-template <typename T>
-concept IsDeserializableDBusType = IsDBusBasicType<std::remove_cvref_t<T>> || IsDBusContainer<std::remove_cvref_t<T>> && !IsDBusVariant<std::remove_cvref_t<T>>;
-
-template <typename T>
-concept IsDBusType = IsSerializableDBusType<std::remove_cvref_t<T>> || IsDeserializableDBusType<std::remove_cvref_t<T>>;
-
-template <IsDBusType T>
-constexpr std::string GetTypeSignature()
-{
-  if constexpr (std::is_same_v<T, uint8_t>)
-  {
-    return "y";
-  }
-  else if constexpr (std::is_same_v<T, bool>)
-  {
-    return "b";
-  }
-  else if constexpr (std::is_same_v<T, int16_t>)
-  {
-    return "n";
-  }
-  else if constexpr (std::is_same_v<T, uint16_t>)
-  {
-    return "q";
-  }
-  else if constexpr (std::is_same_v<T, int32_t>)
-  {
-    return "i";
-  }
-  else if constexpr (std::is_same_v<T, uint32_t>)
-  {
-    return "u";
-  }
-  else if constexpr (std::is_same_v<T, int64_t>)
-  {
-    return "x";
-  }
-  else if constexpr (std::is_same_v<T, uint64_t>)
-  {
-    return "t";
-  }
-  else if constexpr (std::is_same_v<T, double>)
-  {
-    return "d";
-  }
-  else if constexpr (IsString<T>)
-  {
-    return "s";
-  }
-  else if constexpr (std::is_same_v<T, ObjectPath>)
-  {
-    return "o";
-  }
-  else if constexpr (std::is_same_v<T, Signature>)
-  {
-    return "g";
-  }
-  else if constexpr (IsDBusArray<T>)
-  {
-    return std::string{"a"} + GetTypeSignature<typename T::value_type>();
-  }
-  else if constexpr (IsDBusStruct<T>)
-  {
-    std::string type{"("};
-    [&type]<size_t... Is>(std::index_sequence<Is...>)
-    { type += (GetTypeSignature<std::tuple_element_t<Is, T>>() + ...); }(std::make_index_sequence<std::tuple_size_v<T>>{});
-    type += ")";
-    return type;
-  }
-  else if constexpr (IsDBusVariant<T> || IsDBusDeserializedVariant<T>)
-  {
-    return "v";
-  }
-  else if constexpr (IsDBusMap<T>)
-  {
-    return std::string{"a{"} + GetTypeSignature<typename T::key_type>() + GetTypeSignature<typename T::mapped_type>() + "}";
-  }
-  else if constexpr (IsDBusMultipleCompleteTypes<T>)
-  {
-    return std::string{[]<size_t... Is>(std::index_sequence<Is...>) { return (GetTypeSignature<std::tuple_element_t<Is, typename T::type>>() + ...); }(
-                           std::make_index_sequence<std::tuple_size_v<typename T::type>>{})};
-  }
-}
+#include "DBusHelpers.h"
+#include "DBusTypes.h"
 
 inline void ApplyPadding(std::vector<byte>& bytes, uint8_t alignment)
 {
@@ -374,176 +49,11 @@ inline void SkipPadding(uint32_t& arrPointer, uint8_t alignment)
   arrPointer += alignment - result;
 }
 
-class ObjectPath
-{
- private:
-  std::string m_path;
-
- public:
-  ObjectPath(std::string path)
-    : m_path(std::move(path))
-  {
-  }
-
-  uint32_t size() const
-  {
-    return m_path.size();
-  }
-
-  explicit operator std::string() const
-  {
-    return m_path;
-  }
-
-  auto operator<=>(ObjectPath const&) const noexcept = default;
-};
-
-class Signature
-{
- private:
-  std::string m_signature;
-
- public:
-  Signature(std::string signature)
-    : m_signature(std::move(signature))
-  {
-  }
-
-  uint32_t size() const
-  {
-    return m_signature.size();
-  }
-
-  explicit operator std::string() const
-  {
-    return m_signature;
-  }
-
-  std::string const& GetSignature() const
-  {
-    return m_signature;
-  }
-
-  // Get the alignment of the contained signature
-  uint8_t GetAlignmentOfSignature() const
-  {
-    switch (static_cast<DBusTypeCodes>(m_signature[0]))
-    {
-      case DBusTypeCodes::BYTE:
-      case DBusTypeCodes::SIGNATURE:
-      case DBusTypeCodes::VARIANT:  // Alignment of Signature
-        return 1;
-      case DBusTypeCodes::INT16:
-      case DBusTypeCodes::UINT16:
-        return 2;
-      case DBusTypeCodes::BOOLEAN:
-      case DBusTypeCodes::UNIX_FD:
-      case DBusTypeCodes::INT32:
-      case DBusTypeCodes::UINT32:
-      case DBusTypeCodes::STRING:
-      case DBusTypeCodes::OBJECT_PATH:
-      case DBusTypeCodes::ARRAY:
-        return 4;
-      case DBusTypeCodes::INT64:
-      case DBusTypeCodes::UINT64:
-      case DBusTypeCodes::DOUBLE:
-      case DBusTypeCodes::STRUCT_BEGIN:
-        return 8;
-      case DBusTypeCodes::STRUCT:
-      case DBusTypeCodes::STRUCT_END:
-      case DBusTypeCodes::DICT:
-      case DBusTypeCodes::DICT_BEGIN:
-      case DBusTypeCodes::DICT_END:
-      case DBusTypeCodes::INVALID:
-        std::unreachable();
-    }
-  }
-
-  auto operator<=>(Signature const&) const noexcept = default;
-};
-
-template <typename... Ts>
-class MultipleCompleteTypes
-{
- private:
-  std::tuple<Ts...> m_types;
-
- public:
-  using type = std::tuple<Ts...>;
-
- public:
-  template <typename... Us>
-  MultipleCompleteTypes(Us&&... types)
-    : m_types(std::forward<Us>(types)...)
-  {
-  }
-
-  std::tuple<Ts...> const& GetTypes() const
-  {
-    return m_types;
-  }
-
-  template<size_t I>
-  auto GetType() const
-  {
-    return std::get<I>(m_types);
-  }
-};
-
-template <IsSerializableDBusType T>
-constexpr uint8_t GetAlignmentOfDBusType()
-{
-  if constexpr (std::is_same_v<T, uint8_t>)
-  {
-    return 1;
-  }
-  else if constexpr (std::is_same_v<T, bool>)
-  {
-    return 4;
-  }
-  else if constexpr (std::is_same_v<T, int16_t> || std::is_same_v<T, uint16_t>)
-  {
-    return 2;
-  }
-  else if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, int32_t>)
-  {
-    return 4;
-  }
-  else if constexpr (std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, double>)
-  {
-    return 8;
-  }
-  else if constexpr (IsDBusBasicStringlikeType<T>)
-  {
-    if constexpr (std::is_same_v<T, Signature>)
-    {
-      return 1;
-    }
-    else
-    {
-      return 4;  // For the length of the leading uint32_t
-    }
-  }
-  else if constexpr (IsDBusContainer<T>)
-  {
-    if constexpr (IsDBusArray<T>)
-    {
-      return GetAlignmentOfDBusType<typename T::value_type>();
-    }
-    else if (IsDBusStruct<T> || IsDBusMap<T>)
-    {
-      return 8;
-    }
-    else if (std::is_same_v<T, Variant>)
-    {
-      return 1;  // Alignment of Signature
-    }
-  }
-  // [TODO]: Unix FD
-}
-
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 void MarshalDBusTypeImpl(T const& value, std::vector<byte>& dbusType);
+
+template <IsDBusType T>
+T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer);
 
 template <IsDBusType T>
 void GetSizeOfDBusType(T const& value, uint32_t& size);
@@ -552,6 +62,9 @@ struct InPlaceT
 {
 };
 constexpr InPlaceT in_place{};
+
+struct DeserializedVariantTag {};
+constexpr DeserializedVariantTag deserialized_variant_tag{};
 
 class Variant
 {
@@ -575,13 +88,19 @@ class Variant
     std::function<std::unique_ptr<void, CustomDeleter>(void*)> copyFunc;
   };
 
-  VariantData m_variantData;
+  struct DeserializedVariantData
+  {
+    Signature signature;
+    std::vector<byte> data;
+  };
+
+  std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
 
  public:
-  template <IsSerializableDBusType T>
+  template <IsDBusType T>
     requires(!std::is_same_v<std::remove_cvref_t<T>, Variant>)
   explicit Variant(T&& value)
-    : m_variantData{
+    : m_variantData{VariantData{
           .signature = GetTypeSignature<std::remove_cvref_t<T>>(),
           .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
           .data = std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{std::forward<T>(value)},
@@ -592,14 +111,14 @@ class Variant
           {
             return std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
                                                         CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
-          }}
+          }}}
   {
-    GetSizeOfDBusType(value, m_variantData.dataSize);
+    GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
   }
 
   // Wraps a Variant inside a Variant (nested/boxed variant)
   Variant(InPlaceT, Variant variant)
-    : m_variantData{.signature = GetTypeSignature<Variant>(),
+    : m_variantData{VariantData{.signature = GetTypeSignature<Variant>(),
                     .dataAlignment = GetAlignmentOfDBusType<Variant>(),
                     .data = std::unique_ptr<void, CustomDeleter>(new Variant(std::move(variant)),
                                                                  CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
@@ -609,20 +128,35 @@ class Variant
                     {
                       return std::unique_ptr<void, CustomDeleter>(new Variant(*static_cast<Variant*>(otherData)),
                                                                   CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
-                    }}
+                    }}}
   {
-    GetSizeOfDBusType<Signature>(variant.GetSignature(), m_variantData.dataSize);
-    m_variantData.dataSize += variant.GetDataSize();
+    GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
+    std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
+  }
+
+  Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
+    : m_variantData{DeserializedVariantData{.signature = std::move(signature), .data = std::move(data)}}
+  {
   }
 
   Variant(Variant const& other)
-    : m_variantData{.signature = other.m_variantData.signature,
-                    .dataSize = other.m_variantData.dataSize,
-                    .dataAlignment = other.m_variantData.dataAlignment,
-                    .data = other.m_variantData.copyFunc(other.m_variantData.data.get()),
-                    .marshalDataFunc = other.m_variantData.marshalDataFunc,
-                    .copyFunc = other.m_variantData.copyFunc}
+    : m_variantData(std::monostate{})
   {
+    if (std::holds_alternative<VariantData>(other.m_variantData))
+    {
+      VariantData const& data = std::get<VariantData>(other.m_variantData);
+      m_variantData = VariantData{.signature = data.signature,
+        .dataSize = data.dataSize,
+        .dataAlignment = data.dataAlignment,
+        .data = data.copyFunc(data.data.get()),
+        .marshalDataFunc = data.marshalDataFunc,
+        .copyFunc = data.copyFunc};
+    }
+    else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+    {
+      DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
+      m_variantData = DeserializedVariantData{.signature = data.signature, .data = data.data};
+    }
   }
 
   Variant(Variant&&) noexcept = default;
@@ -640,67 +174,90 @@ class Variant
 
   Signature GetSignature() const
   {
-    return m_variantData.signature;
+    if (std::holds_alternative<VariantData>(m_variantData))
+    {
+      return std::get<VariantData>(m_variantData).signature;
+    }
+    else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+    {
+      return std::get<DeserializedVariantData>(m_variantData).signature;
+    }
+    else
+    {
+      throw std::runtime_error{"Variant is in an invalid state"};
+    }
   }
   uint32_t GetDataSize() const
   {
-    return m_variantData.dataSize;
+    if (std::holds_alternative<VariantData>(m_variantData))
+    {
+      return std::get<VariantData>(m_variantData).dataSize;
+    }
+    else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+    {
+      return std::get<DeserializedVariantData>(m_variantData).data.size();
+    }
+    else
+    {
+      throw std::runtime_error{"Variant is in an invalid state"};
+    }
   }
   uint8_t GetDataAlignment() const
   {
-    return m_variantData.dataAlignment;
+    if (std::holds_alternative<VariantData>(m_variantData))
+    {
+      return std::get<VariantData>(m_variantData).dataAlignment;
+    }
+    else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+    {
+      return 1; // Deserialized data alignment is 1
+    }
+    else
+    {
+      throw std::runtime_error{"Variant is in an invalid state"};
+    }
   }
 
   void MarshalData(std::vector<byte>& dbusType) const
   {
+    if (!std::holds_alternative<VariantData>(m_variantData))
+    {
+      throw std::runtime_error{"Cannot marshal a deserialized variant"};
+    }
+    
+    VariantData const & data = std::get<VariantData>(m_variantData);
+
     // We marshal a variant by marshalling its signature followed by the data (with padding of course)
     // Add signature + padding to data type
-    MarshalDBusTypeImpl(m_variantData.signature, dbusType);
-    ApplyPadding(dbusType, m_variantData.dataAlignment);
+    MarshalDBusTypeImpl(data.signature, dbusType);
+    ApplyPadding(dbusType, data.dataAlignment);
 
-    m_variantData.marshalDataFunc(m_variantData.data.get(), dbusType);
+    data.marshalDataFunc(data.data.get(), dbusType);
+  }
+
+  template<IsDBusType T>
+  T UnmarshalData() const
+  {
+    if (!std::holds_alternative<DeserializedVariantData>(m_variantData))
+    {
+      throw std::runtime_error{"Cannot unmarshal a non-deserialized variant"};
+    }
+
+    DeserializedVariantData const & data = std::get<DeserializedVariantData>(m_variantData);
+
+    if (GetTypeSignature<T>() != data.signature)
+    {
+      throw std::runtime_error{
+          std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to deserialize {}", data.signature.GetSignature(), GetTypeSignature<T>())};
+    }
+
+    uint32_t arrPointer{};
+
+    return UnmarshalDBusTypeImpl<T>(data.data, arrPointer);
   }
 };
 
-template <typename T>
-class DeserializedVariant
-{
-  static_assert(IsDeserializableDBusType<T>, "DeserializedVariant only supports types that can be deserialized from DBus types");
-
- private:
-  T m_data;
-  Signature m_signature;
-
- public:
-  using type = T;
-
- public:
-  template <IsDeserializableDBusType U = T>
-    requires(!IsDBusVariant<U>)
-  DeserializedVariant(U&& value, Signature const& signature)
-    : m_data{std::forward<U>(value)}
-    , m_signature(signature)
-  {
-  }
-
-  DeserializedVariant(DeserializedVariant const& other) noexcept = default;
-  DeserializedVariant(DeserializedVariant&& other) noexcept = default;
-  DeserializedVariant& operator=(DeserializedVariant const& other) noexcept = default;
-  DeserializedVariant& operator=(DeserializedVariant&& other) noexcept = default;
-
-  template <typename Self>
-  auto&& Get(this Self&& self)
-  {
-    return std::forward<Self>(self).m_data;
-  }
-
-  Signature const& GetSignature() const
-  {
-    return m_signature;
-  }
-};
-
-template <IsSerializableDBusType T, size_t I, size_t MaxI>
+template <IsDBusType T, size_t I, size_t MaxI>
 void GetStructMemberSize(T const& value, uint32_t& size)
 {
   GetSizeOfDBusType(std::get<I>(value), size);
@@ -804,16 +361,94 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
       AddPaddingToSize(size, value.GetDataAlignment());
       size += value.GetDataSize();
     }
-    else if constexpr(IsDBusDeserializedVariant<T>)
-    {
-      GetSizeOfDBusType<Signature>(value.GetSignature(), size);
-      AddPaddingToSize(size, GetAlignmentOfDBusType<typename T::type>());
-      size += GetSizeOfDBusType(value.Get(), size);
-    }
     else
     {
       static_assert(false, "Unknown dbus container type");
     }
+  }
+}
+
+inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const & signature, std::vector<byte> const & dbusType, uint32_t& arrPointer)
+{
+  switch (static_cast<DBusTypeCodes>(signature.GetSignature()[0]))
+  {
+    case DBusTypeCodes::BYTE:
+      return sizeof(uint8_t);
+    case DBusTypeCodes::BOOLEAN:
+      return sizeof(bool);
+    case DBusTypeCodes::INT16:
+      return sizeof(int16_t);
+    case DBusTypeCodes::UINT16:
+      return sizeof(uint16_t);
+    case DBusTypeCodes::INT32:
+      return sizeof(int32_t);
+    case DBusTypeCodes::UINT32:
+      return sizeof(uint32_t);
+    case DBusTypeCodes::INT64:
+      return sizeof(int64_t);
+    case DBusTypeCodes::UINT64:
+      return sizeof(uint64_t);
+    case DBusTypeCodes::DOUBLE:
+      return sizeof(double);
+    case DBusTypeCodes::STRING:
+    case DBusTypeCodes::OBJECT_PATH:
+    {
+      // Length of string as u32 + actual length of string + '\0'
+      uint32_t const length = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
+      arrPointer -= sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+      return sizeof(uint32_t) + length + 1;
+    }
+    case DBusTypeCodes::SIGNATURE:
+    {
+      // Length of string as u8 + actual length of string + '\0'
+      uint8_t const length = UnmarshalDBusTypeImpl<uint8_t>(dbusType, arrPointer);
+      arrPointer -= sizeof(uint8_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+      return sizeof(uint8_t) + length + 1;
+    }
+    case DBusTypeCodes::ARRAY:
+    {
+      // Length of array data in bytes
+      uint32_t length = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
+
+      if (static_cast<DBusTypeCodes>(signature.GetSignature().at(1)) == DBusTypeCodes::DICT_BEGIN)
+      {
+        // Dictionary, we pad to 8-byte boundary, so we need to add padding to the size of the array data
+        AddPaddingToSize(length, 8);
+      }
+      else
+      {
+        AddPaddingToSize(length, GetAlignmentOfSignature(Signature(std::string(1, signature.GetSignature().at(1)))));
+      }
+
+      arrPointer -= sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+      return sizeof(uint32_t) + length;
+    }
+    case DBusTypeCodes::STRUCT_BEGIN:
+    {
+      uint32_t length = 0;
+      for (size_t i = 1; i < signature.GetSignature().size() - 1; ++i)
+      {
+        Signature memberSignature(std::string(1, signature.GetSignature().at(i)));
+        length += GetSizeOfDBusTypeBasedOnSignature(memberSignature, dbusType, arrPointer);
+        if (i < signature.GetSignature().size() - 2)
+        {
+          AddPaddingToSize(length, GetAlignmentOfSignature(Signature(std::string(1, signature.GetSignature().at(i + 1)))));
+        }
+      }
+      return length;
+    }
+    case DBusTypeCodes::VARIANT:
+    {
+      // Variant = Signature + Padding + Size of data
+      Signature variantSignature = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
+      arrPointer -= sizeof(uint8_t) + variantSignature.size() + 1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+
+      uint32_t length = GetSizeOfDBusTypeBasedOnSignature(variantSignature, dbusType, arrPointer);
+      AddPaddingToSize(length, GetAlignmentOfSignature(variantSignature));
+      return sizeof(uint8_t) + variantSignature.size() + 1 + length;
+    }
+    default:
+      throw std::runtime_error{"Unsupported type for size calculation based on signature"};
   }
 }
 
@@ -991,7 +626,7 @@ void MarshalDBusStruct(T const& value, std::vector<byte>& dbusType)
   { (MarshalDBusStruct<T, Is, structSize>(value, dbusType), ...); }(std::make_index_sequence<structSize>{});
 }
 
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 void MarshalDBusMap(T const& value, std::vector<byte>& dbusType)
 {
   // DBus dictionaries are defined as an Array of Dictionary Entries which are just Structs.
@@ -1068,7 +703,7 @@ void MarshalDBusContainer(T const& value, std::vector<byte>& dbusType)
   }
 }
 
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 void MarshalDBusTypeImpl(T const& value, std::vector<byte>& dbusType)
 {
   if constexpr (IsDBusBasicType<T>)
@@ -1085,7 +720,7 @@ void MarshalDBusTypeImpl(T const& value, std::vector<byte>& dbusType)
   }
 }
 
-template <IsSerializableDBusType T>
+template <IsDBusType T>
 std::vector<byte> MarshalDBusType(T const& value)
 {
   std::vector<byte> dbusType{};
@@ -1114,9 +749,6 @@ class DBusInvalidSignatureError : public std::runtime_error
 public:
   using std::runtime_error::runtime_error;
 };
-
-template <IsDeserializableDBusType T>
-T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer);
 
 template <IsDBusBasicFixedType T>
 T UnmarshalDBusBasicFixedType(std::vector<byte> const& dbusType, uint32_t& arrPointer)
@@ -1492,19 +1124,20 @@ T UnmarshalDBusMap(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 //   return node;
 // }
 
-template <IsDBusDeserializedVariant T>
+template <IsDBusVariant T>
 T UnmarshalDBusVariant(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 {
   Signature const signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
   SkipPadding(arrPointer, signature.GetAlignmentOfSignature());
 
-  if (GetTypeSignature<typename T::type>() != signature.GetSignature())
-  {
-    throw DBusDeserializationError{std::format("Cannot deserialize DBus Variant Signature '{}' into provided DeserializedVariant with signature '{}'",
-                                               signature.GetSignature(), GetTypeSignature<typename T::type>())};
-  }
+  uint32_t amountOfData{};
+  GetSizeOfDBusType(signature, amountOfData);
 
-  T deserializedVariant{UnmarshalDBusTypeImpl<typename T::type>(dbusType, arrPointer), signature};
+  T deserializedVariant{deserialized_variant_tag, signature,
+                        std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) |
+                                                     std::views::take(GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer)))};
+  arrPointer += GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer);
+
   return deserializedVariant;
 }
 
@@ -1523,13 +1156,13 @@ T UnmarshalDBusContainer(std::vector<byte> const& dbusType, uint32_t& arrPointer
   {
     return UnmarshalDBusMap<T>(dbusType, arrPointer);
   }
-  else if constexpr (IsDBusDeserializedVariant<T>)
+  else if constexpr (IsDBusVariant<T>)
   {
     return UnmarshalDBusVariant<T>(dbusType, arrPointer);
   }
 }
 
-template <IsDeserializableDBusType T>
+template <IsDBusType T>
 T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 {
   if constexpr (IsDBusBasicType<T>)
@@ -1542,7 +1175,7 @@ T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer)
   }
 }
 
-template <IsDeserializableDBusType T>
+template <IsDBusType T>
 T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
 {
   if (!IsDBusTypeCode(signature))

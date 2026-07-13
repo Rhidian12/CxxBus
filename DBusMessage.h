@@ -23,7 +23,7 @@ class DBusMessage
  public:
   DBusMessage() = default;
   DBusMessage(std::string method, std::string path, std::string interface);
-  template <IsSerializableDBusType T>
+  template <IsDBusType T>
   DBusMessage(T&& value, std::string method, std::string path, std::string interface)
     : DBusMessage(std::move(method), std::move(path), std::move(interface), GetTypeSignature<std::remove_cvref_t<T>>(), MarshalDBusType(std::forward<T>(value)))
   {

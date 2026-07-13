@@ -271,9 +271,9 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariantOfUint32)
       0x00,                     // pad to 4-byte boundary
       0x2A, 0x00, 0x00, 0x00,   // value = 42
   };
-  auto v = UnmarshalDBusType<DeserializedVariant<uint32_t>>(bytes, "v");
+  auto v = UnmarshalDBusType<Variant>(bytes, "v");
   EXPECT_EQ(v.GetSignature().GetSignature(), "u");
-  EXPECT_EQ(v.Get(), 42u);
+  EXPECT_EQ(v.UnmarshalData<uint32_t>(), 42u);
 }
  
 TEST_F(UnmarshalTestSuite, UnmarshalVariantOfString)
@@ -284,9 +284,9 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariantOfString)
       0x03, 0x00, 0x00, 0x00,              // string length = 3
       'H', 'i', '!', 0x00,                 // content + NUL
   };
-  auto v = UnmarshalDBusType<DeserializedVariant<std::string>>(bytes, "v");
+  auto v = UnmarshalDBusType<Variant>(bytes, "v");
   EXPECT_EQ(v.GetSignature().GetSignature(), "s");
-  EXPECT_EQ(v.Get(), "Hi!");
+  EXPECT_EQ(v.UnmarshalData<std::string>(), "Hi!");
 }
  
 TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
@@ -299,12 +299,12 @@ TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
       0x01, 'y', 0x00,   // inner signature "y"
       0x07,              // inner value
   };
-  auto outer = UnmarshalDBusType<DeserializedVariant<DeserializedVariant<uint8_t>>>(bytes, "v");
+  auto outer = UnmarshalDBusType<Variant>(bytes, "v");
   EXPECT_EQ(outer.GetSignature().GetSignature(), "v");
  
-  auto inner = outer.Get();
+  auto inner = outer.UnmarshalData<Variant>();
   EXPECT_EQ(inner.GetSignature().GetSignature(), "y");
-  EXPECT_EQ(inner.Get(), 0x07);
+  EXPECT_EQ(inner.UnmarshalData<uint8_t>(), 0x07);
 }
  
 TEST_F(UnmarshalTestSuite, UnmarshalVariantWrongTypeThrows)
@@ -315,7 +315,7 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariantWrongTypeThrows)
   // time here, this mismatch must be caught during unmarshalling
   // itself, not at a later .Get() call.
   std::vector<byte> bytes{0x01, 'u', 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00};
-  EXPECT_THROW((UnmarshalDBusType<DeserializedVariant<std::string>>(bytes, "v")), std::exception);
+  EXPECT_THROW((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::string>()), std::exception);
 }
  
 // ---------------------------------------------------------------------
