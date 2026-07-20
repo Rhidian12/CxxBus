@@ -93,6 +93,7 @@ class ObjectPath
   std::string m_path;
 
  public:
+  ObjectPath() = default;
   ObjectPath(std::string path)
     : m_path(std::move(path))
   {
@@ -108,6 +109,8 @@ class ObjectPath
     return m_path;
   }
 
+  bool Empty() const;
+
   auto operator<=>(ObjectPath const&) const noexcept = default;
 };
 
@@ -119,11 +122,12 @@ class Signature
  public:
   Signature(std::string signature);
 
-  uint32_t size() const;
+  uint32_t Size() const;
   explicit operator std::string() const;
   std::string const& GetSignature() const;
   // Get the alignment of the contained signature
   uint8_t GetAlignmentOfSignature() const;
+  bool Empty() const;
 
   auto operator<=>(Signature const&) const noexcept = default;
 };
@@ -171,5 +175,8 @@ class MultipleCompleteTypes
 // Must be non-zero value Array of struct of byte, variant are the header fields.
 // The message type specifies which fields are required
 // Here we keep track of the set starting size of any DBus message:
-// The 4 bytes, the 2 u32's and the u32 of the header field array. We use this data to parse the DBus Message piece-by-piece
-inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 3;
+// The 4 bytes, the 2 u32's. We use this data to parse the DBus Message piece-by-piece
+inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 2;
+
+// Alignment boundary of the DBus Message Body (not the Header)
+inline static uint8_t constexpr DBUS_MESSAGE_BODY_ALIGNMENT = 8;

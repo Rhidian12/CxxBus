@@ -79,7 +79,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
 
   // Get our unique bus name
-  std::optional<DBusReply> reply = co_await SendMessage(DBusMessage{"Hello", "/org/freedesktop/DBus", "org.freedesktop.DBus"});
+  std::optional<DBusReply> reply = co_await SendMessage(DBusMessage{"Hello", ObjectPath{"/org/freedesktop/DBus"}, "org.freedesktop.DBus"});
   if (reply.has_value())
   {
     m_uniqueConnection = reply->Get<std::string>();
@@ -90,7 +90,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   // [TODO]: Should be a user-passed flag
   // Now, request a well-known name from the dbus-daemon
   DBusMessage message{MultipleCompleteTypes<std::string, uint32_t>{std::string{"RhidianTest"}, static_cast<uint32_t>(0x1)}, "RequestName",
-                      "/org/freedesktop/DBus", "org.freedesktop.DBus"};
+                      ObjectPath{"/org/freedesktop/DBus"}, "org.freedesktop.DBus"};
   reply = co_await SendMessage(message);
 
   if (reply.has_value())
@@ -123,37 +123,40 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
   {
     while (true)
     {
-      std::vector<byte> rawReply{};
-      rawReply.reserve(FIRST_HEADER_PART_SIZE);
+      // std::vector<byte> rawReply{};
+      // rawReply.reserve(FIRST_HEADER_PART_SIZE);
 
-      std::cout << "Waiting for incoming message\n";
-      co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
-      DBusReplyHeader replyHeader{std::move(rawReply)};
+      // std::cout << "Waiting for incoming message\n";
+      // co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
+      // DBusMessageHeader messageHeader{std::move(rawReply)};
 
-      std::cout << "Got first part of header\n";
-      rawReply.reserve(replyHeader.GetHeaderFieldsLength());
-      co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
-      replyHeader.ParseRemainderOfHeader(std::move(rawReply));
+      // std::cout << "Got first part of header\n";
+      // rawReply.reserve(messageHeader.GetHeaderFieldsLength());
+      // co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
+      // messageHeader.ParseRemainderOfHeader(std::move(rawReply));
 
-      std::cout << "Got rest of header\n";
-      // Calculate how many bytes we still have to read from the socket to complete our DBus Message.
-      // This is the amount of padding bytes until the start of our message body + message length
-      uint32_t const readBytes{FIRST_HEADER_PART_SIZE + replyHeader.GetHeaderFieldsLength()};
-      uint32_t nrOfPaddingBytes{readBytes};
-      AddPaddingToSize(nrOfPaddingBytes, 8);  // [TODO]: Dont hardcode this
+      // std::cout << "Got rest of header\n";
+      // // Calculate how many bytes we still have to read from the socket to complete our DBus Message.
+      // // This is the amount of padding bytes until the start of our message body + message length
+      // uint32_t const readBytes{FIRST_HEADER_PART_SIZE + messageHeader.GetHeaderFieldsLength()};
+      // uint32_t nrOfPaddingBytes{readBytes};
+      // AddPaddingToSize(nrOfPaddingBytes, 8);  // [TODO]: Dont hardcode this
 
-      // 'nrOfPaddingBytes - readBytes' to calculate how many padding bytes we have
-      rawReply.reserve((nrOfPaddingBytes - readBytes) + replyHeader.GetMessageLength());
-      co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
+      // // 'nrOfPaddingBytes - readBytes' to calculate how many padding bytes we have
+      // rawReply.reserve((nrOfPaddingBytes - readBytes) + messageHeader.GetMessageLength());
+      // co_await m_socket.async_receive(boost::asio::buffer(rawReply.data(), rawReply.capacity()), boost::asio::use_awaitable);
 
-      std::cout << "Got entire message\n";
-      // Skip over the padding, we don't care about it
-      DBusReply reply{std::move(replyHeader), std::ranges::to<std::vector>(rawReply | std::views::drop(nrOfPaddingBytes - readBytes))};
+      // std::cout << "Got entire message\n";
+      // // Skip over the padding, we don't care about it
+      // DBusReply reply{std::move(messageHeader), std::ranges::to<std::vector>(rawReply | std::views::drop(nrOfPaddingBytes - readBytes))};
 
-      if (m_replyChannels.contains(reply.GetSerial()))
-      {
-        co_await m_replyChannels[reply.GetSerial()]->async_send(boost::system::error_code{}, reply);
-      }
+      // if (reply.GetReplySerial().has_value())
+      // {
+      //   if (m_replyChannels.contains(*reply.GetReplySerial()))
+      //   {
+      //     co_await m_replyChannels[*reply.GetReplySerial()]->async_send(boost::system::error_code{}, reply);
+      //   }
+      // }
     }
   }
   catch (std::exception const& ex)
@@ -171,10 +174,11 @@ boost::asio::awaitable<std::optional<DBusReply>> DBusConnection::SendMessage(DBu
   {
     m_replyChannels[m_serial] = &replyChannel;
   }
-
+  
   // 2nd, send our message to the SendLoop() coroutine to actually send the message
   co_await m_sendLoop.async_send(boost::system::error_code{}, std::make_tuple(message, m_serial++), boost::asio::use_awaitable);
-
+  
+  // [TODO]: If we don't have a channel, don't wait on it, just return std::nullopt
   // 3rd, wait for the reply to be sent back to us from the ReadLoop() coroutine
   co_return co_await replyChannel.async_receive(boost::asio::use_awaitable);
 }

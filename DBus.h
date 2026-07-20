@@ -63,7 +63,9 @@ struct InPlaceT
 };
 constexpr InPlaceT in_place{};
 
-struct DeserializedVariantTag {};
+struct DeserializedVariantTag
+{
+};
 constexpr DeserializedVariantTag deserialized_variant_tag{};
 
 class Variant
@@ -119,16 +121,16 @@ class Variant
   // Wraps a Variant inside a Variant (nested/boxed variant)
   Variant(InPlaceT, Variant variant)
     : m_variantData{VariantData{.signature = GetTypeSignature<Variant>(),
-                    .dataAlignment = GetAlignmentOfDBusType<Variant>(),
-                    .data = std::unique_ptr<void, CustomDeleter>(new Variant(std::move(variant)),
-                                                                 CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
-                    .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { static_cast<Variant*>(data)->MarshalData(dbusType); },
-                    .copyFunc =
-                        [](void* otherData)
-                    {
-                      return std::unique_ptr<void, CustomDeleter>(new Variant(*static_cast<Variant*>(otherData)),
-                                                                  CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
-                    }}}
+                                .dataAlignment = GetAlignmentOfDBusType<Variant>(),
+                                .data = std::unique_ptr<void, CustomDeleter>(new Variant(std::move(variant)),
+                                                                             CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
+                                .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { static_cast<Variant*>(data)->MarshalData(dbusType); },
+                                .copyFunc =
+                                    [](void* otherData)
+                                {
+                                  return std::unique_ptr<void, CustomDeleter>(new Variant(*static_cast<Variant*>(otherData)),
+                                                                              CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
+                                }}}
   {
     GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
     std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
@@ -146,11 +148,11 @@ class Variant
     {
       VariantData const& data = std::get<VariantData>(other.m_variantData);
       m_variantData = VariantData{.signature = data.signature,
-        .dataSize = data.dataSize,
-        .dataAlignment = data.dataAlignment,
-        .data = data.copyFunc(data.data.get()),
-        .marshalDataFunc = data.marshalDataFunc,
-        .copyFunc = data.copyFunc};
+                                  .dataSize = data.dataSize,
+                                  .dataAlignment = data.dataAlignment,
+                                  .data = data.copyFunc(data.data.get()),
+                                  .marshalDataFunc = data.marshalDataFunc,
+                                  .copyFunc = data.copyFunc};
     }
     else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
     {
@@ -210,7 +212,7 @@ class Variant
     }
     else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
     {
-      return 1; // Deserialized data alignment is 1
+      return 1;  // Deserialized data alignment is 1
     }
     else
     {
@@ -224,8 +226,8 @@ class Variant
     {
       throw std::runtime_error{"Cannot marshal a deserialized variant"};
     }
-    
-    VariantData const & data = std::get<VariantData>(m_variantData);
+
+    VariantData const& data = std::get<VariantData>(m_variantData);
 
     // We marshal a variant by marshalling its signature followed by the data (with padding of course)
     // Add signature + padding to data type
@@ -235,7 +237,7 @@ class Variant
     data.marshalDataFunc(data.data.get(), dbusType);
   }
 
-  template<IsDBusType T>
+  template <IsDBusType T>
   T UnmarshalData() const
   {
     if (!std::holds_alternative<DeserializedVariantData>(m_variantData))
@@ -243,12 +245,12 @@ class Variant
       throw std::runtime_error{"Cannot unmarshal a non-deserialized variant"};
     }
 
-    DeserializedVariantData const & data = std::get<DeserializedVariantData>(m_variantData);
+    DeserializedVariantData const& data = std::get<DeserializedVariantData>(m_variantData);
 
     if (GetTypeSignature<T>() != data.signature)
     {
-      throw std::runtime_error{
-          std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to deserialize {}", data.signature.GetSignature(), GetTypeSignature<T>())};
+      throw std::runtime_error{std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to deserialize {}",
+                                           data.signature.GetSignature(), GetTypeSignature<T>())};
     }
 
     uint32_t arrPointer{};
@@ -317,7 +319,7 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
     if constexpr (std::is_same_v<T, Signature>)
     {
       // Length of string as u8 + actual length of string + '\0'
-      size += sizeof(uint8_t) + value.size() + 1;
+      size += sizeof(uint8_t) + value.Size() + 1;
     }
     else
     {
@@ -329,11 +331,6 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
   {
     if constexpr (IsDBusArray<T>)
     {
-      if (value.empty())
-      {
-        size += 0;
-      }
-
       // length of array data in bytes
       uint8_t const alignment{GetAlignmentOfDBusType<typename T::value_type>()};
       for (auto const& [index, elem] : std::views::enumerate(value))
@@ -357,7 +354,7 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
     else if constexpr (IsDBusVariant<T>)
     {
       // Variant = Signature + Padding + Size of data
-      GetSizeOfDBusType<Signature>(Signature{""}, size);
+      GetSizeOfDBusType<Signature>(value.GetSignature(), size);
       AddPaddingToSize(size, value.GetDataAlignment());
       size += value.GetDataSize();
     }
@@ -368,7 +365,7 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
   }
 }
 
-inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const & signature, std::vector<byte> const & dbusType, uint32_t& arrPointer)
+inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const& signature, std::vector<byte> const& dbusType, uint32_t& arrPointer)
 {
   switch (static_cast<DBusTypeCodes>(signature.GetSignature()[0]))
   {
@@ -441,11 +438,11 @@ inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const & signature, s
     {
       // Variant = Signature + Padding + Size of data
       Signature variantSignature = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
-      arrPointer -= sizeof(uint8_t) + variantSignature.size() + 1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+      arrPointer -= sizeof(uint8_t) + variantSignature.Size() + 1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
 
       uint32_t length = GetSizeOfDBusTypeBasedOnSignature(variantSignature, dbusType, arrPointer);
       AddPaddingToSize(length, GetAlignmentOfSignature(variantSignature));
-      return sizeof(uint8_t) + variantSignature.size() + 1 + length;
+      return sizeof(uint8_t) + variantSignature.Size() + 1 + length;
     }
     default:
       throw std::runtime_error{"Unsupported type for size calculation based on signature"};
@@ -746,7 +743,7 @@ class DBusMalformedInputError : public std::runtime_error
 
 class DBusInvalidSignatureError : public std::runtime_error
 {
-public:
+ public:
   using std::runtime_error::runtime_error;
 };
 
@@ -757,8 +754,9 @@ T UnmarshalDBusBasicFixedType(std::vector<byte> const& dbusType, uint32_t& arrPo
 
   if (minSize > (dbusType.size() - arrPointer))
   {
-    throw DBusMalformedInputError{std::format("Trying to deserialize {} but the incoming buffer (total size: {}) has only {} bytes remaining while we need {} bytes",
-                                              ConstexprTypeName<T>(), dbusType.size(), dbusType.size() - arrPointer, minSize)};
+    throw DBusMalformedInputError{
+        std::format("Trying to deserialize {} but the incoming buffer (total size: {}) has only {} bytes remaining while we need {} bytes",
+                    ConstexprTypeName<T>(), dbusType.size(), dbusType.size() - arrPointer, minSize)};
   }
 
   T value{};
@@ -875,18 +873,11 @@ T UnmarshalDBusBasicType(std::vector<byte> const& dbusType, uint32_t& arrPointer
 template <IsDBusArray T>
 T UnmarshalDBusArray(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 {
-  uint32_t arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
+  uint32_t const arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
 
   if (arrLength >= 2 << 26)
   {
     throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
-  }
-
-  // 'arrLength' will be about multiple strings, and therefore calculating our array length makes very little sense as it is spread over multiple strings
-  if constexpr (!IsDBusBasicStringlikeType<typename T::value_type>)
-  {
-    // We marshal the length of the array in bytes, so convert that back to nr of elements we serialized
-    arrLength /= sizeof(typename T::value_type);
   }
 
   // Remove any potential padding
@@ -894,47 +885,36 @@ T UnmarshalDBusArray(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 
   T vec{};
 
-  if constexpr (IsDBusBasicStringlikeType<typename T::value_type>)
-  {
-    // For strings we'll just reserve an arbitrary amount of space
-    vec.reserve(8);
-  }
-  else
-  {
-    vec.reserve(arrLength);
-  }
+  // It's pretty hard to calculate exactly how many elements are in the array, so just reserve some arbitrary amount of space
+  // [TODO]: Improve this
+  vec.reserve(8);
 
-  if constexpr (IsDBusBasicStringlikeType<typename T::value_type>)
+  // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings until we reach the end of the array
+  uint32_t bytesRead{};
+  while (bytesRead < arrLength)
   {
-    // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings until we reach the end of the array
-    uint32_t bytesRead{};
-    while (bytesRead < arrLength)
+    if (arrPointer >= dbusType.size())
     {
-      if (arrPointer >= dbusType.size())
-      {
-        throw DBusMalformedInputError{std::format(
-            "Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remainings",
-            ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
-      }
-
-      vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
-      bytesRead += sizeof(uint32_t) + vec.back().size() + 1;
-
-      if (bytesRead < arrLength)
-      {
-        size_t const oldPointer{arrPointer};
-        SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
-        bytesRead += arrPointer - oldPointer;  // Remove any potential padding
-      }
+      throw DBusMalformedInputError{
+          std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remainings",
+                      ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
     }
-  }
-  else
-  {
-    for (uint32_t i{}; i < arrLength; ++i)
-    {
-      vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
 
+    vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
+    GetSizeOfDBusType(vec.back(), bytesRead);
+    // if constexpr (IsDBusBasicStringlikeType<T>)
+    // {
+    //   bytesRead += sizeof(uint32_t) + vec.back().size() + 1;
+    // }
+    // else
+    // {
+    // }
+
+    if (bytesRead < arrLength)
+    {
+      size_t const oldPointer{arrPointer};
       SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
+      bytesRead += arrPointer - oldPointer;  // Remove any potential padding
     }
   }
 
@@ -1176,7 +1156,7 @@ T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 }
 
 template <IsDBusType T>
-T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
+T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature, uint32_t& arrPointer)
 {
   if (!IsDBusTypeCode(signature))
   {
@@ -1190,15 +1170,24 @@ T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
 
   if (signature != GetTypeSignature<T>())
   {
-    throw DBusInvalidSignatureError{std::format("Type {} (signature: '{}') and Signature {} do not match.", ConstexprTypeName<T>(), GetTypeSignature<T>(), signature)};
+    throw DBusInvalidSignatureError{
+        std::format("Type {} (signature: '{}') and Signature {} do not match.", ConstexprTypeName<T>(), GetTypeSignature<T>(), signature)};
   }
 
+  return UnmarshalDBusTypeImpl<T>(dbusType, arrPointer);
+}
+
+template <IsDBusType T>
+T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
+{
   uint32_t arrPointer{};
-  T value = UnmarshalDBusTypeImpl<T>(dbusType, arrPointer);
+  T value{UnmarshalDBusType<T>(dbusType, signature, arrPointer)};
+
   if (arrPointer != dbusType.size())
   {
     throw DBusMalformedInputError{std::format("Deserialized {} but the incoming buffer (total size: {}) has {} bytes remaining", ConstexprTypeName<T>(),
                                               dbusType.size(), dbusType.size() - arrPointer)};
   }
+
   return value;
 }

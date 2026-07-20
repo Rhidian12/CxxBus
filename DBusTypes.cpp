@@ -7,7 +7,7 @@ Signature::Signature(std::string signature)
 {
 }
 
-uint32_t Signature::size() const
+uint32_t Signature::Size() const
 {
   return m_signature.size();
 }
@@ -26,4 +26,14 @@ std::string const& Signature::GetSignature() const
 uint8_t Signature::GetAlignmentOfSignature() const
 {
   return ::GetAlignmentOfSignature(*this);
+}
+
+bool Signature::Empty() const
+{
+  return m_signature.empty();
+}
+
+bool ObjectPath::Empty() const
+{
+  return m_path.empty();
 }

@@ -133,7 +133,7 @@ constexpr uint8_t GetAlignmentOfDBusType()
   {
     if constexpr (IsDBusArray<T>)
     {
-      return GetAlignmentOfDBusType<typename T::value_type>();
+      return 4;
     }
     else if (IsDBusStruct<T> || IsDBusMap<T>)
     {
