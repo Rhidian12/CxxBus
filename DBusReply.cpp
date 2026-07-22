@@ -7,6 +7,7 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <vector>
 
 #include "DBus.h"
 #include "DBusTypes.h"
@@ -180,32 +181,12 @@ std::optional<std::string> const& DBusMessageHeader::GetMember() const
   return m_data.member;
 }
 
-void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t headerFieldLength, uint32_t& arrPointer)
+void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)
 {
-  m_data.headerFieldLength = headerFieldLength;
+  m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(data, "u");
+}
 
+void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer)
+{
   UnmarshalDBusHeader(data, m_data, arrPointer);
-}
-
-DBusReply::DBusReply() = default;
-
-DBusReply::DBusReply(DBusMessageHeader header, std::vector<byte> data)
-  : m_header(std::move(header))
-  , m_data(std::move(data))
-{
-}
-
-std::optional<uint32_t> const& DBusReply::GetReplySerial() const
-{
-  return m_header.GetReplySerial();
-}
-
-DBusMessageHeader const& DBusReply::GetHeader() const
-{
-  return m_header;
-}
-
-std::vector<byte> const& DBusReply::GetRawData() const
-{
-  return m_data;
 }

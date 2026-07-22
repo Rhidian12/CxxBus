@@ -33,6 +33,11 @@ bool Signature::Empty() const
   return m_signature.empty();
 }
 
+bool Signature::operator==(std::string const& str) const
+{
+  return m_signature == str;
+}
+
 bool ObjectPath::Empty() const
 {
   return m_path.empty();

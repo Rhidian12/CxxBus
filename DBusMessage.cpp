@@ -6,6 +6,7 @@
 #include <iterator>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "DBus.h"
@@ -21,7 +22,7 @@ namespace
   template <DBusMessageType MsgType>
   std::vector<byte> CreateDBusMessage(uint32_t serial, std::vector<byte> messageBody, std::vector<DBusMessageFlags> const& messageFlags,
                                       std::string const& method, ObjectPath const& objectPath, std::optional<std::string> const& interface,
-                                      std::optional<Signature> const& signature, std::string const& error)
+                                      std::optional<std::string> destination, std::optional<Signature> const& signature, std::string const& error)
   {
     // Signature of a DBus Header is yyyyuua(yv)
     // y = byte
@@ -65,7 +66,12 @@ namespace
         case HeaderFieldCode::INVALID:
         case HeaderFieldCode::REPLY_SERIAL:
         case HeaderFieldCode::ERROR_NAME:
-          std::unreachable();
+          throw std::runtime_error{"Not implemented yet"};
+          break;
+        case HeaderFieldCode::SENDER:
+        case HeaderFieldCode::DESTINATION:
+        case HeaderFieldCode::UNIX_FDS:
+          throw std::runtime_error{"Sender, Destination and UNIX_FDS can never be required fields!"};
           break;
         case HeaderFieldCode::PATH:
           variant = Variant{objectPath};
@@ -88,11 +94,6 @@ namespace
           }
           variant = Variant{*signature};
           break;
-        // [TODO]: Implement all header field codes
-        case HeaderFieldCode::DESTINATION:
-        case HeaderFieldCode::SENDER:
-        case HeaderFieldCode::UNIX_FDS:
-          throw std::runtime_error{"Not implemented yet"};
       }
 
       headerFields.push_back(std::make_tuple(static_cast<uint8_t>(headerField.decimalCode), *variant));
@@ -104,6 +105,11 @@ namespace
                              { return std::get<0>(field) == static_cast<uint8_t>(HeaderFieldCode::INTERFACE); }) == headerFields.cend())
     {
       headerFields.push_back(std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::INTERFACE), Variant{interface.value()}));
+    }
+
+    if (destination.has_value() && !destination->empty())
+    {
+      headerFields.push_back(std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION), Variant{destination.value()}));
     }
 
     std::ranges::sort(headerFields, [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
@@ -128,16 +134,22 @@ namespace
 }  // namespace
 
 DBusMessage::DBusMessage(std::string method, ObjectPath path, std::string interface)
-  : DBusMessage(std::move(method), std::move(path), std::move(interface), std::nullopt, {})
+  : DBusMessage(std::move(method), std::move(path), std::move(interface), std::nullopt, std::nullopt, {})
 {
 }
 
-DBusMessage::DBusMessage(std::string method, ObjectPath path, std::optional<std::string> interface, std::optional<Signature> signature,
-                         std::vector<byte> messageBody)
+DBusMessage::DBusMessage(std::string method, ObjectPath path, std::string interface, std::string destination)
+  : DBusMessage(std::move(method), std::move(path), std::move(interface), destination, std::nullopt, {})
+{
+}
+
+DBusMessage::DBusMessage(std::string method, ObjectPath path, std::optional<std::string> interface, std::optional<std::string> destination,
+                         std::optional<Signature> signature, std::vector<byte> messageBody)
   : m_method(std::move(method))
   , m_path(std::move(path))
   , m_interface(std::move(interface))
   , m_signature(std::move(signature))
+  , m_destination(std::move(destination))
   , m_flags()
   , m_messageBody(std::move(messageBody))
 {
@@ -153,9 +165,26 @@ DBusMessage::DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody
 {
 }
 
+DBusMessage DBusMessage::ParseMessage(std::vector<byte> messageBytes)
+{
+  uint32_t arrPointer{};
+  DBusMessageHeader header{std::ranges::to<std::vector>(messageBytes | std::views::take(FIRST_HEADER_PART_SIZE))};
+
+  arrPointer += FIRST_HEADER_PART_SIZE;
+
+  uint32_t const headerFieldsLength{
+      UnmarshalDBusType<uint32_t>(std::ranges::to<std::vector>(messageBytes | std::views::drop(arrPointer) | std::views::take(sizeof(uint32_t))), "u")};
+
+  header.ParseRemainderOfHeader(messageBytes, arrPointer);
+
+  AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
+
+  return DBusMessage{std::move(header), std::ranges::to<std::vector>(messageBytes | std::views::drop(arrPointer))};
+}
+
 std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
 {
-  return CreateDBusMessage<DBusMessageType::METHOD_CALL>(serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_signature, "");
+  return CreateDBusMessage<DBusMessageType::METHOD_CALL>(serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");
 }
 
 std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const
@@ -163,9 +192,14 @@ std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const
   return m_flags;
 }
 
-DBusMessageHeader const& DBusMessage::GetHeader() const 
+DBusMessageHeader const& DBusMessage::GetHeader() const
 {
   return m_header;
+}
+
+bool DBusMessage::HasArguments() const
+{
+  return !m_messageBody.empty();
 }
 
 std::vector<byte> const& DBusMessage::GetRawData() const

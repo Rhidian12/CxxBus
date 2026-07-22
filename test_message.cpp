@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+
 #include "DBus.h"
 #include "DBusMessage.h"
 #include "DBusReply.h"
@@ -14,10 +16,9 @@ namespace
 
     arrPointer += FIRST_HEADER_PART_SIZE;
 
-    uint32_t const headerFieldsLength{
-        UnmarshalDBusType<uint32_t>(std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer) | std::views::take(sizeof(uint32_t))), "u")};
+    header.ParseHeaderFieldLength(std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer) | std::views::take(sizeof(uint32_t))));
 
-    header.ParseRemainderOfHeader(fullMessageBytes, headerFieldsLength, arrPointer);
+    header.ParseRemainderOfHeader(fullMessageBytes, arrPointer);
 
     AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
 
@@ -278,13 +279,14 @@ TEST_F(DBusMessageTestSuite, ThrowsWhenHeaderFieldsPartDoesNotMatchDeclaredLengt
       'l', 0x01, 0x00, 0x01,
       0x00, 0x00, 0x00, 0x00,
       0x01, 0x00, 0x00, 0x00,
-      0x4E, 0x00, 0x00, 0x00,  // header fields length = 78
   };
   DBusMessageHeader header{std::ranges::to<std::vector>(firstPart | std::views::take(FIRST_HEADER_PART_SIZE))};
-  
+
+  // 78 for header field length
+  header.ParseHeaderFieldLength(std::vector<byte>{0x4E, 0x00, 0x00, 0x00});
   std::vector<byte> tooShortFields{0x01, 0x01, 'o', 0x00};
   uint32_t arrPointer{};
-  EXPECT_THROW(header.ParseRemainderOfHeader(std::move(tooShortFields), 78, arrPointer), DBusMalformedInputError);
+  EXPECT_THROW(header.ParseRemainderOfHeader(std::move(tooShortFields), arrPointer), DBusMalformedInputError);
   ASSERT_EQ(header.GetHeaderFieldsLength(), 78u);
 }
 // clang-format on

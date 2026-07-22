@@ -130,6 +130,8 @@ class Signature
   bool Empty() const;
 
   auto operator<=>(Signature const&) const noexcept = default;
+  bool operator==(Signature const&) const = default;
+  bool operator==(std::string const& str) const;
 };
 
 template <typename... Ts>

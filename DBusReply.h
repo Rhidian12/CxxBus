@@ -47,34 +47,6 @@ class DBusMessageHeader
   // Either method name or signal name, depending on message type
   std::optional<std::string> const& GetMember() const;
 
-  void ParseRemainderOfHeader(std::vector<byte> const & data, uint32_t headerFieldLength, uint32_t & arrPointer);
+  void ParseHeaderFieldLength(std::vector<byte> data);
+  void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
 };
-
-class DBusReply
-{
- private:
-  std::vector<byte> m_messageBody;
-
- private:
-  DBusMessageHeader m_header;
-  std::vector<byte> m_data;
-
- public:
-  DBusReply();
-  DBusReply(DBusMessageHeader header, std::vector<byte> data);
-
-  template <IsDBusType T>
-  T Get() const;
-
-  std::optional<uint32_t> const& GetReplySerial() const;
-  DBusMessageHeader const& GetHeader() const;
-
-  // Only useful for debugging purposes
-  std::vector<byte> const& GetRawData() const;
-};
-
-template <IsDBusType T>
-T DBusReply::Get() const
-{
-  return UnmarshalDBusType<T>(m_data, m_header.GetSignature()->GetSignature());
-}
