@@ -87,7 +87,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 
   // [TODO]: Should be a user-passed flag
   // Now, request a well-known name from the dbus-daemon
-  DBusMessage message{MultipleCompleteTypes<std::string, uint32_t>{std::string{"RhidianTest"}, static_cast<uint32_t>(0x1)}, "RequestName",
+  DBusMessage message{MultipleCompleteTypes<std::string, uint32_t>{m_wellKnownName.GetName(), static_cast<uint32_t>(0x1)}, "RequestName",
                       ObjectPath{"/org/freedesktop/DBus"}, "org.freedesktop.DBus", "org.freedesktop.DBus"};
   reply = co_await SendMessage(message);
 
@@ -95,9 +95,6 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   {
     if (reply->Get<uint32_t>() == 1)
     {
-      m_wellKnownName = "RhidianTest";
-
-      std::cout << "Well-known name: " << m_wellKnownName << "\n";
     }
   }
 }

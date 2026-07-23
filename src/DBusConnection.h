@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 #include "DBusMessage.h"
+#include "DBusTypes.h"
 
 class DBusError : public std::runtime_error
 {
@@ -33,7 +34,7 @@ class DBusConnection
 
   uint32_t m_serial;
   std::string m_uniqueConnection;
-  std::string m_wellKnownName;
+  DBusWellKnownName m_wellKnownName;
 
  private:
   boost::asio::awaitable<void> AuthenticateDBusConnection();
@@ -42,12 +43,13 @@ class DBusConnection
   boost::asio::awaitable<void> ReadLoop();
 
  public:
-  DBusConnection(boost::asio::io_context& ioService)
+  DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName)
     : m_ioContext(ioService)
     , m_socket(m_ioContext)
     , m_sendLoop(m_ioContext, 10)
     , m_serial{1}
     , m_uniqueConnection{}
+    , m_wellKnownName(std::move(wellKnownName))
   {
     boost::asio::co_spawn(m_ioContext, Connect(),
                           [](std::exception_ptr e)

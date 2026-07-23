@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -160,6 +161,23 @@ class MultipleCompleteTypes
   {
     return std::get<I>(m_types);
   }
+};
+
+class InvalidDBusName : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class DBusWellKnownName
+{
+ private:
+  std::string m_name;
+
+ public:
+  explicit DBusWellKnownName(std::string wellKnownName);
+
+  std::string const& GetName() const;
 };
 
 // Signature of a DBus Header is yyyyuua(yv)
