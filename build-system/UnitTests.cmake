@@ -26,7 +26,6 @@ endfunction()
 #     pass the DO_NOT_ADD_TO_CACHE option
 #
 # - NAME: The name of your CMake Target
-# - TARGET: Unused? [TODO]: Investigate if this is still required
 # - SOURCES: List of source files to be compiled for the unit test
 # - LIBRARIES: List of libraries to be included for the unit test
 # - INCLUDE_DIRS: List of include directories to be included for the unit test
@@ -34,7 +33,7 @@ function(define_unit_test)
   find_package(GTest REQUIRED)
 
   set(options DO_NOT_ADD_TO_CACHE)
-  set(oneValueArgs NAME TARGET)
+  set(oneValueArgs NAME)
   set(multiValueArgs SOURCES LIBRARIES INCLUDE_DIRS)
 
   cmake_parse_arguments(DU
@@ -52,13 +51,8 @@ function(define_unit_test)
   include(GoogleTest)
   gtest_discover_tests(${DU_NAME})
 
-  if(DU_TARGET)
-    add_custom_target(${DU_TARGET})
-    add_dependencies(${DU_TARGET} ${DU_NAME})
-  else()
-    add_custom_target(build_${DU_NAME})
-    add_dependencies(build_${DU_NAME} ${DU_NAME})
-  endif()
+  add_custom_target(build_${DU_NAME})
+  add_dependencies(build_${DU_NAME} ${DU_NAME})
 
   if(NOT DO_NOT_ADD_TO_CACHE)
     # Combine all sources and libraries to create a

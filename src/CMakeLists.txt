@@ -22,6 +22,5 @@ if(_ALL_TESTS_SOURCES)
                     SOURCES ${_ALL_TESTS_SOURCES}
                     LIBRARIES ${_ALL_TESTS_LIBRARIES}
                     INCLUDE_DIRS ${_ALL_TESTS_INCLUDES}
-                    TARGET all_tests
                     DO_NOT_ADD_TO_CACHE)
 endif()
