@@ -51,9 +51,6 @@ function(define_unit_test)
   include(GoogleTest)
   gtest_discover_tests(${DU_NAME})
 
-  add_custom_target(build_${DU_NAME})
-  add_dependencies(build_${DU_NAME} ${DU_NAME})
-
   if(NOT DO_NOT_ADD_TO_CACHE)
     # Combine all sources and libraries to create a
     # combined unit-test executable

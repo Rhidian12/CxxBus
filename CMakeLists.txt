@@ -23,6 +23,7 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include("build-system/UnitTests.cmake")
+include("build-system/CreateBinary.cmake")
 
 enable_testing()
 

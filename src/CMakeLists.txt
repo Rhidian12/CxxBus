@@ -14,6 +14,11 @@ add_library(cxxbus-lib  DBusConnection.cpp
 
 set(cxxbus-include-dir ${CMAKE_SOURCE_DIR})
 
+create_binary(NAME cxxbus-test
+              SOURCES main.cpp
+              LIBRARIES cxxbus-lib
+              INCLUDE_DIRS ${cxxbus-include-dir})
+
 add_subdirectory(test)
 
 # Build the combined executable if we registered any unit tests
