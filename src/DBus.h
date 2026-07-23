@@ -3,15 +3,11 @@
 #include <sys/types.h>
 
 #include <algorithm>
-#include <climits>
-#include <concepts>
 #include <cstdint>
+#include <format>
 #include <functional>
-#include <iostream>
 #include <iterator>
-#include <map>
 #include <memory>
-#include <numeric>
 #include <ranges>
 #include <stdexcept>
 #include <string_view>
@@ -104,6 +100,7 @@ class Variant
   explicit Variant(T&& value)
     : m_variantData{VariantData{
           .signature = GetTypeSignature<std::remove_cvref_t<T>>(),
+          .dataSize = 0,
           .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
           .data = std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{std::forward<T>(value)},
                                                        CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
@@ -121,6 +118,7 @@ class Variant
   // Wraps a Variant inside a Variant (nested/boxed variant)
   Variant(InPlaceT, Variant variant)
     : m_variantData{VariantData{.signature = GetTypeSignature<Variant>(),
+                                .dataSize = 0,
                                 .dataAlignment = GetAlignmentOfDBusType<Variant>(),
                                 .data = std::unique_ptr<void, CustomDeleter>(new Variant(std::move(variant)),
                                                                              CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
@@ -337,7 +335,7 @@ void GetSizeOfDBusType(T const& value, uint32_t& size)
       {
         GetSizeOfDBusType<typename T::value_type>(elem, size);
 
-        if (index < value.size() - 1)
+        if (index < static_cast<int32_t>(value.size()) - 1)
         {
           AddPaddingToSize(size, alignment);
         }
@@ -585,7 +583,7 @@ void MarshalDBusArray(T const& value, std::vector<byte>& dbusType)
   for (auto const& [index, elem] : std::views::enumerate(value))
   {
     MarshalDBusTypeImpl(elem, dbusType);
-    if (index < value.size() - 1)
+    if (index < static_cast<int32_t>(value.size()) - 1)
     {
       // Not last element, so add padding if required
       ApplyPadding(dbusType, alignment);
@@ -849,7 +847,7 @@ T UnmarshalDBusBasicMultipleCompleteTypes(std::vector<byte> const& dbusType, uin
 {
   return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
   {
-    return std::make_tuple(UnmarshalDBusBasicMultipleCompleteTypes<T, Is, std::tuple_size_v<typename T::type>>(dbusType, arrPointer)...);
+    return T{UnmarshalDBusBasicMultipleCompleteTypes<T, Is, std::tuple_size_v<typename T::type>>(dbusType, arrPointer)...};
   }(std::make_index_sequence<std::tuple_size_v<typename T::type>>{});
 }
 
@@ -948,7 +946,7 @@ template <IsDBusStruct T>
 T UnmarshalDBusStruct(std::vector<byte> const& dbusType, uint32_t& arrPointer)
 {
   return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
-  { return std::make_tuple(UnmarshalDBusStruct<T, Is, std::tuple_size_v<T>>(dbusType, arrPointer)...); }(std::make_index_sequence<std::tuple_size_v<T>>{});
+  { return T{UnmarshalDBusStruct<T, Is, std::tuple_size_v<T>>(dbusType, arrPointer)...}; }(std::make_index_sequence<std::tuple_size_v<T>>{});
 }
 
 template <IsDBusMap T>

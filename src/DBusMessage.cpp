@@ -22,8 +22,11 @@ namespace
   template <DBusMessageType MsgType>
   std::vector<byte> CreateDBusMessage(uint32_t serial, std::vector<byte> messageBody, std::vector<DBusMessageFlags> const& messageFlags,
                                       std::string const& method, ObjectPath const& objectPath, std::optional<std::string> const& interface,
-                                      std::optional<std::string> destination, std::optional<Signature> const& signature, std::string const& error)
+                                      std::optional<std::string> destination, std::optional<Signature> const& signature,
+                                      [[maybe_unused]] std::string const& error)
   {
+    // [TODO]: Implement errors
+
     // Signature of a DBus Header is yyyyuua(yv)
     // y = byte
     // u = uint32_t
@@ -148,9 +151,9 @@ DBusMessage::DBusMessage(std::string method, ObjectPath path, std::optional<std:
   : m_method(std::move(method))
   , m_path(std::move(path))
   , m_interface(std::move(interface))
+  , m_flags()
   , m_signature(std::move(signature))
   , m_destination(std::move(destination))
-  , m_flags()
   , m_messageBody(std::move(messageBody))
 {
   if (m_path.Empty())
@@ -160,8 +163,8 @@ DBusMessage::DBusMessage(std::string method, ObjectPath path, std::optional<std:
 }
 
 DBusMessage::DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
-  : m_header(std::move(header))
-  , m_messageBody(std::move(messageBody))
+  : m_messageBody(std::move(messageBody))
+  , m_header(std::move(header))
 {
 }
 
@@ -171,9 +174,6 @@ DBusMessage DBusMessage::ParseMessage(std::vector<byte> messageBytes)
   DBusMessageHeader header{std::ranges::to<std::vector>(messageBytes | std::views::take(FIRST_HEADER_PART_SIZE))};
 
   arrPointer += FIRST_HEADER_PART_SIZE;
-
-  uint32_t const headerFieldsLength{
-      UnmarshalDBusType<uint32_t>(std::ranges::to<std::vector>(messageBytes | std::views::drop(arrPointer) | std::views::take(sizeof(uint32_t))), "u")};
 
   header.ParseRemainderOfHeader(messageBytes, arrPointer);
 

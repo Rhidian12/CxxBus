@@ -1,5 +1,8 @@
 #include "DBusHelpers.h"
 
+#include <format>
+#include <stdexcept>
+
 #include "DBusTypes.h"
 
 bool IsDBusBasicFixedTypeCode(unsigned char c)
@@ -122,12 +125,7 @@ uint8_t GetAlignmentOfSignature(Signature const& signature)
     case DBusTypeCodes::DOUBLE:
     case DBusTypeCodes::STRUCT_BEGIN:
       return 8;
-    case DBusTypeCodes::STRUCT:
-    case DBusTypeCodes::STRUCT_END:
-    case DBusTypeCodes::DICT:
-    case DBusTypeCodes::DICT_BEGIN:
-    case DBusTypeCodes::DICT_END:
-    case DBusTypeCodes::INVALID:
-      std::unreachable();
+    default:
+      throw std::runtime_error{std::format("Alignment of signature '{}' cannot be requested", signature.GetSignature()[0])};
   }
 }

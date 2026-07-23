@@ -3,9 +3,11 @@
 #include <cstring>
 #include <iostream>
 
-#include "DBus.h"
+#include "src/DBus.h"
 
-struct MarshalTestSuite : ::testing::Test {};
+struct MarshalTestSuite : ::testing::Test
+{
+};
 
 // clang-format off
 

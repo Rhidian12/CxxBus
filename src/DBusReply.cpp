@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <optional>
 #include <ranges>
@@ -44,6 +45,9 @@ namespace
     return {.serial = header.GetType<5>(),
             .replySerial = 0,
             .messageType = static_cast<DBusMessageType>(header.GetType<1>()),
+            .objectPath = {},
+            .interface = {},
+            .member = {},
             .signature = std::nullopt,
             .messageLength = header.GetType<4>(),
             .headerFieldLength = 0,
@@ -75,7 +79,7 @@ namespace
     if (serialIt == headerFieldData.cend())
     {
       auto const requiredHeaderFieldIt =
-          std::ranges::find_if(HEADER_FIELDS, [&data](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::REPLY_SERIAL; });
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::REPLY_SERIAL; });
       assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
       if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
       {
@@ -88,7 +92,7 @@ namespace
     if (objectPathIt == headerFieldData.cend())
     {
       auto const requiredHeaderFieldIt =
-          std::ranges::find_if(HEADER_FIELDS, [&data](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::PATH; });
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::PATH; });
       assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
       if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
       {
@@ -101,7 +105,7 @@ namespace
     if (interfaceIt == headerFieldData.cend())
     {
       auto const requiredHeaderFieldIt =
-          std::ranges::find_if(HEADER_FIELDS, [&data](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::INTERFACE; });
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::INTERFACE; });
       assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
       if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
       {
@@ -114,7 +118,7 @@ namespace
     if (memberIt == headerFieldData.cend())
     {
       auto const requiredHeaderFieldIt =
-          std::ranges::find_if(HEADER_FIELDS, [&data](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::MEMBER; });
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::MEMBER; });
       assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
       if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
       {

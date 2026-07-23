@@ -2,20 +2,16 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <cstdlib>
-#include <format>
+#include <iostream>
 #include <optional>
-#include <queue>
 #include <stdexcept>
 
 #include "DBusMessage.h"
-#include "DBusReply.h"
 
 class DBusError : public std::runtime_error
 {

@@ -2,10 +2,10 @@
 
 #include <cstdint>
 
-#include "DBus.h"
-#include "DBusMessage.h"
-#include "DBusReply.h"
-#include "DBusTypes.h"
+#include "src/DBus.h"
+#include "src/DBusMessage.h"
+#include "src/DBusReply.h"
+#include "src/DBusTypes.h"
 
 namespace
 {

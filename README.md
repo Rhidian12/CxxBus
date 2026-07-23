@@ -2,11 +2,18 @@
 
 DBus implementation in C++
 
-Run tests:
-```
-clang++ -std=c++23 test_marshalling.cpp DBusMessage.cpp DBusConnection.cpp DBusReply.cpp DBusTypes.cpp DBusHelpers.cpp -O0 -g -lpthread -lgtest -lgtest_main
+The project is built via CMake:
 
-clang++ -std=c++23 test_unmarshalling.cpp DBusMessage.cpp DBusConnection.cpp DBusReply.cpp DBusTypes.cpp DBusHelpers.cpp -O0 -g -lpthread -lgtest -lgtest_main
+```md
+# Configure
+cmake -S . -B build
 
-clang++ -std=c++23 test_message.cpp DBusMessage.cpp DBusConnection.cpp DBusReply.cpp DBusTypes.cpp DBusHelpers.cpp -O0 -g -lpthread -lgtest -lgtest_main
+# Configure in DEBUG
+cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build
+
+# Configure a specific C++ compiler:
+cmake -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -S . -B build
+
+# To run all test cases
+cmake --build build --target run_all_tests
 ```
