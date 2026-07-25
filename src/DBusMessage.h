@@ -6,7 +6,9 @@
 #include <vector>
 
 #include "DBus.h"
+#include "DBusHelpers.h"
 #include "DBusReply.h"
+#include "DBusTypes.h"
 
 class InvalidDBusPath : public std::runtime_error
 {
@@ -34,33 +36,24 @@ class DBusMessage
 
   DBusMessageHeader m_header;
 
- private:
-  DBusMessage(std::string method, ObjectPath path, std::optional<std::string> interface, std::optional<std::string> destination,
-              std::optional<Signature> signature, std::vector<byte> messageBody);
-
  public:
   DBusMessage() = default;
-  DBusMessage(std::string method, ObjectPath path);
-  DBusMessage(std::string method, ObjectPath path, std::string interface);
-  DBusMessage(std::string method, ObjectPath path, std::string interface, std::string destination);
-  template <IsDBusType T>
-  DBusMessage(T&& value, std::string method, ObjectPath path, std::string interface)
-    : DBusMessage(std::move(method), std::move(path), std::move(interface), std::nullopt, GetTypeSignature<std::remove_cvref_t<T>>(),
-                  MarshalDBusType(std::forward<T>(value)))
-  {
-  }
-
-  template <IsDBusType T>
-  DBusMessage(T&& value, std::string method, ObjectPath path, std::string interface, std::string destination)
-    : DBusMessage(std::move(method), std::move(path), std::move(interface), std::move(destination), GetTypeSignature<std::remove_cvref_t<T>>(),
-                  MarshalDBusType(std::forward<T>(value)))
-  {
-  }
-
   // For incoming messages that are NOT replies to an outgoing message
   DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
 
-  static DBusMessage ParseMessage(std::vector<byte> messageBytes);
+  // The methods to create a DBus Message with. It starts with `Create()` and then allows other methods to chain into it.
+  static DBusMessage Create(std::string method);
+  DBusMessage& Path(ObjectPath path);
+  DBusMessage& Interface(std::string interface);
+  DBusMessage& Destination(std::string destination);
+  template <typename T>
+  DBusMessage& Parameter(T&& value)
+  {
+    m_signature = GetTypeSignature<T>();
+    m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
+
+    return *this;
+  }
 
   DBusMessage(DBusMessage const&) = default;
   DBusMessage(DBusMessage&&) = default;

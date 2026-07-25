@@ -511,7 +511,6 @@ void MarshalBasicStringlikeType(T const& value, std::vector<byte>& dbusType)
     MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
   }
 
-  // [TODO]: Handle UTF-8
   for (unsigned char c : str)
   {
     dbusType.push_back(c);

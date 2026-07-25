@@ -117,8 +117,8 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
 
   // Get our unique bus name
-  std::optional<DBusMessage> reply =
-      co_await SendMessageInternal(DBusMessage{"Hello", ObjectPath{"/org/freedesktop/DBus"}, "org.freedesktop.DBus", "org.freedesktop.DBus"});
+  std::optional<DBusMessage> reply = co_await SendMessageInternal(
+      DBusMessage::Create("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus").Destination("org.freedesktop.DBus"));
   if (reply.has_value())
   {
     m_uniqueConnection = reply->Get<std::string>();
@@ -127,9 +127,11 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   std::cout << "Unique Connection ID: " << m_uniqueConnection << "\n";
 
   // Now, request a well-known name from the dbus-daemon
-  DBusMessage message{MultipleCompleteTypes<std::string, uint32_t>{m_wellKnownName.GetName(), static_cast<uint32_t>(0x1)}, "RequestName",
-                      ObjectPath{"/org/freedesktop/DBus"}, "org.freedesktop.DBus", "org.freedesktop.DBus"};
-  reply = co_await SendMessageInternal(message);
+  reply = co_await SendMessageInternal(DBusMessage::Create("RequestName")
+                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                           .Interface("org.freedesktop.DBus")
+                                           .Destination("org.freedesktop.DBus")
+                                           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{m_wellKnownName.GetName(), static_cast<uint32_t>(0x1)}));
 
   // [TODO]: We're expecting a reply, not getting a reply is an error and we shouldn't have to explicitly check that
   if (reply.has_value())

@@ -4,6 +4,7 @@
 
 #include "DBusConnection.h"
 #include "DBusTypes.h"
+#include "src/DBusMessage.h"
 
 boost::asio::awaitable<void> async_main(boost::asio::io_context& ioService)
 {
@@ -11,13 +12,13 @@ boost::asio::awaitable<void> async_main(boost::asio::io_context& ioService)
   std::cout << "Created connection\n";
 
   std::cout << "Sending first message\n";
-  co_await conn->SendMessage(DBusMessage{"EchoMethod", ObjectPath{"/echo"}, "com.example.Echo", "com.example.Echo"});
+  co_await conn->SendMessage(DBusMessage::Create("EchoMethod").Path(ObjectPath{"/echo"}).Interface("com.example.Echo").Destination("com.example.Echo"));
   std::cout << "Sending second message\n";
-  co_await conn->SendMessage(DBusMessage{"EchoMethod", ObjectPath{"/echo"}, "com.example.Echo", "com.example.Echo"});
+  co_await conn->SendMessage(DBusMessage::Create("EchoMethod").Path(ObjectPath{"/echo"}).Interface("com.example.Echo").Destination("com.example.Echo"));
   std::cout << "Sending third message\n";
-  co_await conn->SendMessage(DBusMessage{"EchoMethod", ObjectPath{"/echo"}, "com.example.Echo", "com.example.Echo"});
+  co_await conn->SendMessage(DBusMessage::Create("EchoMethod").Path(ObjectPath{"/echo"}).Interface("com.example.Echo").Destination("com.example.Echo"));
   std::cout << "Sending fourth message\n";
-  co_await conn->SendMessage(DBusMessage{"EchoMethod", ObjectPath{"/echo"}, "com.example.Echo", "com.example.Echo"});
+  co_await conn->SendMessage(DBusMessage::Create("EchoMethod").Path(ObjectPath{"/echo"}).Interface("com.example.Echo").Destination("com.example.Echo"));
 }
 
 int main()

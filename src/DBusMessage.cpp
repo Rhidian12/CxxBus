@@ -136,50 +136,35 @@ namespace
   }
 }  // namespace
 
-DBusMessage::DBusMessage(std::string method, ObjectPath path, std::string interface)
-  : DBusMessage(std::move(method), std::move(path), std::move(interface), std::nullopt, std::nullopt, {})
+DBusMessage DBusMessage::Create(std::string method)
 {
+  DBusMessage message;
+  message.m_method = std::move(method);
+  return message;
 }
 
-DBusMessage::DBusMessage(std::string method, ObjectPath path, std::string interface, std::string destination)
-  : DBusMessage(std::move(method), std::move(path), std::move(interface), destination, std::nullopt, {})
+DBusMessage& DBusMessage::Path(ObjectPath path)
 {
+  m_path = std::move(path);
+  return *this;
 }
 
-DBusMessage::DBusMessage(std::string method, ObjectPath path, std::optional<std::string> interface, std::optional<std::string> destination,
-                         std::optional<Signature> signature, std::vector<byte> messageBody)
-  : m_method(std::move(method))
-  , m_path(std::move(path))
-  , m_interface(std::move(interface))
-  , m_flags()
-  , m_signature(std::move(signature))
-  , m_destination(std::move(destination))
-  , m_messageBody(std::move(messageBody))
+DBusMessage& DBusMessage::Interface(std::string interface)
 {
-  if (m_path.Empty())
-  {
-    throw InvalidDBusPath{"Object Path cannot be empty when constructing DBus Message"};
-  }
+  m_interface = std::move(interface);
+  return *this;
+}
+
+DBusMessage& DBusMessage::Destination(std::string destination)
+{
+  m_destination = std::move(destination);
+  return *this;
 }
 
 DBusMessage::DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
   : m_messageBody(std::move(messageBody))
   , m_header(std::move(header))
 {
-}
-
-DBusMessage DBusMessage::ParseMessage(std::vector<byte> messageBytes)
-{
-  uint32_t arrPointer{};
-  DBusMessageHeader header{std::ranges::to<std::vector>(messageBytes | std::views::take(FIRST_HEADER_PART_SIZE))};
-
-  arrPointer += FIRST_HEADER_PART_SIZE;
-
-  header.ParseRemainderOfHeader(messageBytes, arrPointer);
-
-  AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
-
-  return DBusMessage{std::move(header), std::ranges::to<std::vector>(messageBytes | std::views::drop(arrPointer))};
 }
 
 std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
