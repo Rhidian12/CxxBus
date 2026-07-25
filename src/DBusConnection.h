@@ -3,11 +3,15 @@
 #include <unistd.h>
 
 #include <boost/asio.hpp>
+#include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <iostream>
+#include <boost/system/detail/error_code.hpp>
+#include <cstdint>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 
@@ -20,17 +24,26 @@ class DBusError : public std::runtime_error
   using std::runtime_error::runtime_error;
 };
 
-class DBusConnection
+enum class CreateConnectionDetached : uint8_t
+{
+  NO = 0,
+  YES = 1,
+};
+
+class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 {
  private:
   boost::asio::io_context& m_ioContext;
-  boost::asio::local::stream_protocol::socket m_socket;
+  std::shared_ptr<boost::asio::local::stream_protocol::socket> m_socket;
 
   // Store channels to make our 'SendMessage' be awaitable
-  std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*> m_replyChannels;
+  std::shared_ptr<std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*>> m_replyChannels;
 
   // Send messages to the SendLoop() coroutine
-  boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)> m_sendLoop;
+  std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)>> m_sendLoop;
+
+  bool m_connectionReady;
+  std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> m_connectionCompleted;
 
   uint32_t m_serial;
   std::string m_uniqueConnection;
@@ -42,32 +55,16 @@ class DBusConnection
   boost::asio::awaitable<void> SendLoop();
   boost::asio::awaitable<void> ReadLoop();
 
+ private:
+  DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
+
+  // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
+  // Prefer 'SendMessage()' whenever possible
+  boost::asio::awaitable<std::optional<DBusMessage>> SendMessageInternal(DBusMessage const& message);
+
  public:
-  DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName)
-    : m_ioContext(ioService)
-    , m_socket(m_ioContext)
-    , m_sendLoop(m_ioContext, 10)
-    , m_serial{1}
-    , m_uniqueConnection{}
-    , m_wellKnownName(std::move(wellKnownName))
-  {
-    boost::asio::co_spawn(m_ioContext, Connect(),
-                          [](std::exception_ptr e)
-                          {
-                            if (e)
-                            {
-                              try
-                              {
-                                std::rethrow_exception(e);
-                              }
-                              catch (std::exception const& ex)
-                              {
-                                std::cerr << "Error in Connect coroutine: " << ex.what() << "\n";
-                                throw;
-                              }
-                            }
-                          });
-  }
+  static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
+                                                                        CreateConnectionDetached connectionMethod);
 
   boost::asio::awaitable<std::optional<DBusMessage>> SendMessage(DBusMessage const& message);
 
