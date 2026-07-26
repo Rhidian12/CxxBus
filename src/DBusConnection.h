@@ -9,8 +9,10 @@
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include <boost/signals2.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -33,21 +35,28 @@ enum class CreateConnectionDetached : uint8_t
 class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 {
  private:
+  struct InternalState
+  {
+    boost::asio::local::stream_protocol::socket socket;
+
+    // Store channels to make our 'SendMessage' be awaitable
+    std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*> replyChannels;
+    boost::signals2::signal<void(DBusMessage)> onIncomingSignal;
+
+    // Send messages to the SendLoop() coroutine
+    boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)> sendLoop;
+
+    bool connectionReady;
+    boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
+
+    uint32_t serial;
+    std::string uniqueConnection;
+    DBusWellKnownName wellKnownName;
+  };
+
+ private:
   boost::asio::io_context& m_ioContext;
-  std::shared_ptr<boost::asio::local::stream_protocol::socket> m_socket;
-
-  // Store channels to make our 'SendMessage' be awaitable
-  std::shared_ptr<std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*>> m_replyChannels;
-
-  // Send messages to the SendLoop() coroutine
-  std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)>> m_sendLoop;
-
-  bool m_connectionReady;
-  std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> m_connectionCompleted;
-
-  uint32_t m_serial;
-  std::string m_uniqueConnection;
-  DBusWellKnownName m_wellKnownName;
+  std::shared_ptr<InternalState> m_state;
 
  private:
   boost::asio::awaitable<void> AuthenticateDBusConnection();
@@ -63,13 +72,10 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   boost::asio::awaitable<std::optional<DBusMessage>> SendMessageInternal(DBusMessage const& message);
 
  public:
+  ~DBusConnection();
   static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
                                                                         CreateConnectionDetached connectionMethod);
 
+  void ReceiveIncomingMessages(std::function<void(DBusMessage)> callback);
   boost::asio::awaitable<std::optional<DBusMessage>> SendMessage(DBusMessage const& message);
-
-  ~DBusConnection()
-  {
-    ::unlink("/tmp/dbus-test");
-  }
 };
