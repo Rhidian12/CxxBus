@@ -48,6 +48,7 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
     bool connectionReady;
     boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
+    int nrOfWaiters; // Number of coroutines waiting for the connection to be ready
 
     uint32_t serial;
     std::string uniqueConnection;

@@ -15,3 +15,8 @@ define_unit_test(NAME test_message
                   SOURCES test_message.cpp
                   LIBRARIES cxxbus-lib
                   INCLUDE_DIRS ${cxxbus-include-dir})
+
+define_unit_test(NAME test_dbus
+                  SOURCES test_dbus.cpp
+                  LIBRARIES cxxbus-lib
+                  INCLUDE_DIRS ${cxxbus-include-dir})

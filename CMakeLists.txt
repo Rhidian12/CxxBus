@@ -20,6 +20,20 @@ else()
   add_compile_options(-Wall -Wextra) # -Werror
 endif()
 
+if(ASAN)
+  message(STATUS "Enabling AddressSanitizer")
+
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address -fno-omit-frame-pointer)
+endif()
+
+if(USAN)
+  message(STATUS "Enabling UndefinedBehaviorSanitizer")
+
+  add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=undefined -fno-omit-frame-pointer)
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include("build-system/UnitTests.cmake")

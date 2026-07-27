@@ -6,6 +6,7 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/write.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/system/system_error.hpp>
 #include <exception>
@@ -77,6 +78,7 @@ DBusConnection::DBusConnection(boost::asio::io_context& ioService, DBusWellKnown
                           .sendLoop = boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)>{m_ioContext, 10},
                           .connectionReady = false,
                           .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{m_ioContext},
+                          .nrOfWaiters = 0,
                           .serial = 1,
                           .uniqueConnection = "",
                           .wellKnownName = std::move(wellKnownName)})
@@ -85,9 +87,9 @@ DBusConnection::DBusConnection(boost::asio::io_context& ioService, DBusWellKnown
 
 DBusConnection::~DBusConnection()
 {
-  std::cout << "Destroying!\n";
-  // m_state->sendLoop.close();
-  // m_state->socket.close();
+  boost::system::error_code ec;
+  std::ignore = m_state->socket.close(ec);
+  m_state->sendLoop.close();
 }
 
 boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
@@ -117,7 +119,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 {
   // Connect to DBus daemon
   boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-  co_await m_state->socket.async_connect(endpoint, boost::asio::use_awaitable);
+  co_await m_state->socket.async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
 
   co_await AuthenticateDBusConnection();
 
@@ -157,12 +159,20 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 
   std::cout << "Connection done. Sending signal\n";
   m_state->connectionReady = true;
-  co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+  if (m_state->nrOfWaiters > 0)
+  {
+    co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+  }
 }
 
 boost::asio::awaitable<void> DBusConnection::SendLoop()
 {
   std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
+  if (weakThis.expired())
+  {
+    co_return;
+  }
+
   auto state = m_state;
 
   while (!weakThis.expired())
@@ -171,8 +181,25 @@ boost::asio::awaitable<void> DBusConnection::SendLoop()
     {
       // Wait for an incoming message to send
       auto [message, serial] = co_await state->sendLoop.async_receive(boost::asio::use_awaitable);
+      std::cout << "Got message to send, serial: " << serial << "\n";
 
-      co_await state->socket.async_send(boost::asio::buffer(message.Serialize(serial)), boost::asio::use_awaitable);
+      co_await boost::asio::async_write(state->socket, boost::asio::buffer(message.Serialize(serial)), boost::asio::use_awaitable);
+      std::cout << "sent message\n";
+    }
+    catch (boost::system::system_error const& ex)
+    {
+      if (ex.code().category().name() == std::string{"asio.channel"} && ex.code().value() == 1)
+      {
+        // Channel closed, exit the loop
+        break;
+      }
+      else if (ex.code().category().name() == std::string{"system"} && ex.code().value() == 125)
+      {
+        // Operation cancelled. Exit the loop
+        break;
+      }
+
+      throw;  // rethrow the exception if it's not one of the expected ones
     }
     catch (std::exception const& ex)
     {
@@ -184,6 +211,11 @@ boost::asio::awaitable<void> DBusConnection::SendLoop()
 boost::asio::awaitable<void> DBusConnection::ReadLoop()
 {
   std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
+  if (weakThis.expired())
+  {
+    co_return;
+  }
+
   std::vector<byte> rawFullReply{};
   auto state = m_state;
 
@@ -239,6 +271,21 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
         }
       }
     }
+    catch (boost::system::system_error const& ex)
+    {
+      if (ex.code().category().name() == std::string{"asio.channel"} && ex.code().value() == 1)
+      {
+        // Channel closed, exit the loop
+        break;
+      }
+      else if (ex.code().category().name() == std::string{"system"} && ex.code().value() == 125)
+      {
+        // Operation cancelled. Exit the loop
+        break;
+      }
+
+      throw;  // rethrow the exception if it's not one of the expected ones
+    }
     catch (std::exception const& ex)
     {
       std::cerr << "Error occurred in ReadLoop: " << ex.what() << "\n";
@@ -257,11 +304,13 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessageIn
   }
 
   // 2nd, send our message to the SendLoop() coroutine to actually send the message
+  std::cout << "Sending message to sendloop\n";
   co_await m_state->sendLoop.async_send(boost::system::error_code{}, std::make_tuple(message, m_state->serial++), boost::asio::use_awaitable);
 
   // [TODO]: If we don't have a channel, don't wait on it, just return std::nullopt
   // 3rd, wait for the reply to be sent back to us from the ReadLoop() coroutine
   DBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
+  m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
 
   if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
   {
@@ -280,6 +329,7 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessage(D
   if (!m_state->connectionReady)
   {
     std::cout << "Connection not ready yet, waiting for it to complete\n";
+    m_state->nrOfWaiters++;
     co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
   }
 
