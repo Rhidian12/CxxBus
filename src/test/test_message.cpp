@@ -4,12 +4,12 @@
 
 #include "src/DBus.h"
 #include "src/DBusMessage.h"
-#include "src/DBusReply.h"
+#include "src/IncomingDBusMessage.h"
 #include "src/DBusTypes.h"
 
 namespace
 {
-  DBusMessage ParseFullMessage(std::vector<byte> const& fullMessageBytes)
+  IncomingDBusMessage ParseFullMessage(std::vector<byte> const& fullMessageBytes)
   {
     uint32_t arrPointer{};
     DBusMessageHeader header{std::ranges::to<std::vector>(fullMessageBytes | std::views::take(FIRST_HEADER_PART_SIZE))};
@@ -22,7 +22,7 @@ namespace
 
     AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
 
-    return DBusMessage{std::move(header), std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer))};
+    return IncomingDBusMessage{std::move(header), std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer))};
   }
 }  // namespace
 
@@ -191,7 +191,7 @@ TEST_F(DBusMessageTestSuite, DeserializeHelloMessageRoundTrip)
   };
   ASSERT_EQ(bytes.size(), 96u);
  
-  DBusMessage message = ParseFullMessage(bytes);
+  IncomingDBusMessage message = ParseFullMessage(bytes);
   auto const& header = message.GetHeader();
  
   EXPECT_EQ(header.GetMessageType(), DBusMessageType::METHOD_CALL);
@@ -237,7 +237,7 @@ TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
   };
   ASSERT_EQ(bytes.size(), 42u);
  
-  DBusMessage message = ParseFullMessage(bytes);
+  IncomingDBusMessage message = ParseFullMessage(bytes);
   auto const& header = message.GetHeader();
  
   EXPECT_EQ(header.GetMessageType(), DBusMessageType::METHOD_RETURN);  // METHOD_RETURN

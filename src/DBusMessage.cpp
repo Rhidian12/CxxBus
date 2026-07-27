@@ -161,12 +161,6 @@ DBusMessage& DBusMessage::Destination(std::string destination)
   return *this;
 }
 
-DBusMessage::DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
-  : m_messageBody(std::move(messageBody))
-  , m_header(std::move(header))
-{
-}
-
 std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
 {
   return CreateDBusMessage<DBusMessageType::METHOD_CALL>(serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");
@@ -175,16 +169,6 @@ std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
 std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const
 {
   return m_flags;
-}
-
-DBusMessageHeader const& DBusMessage::GetHeader() const
-{
-  return m_header;
-}
-
-bool DBusMessage::HasArguments() const
-{
-  return !m_messageBody.empty();
 }
 
 ObjectPath const& DBusMessage::GetPath() const

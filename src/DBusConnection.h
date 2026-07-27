@@ -19,6 +19,7 @@
 
 #include "DBusMessage.h"
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 class DBusError : public std::runtime_error
 {
@@ -40,8 +41,8 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
     boost::asio::local::stream_protocol::socket socket;
 
     // Store channels to make our 'SendMessage' be awaitable
-    std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*> replyChannels;
-    boost::signals2::signal<void(DBusMessage)> onIncomingSignal;
+    std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*> replyChannels;
+    boost::signals2::signal<void(IncomingDBusMessage)> onIncomingSignal;
 
     // Send messages to the SendLoop() coroutine
     boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)> sendLoop;
@@ -70,13 +71,13 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
   // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
   // Prefer 'SendMessage()' whenever possible
-  boost::asio::awaitable<std::optional<DBusMessage>> SendMessageInternal(DBusMessage const& message);
+  boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage const& message);
 
  public:
   ~DBusConnection();
   static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
                                                                         CreateConnectionDetached connectionMethod);
 
-  void ReceiveIncomingMessages(std::function<void(DBusMessage)> callback);
-  boost::asio::awaitable<std::optional<DBusMessage>> SendMessage(DBusMessage const& message);
+  void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback);
+  boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessage(DBusMessage const& message);
 };

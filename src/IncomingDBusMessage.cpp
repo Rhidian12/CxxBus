@@ -1,4 +1,4 @@
-#include "DBusReply.h"
+#include "IncomingDBusMessage.h"
 
 #include <algorithm>
 #include <cassert>
@@ -193,4 +193,25 @@ void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)
 void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer)
 {
   UnmarshalDBusHeader(data, m_data, arrPointer);
+}
+
+IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
+  : m_messageBody(std::move(messageBody))
+  , m_header(std::move(header))
+{
+}
+
+DBusMessageHeader const& IncomingDBusMessage::GetHeader() const
+{
+  return m_header;
+}
+
+bool IncomingDBusMessage::HasArguments() const
+{
+  return !m_messageBody.empty();
+}
+
+std::vector<byte> const& IncomingDBusMessage::GetRawData() const
+{
+  return m_messageBody;
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <stdexcept>
 
 #include "DBus.h"
 #include "DBusTypes.h"
@@ -49,4 +48,30 @@ class DBusMessageHeader
 
   void ParseHeaderFieldLength(std::vector<byte> data);
   void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
+};
+
+class IncomingDBusMessage
+{
+ private:
+  std::vector<uint8_t> m_messageBody;
+  DBusMessageHeader m_header;
+
+ public:
+  IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
+  IncomingDBusMessage() = default;
+
+  DBusMessageHeader const& GetHeader() const;
+
+  template <IsDBusType T>
+  T Get() const
+  {
+    return UnmarshalDBusType<T>(m_messageBody, m_header.GetSignature()->GetSignature());
+  }
+
+  // Do we have any arguments in our message body?
+  // i.e. is the message body empty or not?
+  bool HasArguments() const;
+
+  // Only useful for debugging purposes
+  std::vector<byte> const& GetRawData() const;
 };

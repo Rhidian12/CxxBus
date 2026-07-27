@@ -9,6 +9,7 @@
 #include "DBusConnection.h"
 #include "DBusMessage.h"
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
 {
@@ -24,7 +25,7 @@ boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
 
 boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnection> conn, boost::asio::io_context& ioService)
 {
-  conn->ReceiveIncomingMessages([](DBusMessage message) { std::cout << "Message Received! " << message.GetHeader().GetMember().value() << "\n"; });
+  conn->ReceiveIncomingMessages([](IncomingDBusMessage message) { std::cout << "Message Received! " << message.GetHeader().GetMember().value() << "\n"; });
 
   boost::asio::system_timer timer{ioService};
   timer.expires_after(std::chrono::seconds(5));

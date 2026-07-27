@@ -9,7 +9,7 @@ set(_ALL_TESTS_NAMES     "" CACHE INTERNAL "")
 add_library(cxxbus-lib  DBusConnection.cpp
                         DBusHelpers.cpp
                         DBusMessage.cpp
-                        DBusReply.cpp
+                        IncomingDBusMessage.cpp
                         DBusTypes.cpp
                         Log.cpp)
 

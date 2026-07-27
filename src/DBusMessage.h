@@ -7,7 +7,6 @@
 
 #include "DBus.h"
 #include "DBusHelpers.h"
-#include "DBusReply.h"
 #include "DBusTypes.h"
 
 class InvalidDBusPath : public std::runtime_error
@@ -34,12 +33,8 @@ class DBusMessage
   std::optional<std::string> m_destination;
   std::vector<uint8_t> m_messageBody;
 
-  DBusMessageHeader m_header;
-
  public:
   DBusMessage() = default;
-  // For incoming messages that are NOT replies to an outgoing message
-  DBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
 
   // The methods to create a DBus Message with. It starts with `Create()` and then allows other methods to chain into it.
   static DBusMessage Create(std::string method);
@@ -63,18 +58,6 @@ class DBusMessage
   std::vector<uint8_t> Serialize(uint32_t serial) const;
 
   std::vector<DBusMessageFlags> const& GetFlags() const;
-
-  DBusMessageHeader const& GetHeader() const;
-
-  template <IsDBusType T>
-  T Get() const
-  {
-    return UnmarshalDBusType<T>(m_messageBody, m_header.GetSignature()->GetSignature());
-  }
-
-  // Do we have any arguments in our message body?
-  // i.e. is the message body empty or not?
-  bool HasArguments() const;
 
   ObjectPath const& GetPath() const;
   Signature const& GetSignature() const;

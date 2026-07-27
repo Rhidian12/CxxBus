@@ -10,23 +10,19 @@
 #include <boost/system/detail/error_code.hpp>
 #include <boost/system/system_error.hpp>
 #include <exception>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
 
 #include "DBus.h"
-#include "DBusMessage.h"
-#include "DBusReply.h"
-#include "DBusTypes.h"
 #include "Log.h"
 
 namespace
 {
 #ifndef CXX_BUS_LOGLEVEL
 #define CXX_BUS_LOGLEVEL Error
-#endif // CXX_BUS_LOGLEVEL
-  Logger const LOGGER {.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+#endif  // CXX_BUS_LOGLEVEL
+  Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
 
   std::string ParseDBusAddress()
   {
@@ -79,7 +75,7 @@ DBusConnection::DBusConnection(boost::asio::io_context& ioService, DBusWellKnown
   : m_ioContext(ioService)
   , m_state(
         new InternalState{.socket = boost::asio::local::stream_protocol::socket{m_ioContext},
-                          .replyChannels = std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)>*>{},
+                          .replyChannels = std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
                           .onIncomingSignal = {},
                           .sendLoop = boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)>{m_ioContext, 10},
                           .connectionReady = false,
@@ -134,10 +130,10 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 
   LOGGER.LogTrace("Send loop started. Starting Read loop");
   boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
-  
+
   LOGGER.LogTrace("Read loop started. Starting connection handshake");
   // Get our unique bus name
-  std::optional<DBusMessage> reply = co_await SendMessageInternal(
+  std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(
       DBusMessage::Create("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus").Destination("org.freedesktop.DBus"));
   if (reply.has_value())
   {
@@ -145,7 +141,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
   }
 
   LOGGER.LogInfo(std::format("Unique Connection ID: {}", m_state->uniqueConnection));
-  
+
   // Now, request a well-known name from the dbus-daemon
   reply =
       co_await SendMessageInternal(DBusMessage::Create("RequestName")
@@ -257,9 +253,9 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
       co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 
       // Skip over the padding, we don't care about it
-      DBusMessage message{std::move(messageHeader), std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
+      IncomingDBusMessage message{std::move(messageHeader), std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
 
-      if (message.GetHeader().GetReplySerial().has_value())
+      if (messageHeader.GetReplySerial().has_value())
       {
         LOGGER.LogTrace(std::format("Received reply to message with serial '{}'. Signature of reply: '{}'", *message.GetHeader().GetReplySerial(),
                                     std::string{message.GetHeader().GetSignature().value_or(Signature{""})}));
@@ -307,10 +303,10 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
   }
 }
 
-boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessageInternal(DBusMessage const& message)
+boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage const& message)
 {
   // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-  boost::asio::experimental::channel<void(boost::system::error_code, DBusMessage)> replyChannel{m_ioContext, 1};
+  boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{m_ioContext, 1};
 
   if (!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED))
   {
@@ -322,7 +318,7 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessageIn
 
   // [TODO]: If we don't have a channel, don't wait on it, just return std::nullopt
   // 3rd, wait for the reply to be sent back to us from the ReadLoop() coroutine
-  DBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
+  IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
   m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
 
   if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
@@ -336,7 +332,7 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessageIn
   co_return reply;
 }
 
-boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessage(DBusMessage const& message)
+boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessage(DBusMessage const& message)
 {
   // Wait until our Connnection is ready
   if (!m_state->connectionReady)
@@ -349,7 +345,7 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessage(D
   co_return co_await SendMessageInternal(message);
 }
 
-void DBusConnection::ReceiveIncomingMessages(std::function<void(DBusMessage)> callback)
+void DBusConnection::ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback)
 {
   m_state->onIncomingSignal.connect(std::move(callback));
 }
