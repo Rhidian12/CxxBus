@@ -161,6 +161,12 @@ DBusMessage& DBusMessage::Destination(std::string destination)
   return *this;
 }
 
+DBusMessage& DBusMessage::Flag(DBusMessageFlags flag)
+{
+  m_flags.push_back(flag);
+  return *this;
+}
+
 std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
 {
   return CreateDBusMessage<DBusMessageType::METHOD_CALL>(serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");

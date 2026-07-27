@@ -27,6 +27,12 @@ class DBusError : public std::runtime_error
   using std::runtime_error::runtime_error;
 };
 
+class InternalError : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
+};
+
 enum class CreateConnectionDetached : uint8_t
 {
   NO = 0,
@@ -45,11 +51,13 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
     boost::signals2::signal<void(IncomingDBusMessage)> onIncomingSignal;
 
     // Send messages to the SendLoop() coroutine
-    boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage, uint32_t>)> sendLoop;
+    boost::asio::experimental::channel<void(boost::system::error_code, std::tuple<DBusMessage /* message */, uint32_t /* serial */,
+                                                                                  std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> /* messageSentChannel */>)>
+        sendLoop;
 
     bool connectionReady;
     boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
-    int nrOfWaiters; // Number of coroutines waiting for the connection to be ready
+    int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
     uint32_t serial;
     std::string uniqueConnection;
@@ -71,7 +79,7 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
   // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
   // Prefer 'SendMessage()' whenever possible
-  boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage const& message);
+  boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage message);
 
  public:
   ~DBusConnection();
@@ -79,5 +87,6 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
                                                                         CreateConnectionDetached connectionMethod);
 
   void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback);
-  boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessage(DBusMessage const& message);
+  boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
+  boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
 };

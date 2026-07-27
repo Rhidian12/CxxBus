@@ -4,7 +4,6 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <functional>
-#include <iostream>
 
 #include "src/DBusConnection.h"
 #include "src/DBusMessage.h"
@@ -49,11 +48,10 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     auto reply = co_await conn->SendMessage(
         DBusMessage::Create("Introspect").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus.Introspectable").Destination("org.freedesktop.DBus"));
   
-    EXPECT_TRUE(reply.has_value());
-    EXPECT_TRUE(reply.value().GetHeader().GetSignature().has_value());
-    EXPECT_EQ(reply.value().GetHeader().GetSignature().value(), Signature("s"));
-    EXPECT_TRUE(reply.value().HasArguments());
-    EXPECT_EQ(reply.value().Get<std::string>(), R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
+    EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
+    EXPECT_TRUE(reply.HasArguments());
+    EXPECT_EQ(reply.Get<std::string>(), R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
   <interface name="org.freedesktop.DBus">
@@ -206,10 +204,9 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
   {
     auto conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     auto reply = co_await conn->SendMessage(DBusMessage::Create("NameHasOwner").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus").Destination("org.freedesktop.DBus").Parameter(std::string{"com.dbus.CxxTest"}));
-    EXPECT_TRUE(reply.has_value());
-    EXPECT_TRUE(reply.value().GetHeader().GetSignature().has_value());
-    EXPECT_EQ(reply.value().GetHeader().GetSignature().value(), Signature("b"));
-    EXPECT_TRUE(reply.value().HasArguments());
-    EXPECT_EQ(reply.value().Get<bool>(), true);
+    EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
+    EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
+    EXPECT_TRUE(reply.HasArguments());
+    EXPECT_EQ(reply.Get<bool>(), true);
   };
 }

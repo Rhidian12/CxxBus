@@ -41,6 +41,7 @@ class DBusMessage
   DBusMessage& Path(ObjectPath path);
   DBusMessage& Interface(std::string interface);
   DBusMessage& Destination(std::string destination);
+  DBusMessage& Flag(DBusMessageFlags flag);
   template <typename T>
   DBusMessage& Parameter(T&& value)
   {
