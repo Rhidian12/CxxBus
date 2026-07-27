@@ -88,3 +88,13 @@ std::string const& DBusWellKnownName::GetName() const
 {
   return m_name;
 }
+
+uint32_t DBusWellKnownName::size() const
+{
+  return m_name.size();
+}
+
+DBusWellKnownName::operator std::string() const
+{
+  return m_name;
+}

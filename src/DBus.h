@@ -722,7 +722,7 @@ std::vector<byte> MarshalDBusType(T const& value)
   GetSizeOfDBusType(value, size);
   dbusType.reserve(size);
 
-  MarshalDBusTypeImpl(value, dbusType);
+  MarshalDBusTypeImpl<std::remove_cvref_t<T>>(value, dbusType);
   return dbusType;
 }
 

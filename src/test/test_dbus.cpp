@@ -7,12 +7,16 @@
 
 #include "src/DBusConnection.h"
 #include "src/DBusMessage.h"
+#include "src/Log.h"
+
+Logger const LOGGER{.logLevel = LogLevel::Trace};
 
 struct DBusConnectionTestSuite : ::testing::Test
 {
  public:
   boost::asio::io_context ioService;
   std::function<boost::asio::awaitable<void>()> coroutineToRun;
+  std::shared_ptr<DBusConnection> conn;
 
   void SetUp() override
   {
@@ -21,11 +25,23 @@ struct DBusConnectionTestSuite : ::testing::Test
 
   void TearDown() override
   {
-    EXPECT_NO_THROW(boost::asio::co_spawn(ioService, coroutineToRun(),
-                                          [](std::exception_ptr e)
-                                          {
-                                            if (e) std::rethrow_exception(e);
-                                          }));
+    EXPECT_NO_THROW(boost::asio::co_spawn(
+        ioService,
+        [this]() -> boost::asio::awaitable<void>
+        {
+          co_await coroutineToRun();
+          LOGGER.LogTrace("Finished running coroutine");
+          
+          if (conn != nullptr)
+          {
+            LOGGER.LogTrace("Closing DBus connection");
+            co_await conn->Close();
+          }
+        },
+        [](std::exception_ptr e)
+        {
+          if (e) std::rethrow_exception(e);
+        }));
 
     ioService.run();
   }
@@ -35,7 +51,7 @@ TEST_F(DBusConnectionTestSuite, TestConnectingToDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     EXPECT_TRUE(conn != nullptr);
   };
 }
@@ -44,10 +60,12 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
-    auto reply = co_await conn->SendMessage(
-        DBusMessage::Create("Introspect").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus.Introspectable").Destination("org.freedesktop.DBus"));
-  
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    auto reply = co_await conn->SendMessage(DBusMessage::Create("Introspect")
+                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                .Interface("org.freedesktop.DBus.Introspectable")
+                                                .Destination("org.freedesktop.DBus"));
+
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
@@ -195,15 +213,19 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   </interface>
 </node>
 )");
-    };
+  };
 }
 
 TEST_F(DBusConnectionTestSuite, TestMethodCall)
 {
-  coroutineToRun = [this]()->boost::asio::awaitable<void>
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
-    auto reply = co_await conn->SendMessage(DBusMessage::Create("NameHasOwner").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus").Destination("org.freedesktop.DBus").Parameter(std::string{"com.dbus.CxxTest"}));
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    auto reply = co_await conn->SendMessage(DBusMessage::Create("NameHasOwner")
+                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                .Interface("org.freedesktop.DBus")
+                                                .Destination("org.freedesktop.DBus")
+                                                .Parameter(std::string{"com.dbus.CxxTest"}));
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
     EXPECT_TRUE(reply.HasArguments());

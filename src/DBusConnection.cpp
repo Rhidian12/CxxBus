@@ -24,6 +24,7 @@ namespace
 #ifndef CXX_BUS_LOGLEVEL
 #define CXX_BUS_LOGLEVEL Error
 #endif  // CXX_BUS_LOGLEVEL
+
   Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
 
   std::string ParseDBusAddress()
@@ -91,6 +92,41 @@ DBusConnection::DBusConnection(boost::asio::io_context& ioService, DBusWellKnown
 
 DBusConnection::~DBusConnection()
 {
+  if (m_state->socket.is_open())
+  {
+    boost::system::error_code ec;
+    std::ignore = m_state->socket.close(ec);
+    m_state->sendLoop.close();
+  }
+}
+
+boost::asio::awaitable<void> DBusConnection::Close()
+{
+  LOGGER.LogInfo("Closing DBus Connection");
+  
+  // Release our well-known name from the dbus-daemon
+  IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Create("ReleaseName")
+                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                           .Destination("org.freedesktop.DBus")
+                           .Interface("org.freedesktop.DBus")
+                           .Parameter(std::string{m_state->wellKnownName}));
+
+  switch (ret.Get<uint32_t>())
+  {
+    case 1:
+      LOGGER.LogDebug(std::format("Successfully released well-known name '{}'", m_state->wellKnownName.GetName()));
+      break;
+    case 2:
+      LOGGER.LogError(std::format("Well-known name '{}' is not owned by the dbus-daemon", m_state->wellKnownName.GetName()));
+      break;
+    case 3:
+      LOGGER.LogError(std::format("Well-known name '{}' is not owned by this connection", m_state->wellKnownName.GetName()));
+      break;
+    default:
+      LOGGER.LogError(std::format("Unknown return value from 'ReleaseName()': {}", ret.Get<uint32_t>()));
+      break;
+  }
+
   boost::system::error_code ec;
   std::ignore = m_state->socket.close(ec);
   m_state->sendLoop.close();
@@ -152,13 +188,30 @@ boost::asio::awaitable<void> DBusConnection::Connect()
                                        .Destination("org.freedesktop.DBus")
                                        .Parameter(MultipleCompleteTypes<std::string, uint32_t>{m_state->wellKnownName.GetName(), static_cast<uint32_t>(0x1)}));
 
-  // [TODO]: We're expecting a reply, not getting a reply is an error and we shouldn't have to explicitly check that
-  if (reply.has_value())
+  if (!reply.has_value())
   {
-    // [TODO]: Handle errors here
-    if (reply->Get<uint32_t>() == 1)
-    {
-    }
+    LOGGER.LogFatal("Internal error: RequestName() should not be able to return without having received a reply");
+    throw InternalError{"Internal error: RequestName() should not be able to return without having received a reply"};
+  }
+
+  switch (reply->Get<uint32_t>())
+  {
+    case 1:
+      LOGGER.LogDebug(std::format("Successfully acquired well-known name '{}'", m_state->wellKnownName.GetName()));
+      break;
+    // [TODO]: Allow user passing flags for the Well-known name.
+    case 2:
+      LOGGER.LogError(std::format("Well-known name '{}' is already owned by another connection and we did not ask to replace the name", m_state->wellKnownName.GetName()));
+      break;
+    case 3:
+      LOGGER.LogError(std::format("The well-known name '{}' already has an owner", m_state->wellKnownName.GetName()));
+      break;
+    case 4:
+      LOGGER.LogDebug("We're already owner of our well-known name");
+      break;
+    default:
+      LOGGER.LogError(std::format("Unknown return value from 'RequestName()': {}", reply->Get<uint32_t>()));
+      break;
   }
 
   LOGGER.LogTrace("Connection handshake completed.");

@@ -45,7 +45,7 @@ class DBusMessage
   template <typename T>
   DBusMessage& Parameter(T&& value)
   {
-    m_signature = GetTypeSignature<T>();
+    m_signature = GetTypeSignature<std::remove_cvref_t<T>>();
     m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
 
     return *this;

@@ -178,6 +178,9 @@ class DBusWellKnownName
   explicit DBusWellKnownName(std::string wellKnownName);
 
   std::string const& GetName() const;
+
+  uint32_t size() const;
+  explicit operator std::string() const;
 };
 
 // Signature of a DBus Header is yyyyuua(yv)

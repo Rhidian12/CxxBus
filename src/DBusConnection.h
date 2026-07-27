@@ -83,6 +83,8 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
  public:
   ~DBusConnection();
+  boost::asio::awaitable<void> Close();
+
   static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
                                                                         CreateConnectionDetached connectionMethod);
 
