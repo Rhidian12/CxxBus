@@ -76,6 +76,12 @@ class DBusMessage
   // i.e. is the message body empty or not?
   bool HasArguments() const;
 
+  ObjectPath const& GetPath() const;
+  Signature const& GetSignature() const;
+  std::string const& GetInterface() const;
+  std::string const& GetDestination() const;
+  std::string const& GetMember() const;
+
   // Only useful for debugging purposes
   std::vector<byte> const& GetRawData() const;
 };

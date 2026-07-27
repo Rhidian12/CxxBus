@@ -10,7 +10,8 @@ add_library(cxxbus-lib  DBusConnection.cpp
                         DBusHelpers.cpp
                         DBusMessage.cpp
                         DBusReply.cpp
-                        DBusTypes.cpp)
+                        DBusTypes.cpp
+                        Log.cpp)
 
 set(cxxbus-include-dir ${CMAKE_SOURCE_DIR})
 

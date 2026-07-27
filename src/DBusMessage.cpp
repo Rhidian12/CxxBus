@@ -187,6 +187,31 @@ bool DBusMessage::HasArguments() const
   return !m_messageBody.empty();
 }
 
+ObjectPath const& DBusMessage::GetPath() const
+{
+  return m_path;
+}
+
+Signature const& DBusMessage::GetSignature() const
+{
+  return *m_signature;
+}
+
+std::string const& DBusMessage::GetInterface() const
+{
+  return *m_interface;
+}
+
+std::string const& DBusMessage::GetDestination() const
+{
+  return *m_destination;
+}
+
+std::string const& DBusMessage::GetMember() const
+{
+  return m_method;
+}
+
 std::vector<byte> const& DBusMessage::GetRawData() const
 {
   return m_messageBody;

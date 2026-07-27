@@ -19,9 +19,15 @@
 #include "DBusMessage.h"
 #include "DBusReply.h"
 #include "DBusTypes.h"
+#include "Log.h"
 
 namespace
 {
+#ifndef CXX_BUS_LOGLEVEL
+#define CXX_BUS_LOGLEVEL Error
+#endif // CXX_BUS_LOGLEVEL
+  Logger const LOGGER {.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+
   std::string ParseDBusAddress()
   {
     // Looks something like: unix:path=/run/user/1000/bus
@@ -32,7 +38,7 @@ namespace
       throw std::runtime_error{"Only support unix sockets for DBus-daemon connections"};
     }
 
-    std::cout << "Got DBus address: " << dbusAddress.substr(dbusAddress.find("=") + 1) << "\n";
+    LOGGER.LogInfo(std::format("DBus address: {}", dbusAddress));
 
     return std::string{dbusAddress.substr(dbusAddress.find("=") + 1)};
   }
@@ -123,13 +129,13 @@ boost::asio::awaitable<void> DBusConnection::Connect()
 
   co_await AuthenticateDBusConnection();
 
-  std::cout << "Connected to DBus-daemon! Starting Send Loop!\n";
-
+  LOGGER.LogTrace("Connected to DBus-daemon. Starting Send loop");
   boost::asio::co_spawn(m_ioContext, SendLoop(), boost::asio::detached);
 
-  std::cout << "Starting Read Loop!\n";
+  LOGGER.LogTrace("Send loop started. Starting Read loop");
   boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
-
+  
+  LOGGER.LogTrace("Read loop started. Starting connection handshake");
   // Get our unique bus name
   std::optional<DBusMessage> reply = co_await SendMessageInternal(
       DBusMessage::Create("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus").Destination("org.freedesktop.DBus"));
@@ -138,8 +144,8 @@ boost::asio::awaitable<void> DBusConnection::Connect()
     m_state->uniqueConnection = reply->Get<std::string>();
   }
 
-  std::cout << "Unique Connection ID: " << m_state->uniqueConnection << "\n";
-
+  LOGGER.LogInfo(std::format("Unique Connection ID: {}", m_state->uniqueConnection));
+  
   // Now, request a well-known name from the dbus-daemon
   reply =
       co_await SendMessageInternal(DBusMessage::Create("RequestName")
@@ -157,7 +163,7 @@ boost::asio::awaitable<void> DBusConnection::Connect()
     }
   }
 
-  std::cout << "Connection done. Sending signal\n";
+  LOGGER.LogTrace("Connection handshake completed.");
   m_state->connectionReady = true;
   if (m_state->nrOfWaiters > 0)
   {
@@ -181,10 +187,10 @@ boost::asio::awaitable<void> DBusConnection::SendLoop()
     {
       // Wait for an incoming message to send
       auto [message, serial] = co_await state->sendLoop.async_receive(boost::asio::use_awaitable);
-      std::cout << "Got message to send, serial: " << serial << "\n";
-
       co_await boost::asio::async_write(state->socket, boost::asio::buffer(message.Serialize(serial)), boost::asio::use_awaitable);
-      std::cout << "sent message\n";
+
+      LOGGER.LogTrace(std::format("Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'", message.GetMember(), serial,
+                                  std::string{message.GetPath()}, std::string{message.GetInterface()}));
     }
     catch (boost::system::system_error const& ex)
     {
@@ -203,7 +209,7 @@ boost::asio::awaitable<void> DBusConnection::SendLoop()
     }
     catch (std::exception const& ex)
     {
-      std::cerr << "Error occurred in SendLoop: " << ex.what() << "\n";
+      LOGGER.LogError(std::format("Error occured in message send loop: {}", ex.what()));
     }
   }
 }
@@ -255,15 +261,23 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
 
       if (message.GetHeader().GetReplySerial().has_value())
       {
+        LOGGER.LogTrace(std::format("Received reply to message with serial '{}'. Signature of reply: '{}'", *message.GetHeader().GetReplySerial(),
+                                    std::string{message.GetHeader().GetSignature().value_or(Signature{""})}));
+
         if (!state->replyChannels.contains(*message.GetHeader().GetReplySerial()))
         {
           // It should not be possible to get a reply to a message we don't know
+          LOGGER.LogFatal(std::format("Received a reply with serial '{}' but we do not have the serial of the original message",
+                                      message.GetHeader().GetReplySerial().value()));
           throw std::runtime_error{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
         }
         co_await state->replyChannels[*message.GetHeader().GetReplySerial()]->async_send(boost::system::error_code{}, message);
       }
       else
       {
+        LOGGER.LogTrace(std::format("Received incoming message with serial '{}' and signature '{}'", message.GetHeader().GetSerial(),
+                                    std::string{message.GetHeader().GetSignature().value()}));
+
         // If it has no reply serial, then it means it's an incoming call
         if (!state->onIncomingSignal.empty())
         {
@@ -288,7 +302,7 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
     }
     catch (std::exception const& ex)
     {
-      std::cerr << "Error occurred in ReadLoop: " << ex.what() << "\n";
+      LOGGER.LogError(std::format("Error occured in message read loop: {}", ex.what()));
     }
   }
 }
@@ -304,7 +318,6 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessageIn
   }
 
   // 2nd, send our message to the SendLoop() coroutine to actually send the message
-  std::cout << "Sending message to sendloop\n";
   co_await m_state->sendLoop.async_send(boost::system::error_code{}, std::make_tuple(message, m_state->serial++), boost::asio::use_awaitable);
 
   // [TODO]: If we don't have a channel, don't wait on it, just return std::nullopt
@@ -328,7 +341,7 @@ boost::asio::awaitable<std::optional<DBusMessage>> DBusConnection::SendMessage(D
   // Wait until our Connnection is ready
   if (!m_state->connectionReady)
   {
-    std::cout << "Connection not ready yet, waiting for it to complete\n";
+    LOGGER.LogTrace("Connection not ready yet, waiting for it to complete");
     m_state->nrOfWaiters++;
     co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
   }
