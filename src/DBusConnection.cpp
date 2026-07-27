@@ -148,7 +148,8 @@ boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
 
   if (!reply.starts_with("OK"))
   {
-    throw std::runtime_error{"Authentication failed!"};
+    LOGGER.LogError("Authentication failed!");
+    throw DBusError{"Authentication failed!"};
   }
 
   // Yippee! All worked, so now start our DBus Connection!
