@@ -11,6 +11,7 @@
 
 #include "DBus.h"
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
@@ -22,12 +23,11 @@ namespace cxxbus
     concept IsAcceptedMessageType = requires { requires T == DBusMessageType::METHOD_CALL || T == DBusMessageType::SIGNAL; };
 
     std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody,
-                                        std::vector<DBusMessageFlags> const& messageFlags, std::string const& method, ObjectPath const& objectPath,
-                                        std::optional<std::string> const& interface, std::optional<std::string> destination,
-                                        std::optional<Signature> const& signature, [[maybe_unused]] std::string const& error)
+                                        std::vector<DBusMessageFlags> const& messageFlags, std::optional<std::string> const& method,
+                                        std::optional<ObjectPath> const& objectPath, std::optional<std::string> const& interface,
+                                        std::optional<std::string> destination, std::optional<Signature> const& signature,
+                                        std::optional<std::string> const& errorName, std::optional<uint32_t> const& replySerial)
     {
-      // [TODO]: Implement errors
-
       // Signature of a DBus Header is yyyyuua(yv)
       // y = byte
       // u = uint32_t
@@ -68,32 +68,57 @@ namespace cxxbus
         {
           case HeaderFieldCode::NONE:
           case HeaderFieldCode::INVALID:
-          case HeaderFieldCode::REPLY_SERIAL:
-          case HeaderFieldCode::ERROR_NAME:
-            throw std::runtime_error{"Not implemented yet"};
-            break;
+          throw std::runtime_error{"Not implemented yet"};
+          break;
           case HeaderFieldCode::SENDER:
           case HeaderFieldCode::DESTINATION:
           case HeaderFieldCode::UNIX_FDS:
             throw std::runtime_error{"Sender, Destination and UNIX_FDS can never be required fields!"};
             break;
+          case HeaderFieldCode::REPLY_SERIAL:
+            if (!replySerial.has_value())
+            {
+              // [TODO]: Print this as a string
+              throw DBusSerializationError{std::format("replySerial is required for message type {}", static_cast<uint8_t>(msgType))};
+            }
+            variant = Variant{replySerial.value()};
+            break;
+          case HeaderFieldCode::ERROR_NAME:
+            if (!errorName.has_value() || errorName->empty())
+            {
+              // [TODO]: Print this as a string
+              throw DBusSerializationError{std::format("ErrorName is required for message type {}", static_cast<uint8_t>(msgType))};
+            }
+            variant = Variant{errorName.value()};
+            break;
           case HeaderFieldCode::PATH:
-            variant = Variant{objectPath};
+            if (!objectPath.has_value() || objectPath->Empty())
+            {
+              // [TODO]: Print this as a string
+              throw DBusSerializationError{std::format("Path is required for message type {}", static_cast<uint8_t>(msgType))};
+            }
+            variant = Variant{*objectPath};
             break;
           case HeaderFieldCode::INTERFACE:
             if (!interface.has_value() || interface->empty())
             {
-              // Print this as a string
+              // [TODO]: Print this as a string
               throw DBusSerializationError{std::format("Interface is required for message type {}", static_cast<uint8_t>(msgType))};
             }
             variant = Variant{interface.value()};
             break;
           case HeaderFieldCode::MEMBER:
-            variant = Variant{method};
+            if (!method.has_value() || method->empty())
+            {
+              // [TODO]: Print this as a string
+              throw DBusSerializationError{std::format("Method is required for message type {}", static_cast<uint8_t>(msgType))};
+            }
+            variant = Variant{*method};
             break;
           case HeaderFieldCode::SIGNATURE:
             if (!signature.has_value() || signature->Empty())
             {
+              // [TODO]: Print this as a string
               throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body", static_cast<uint8_t>(msgType))};
             }
             variant = Variant{*signature};
@@ -145,11 +170,13 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage DBusMessage::Reply(std::string method)
+  DBusMessage DBusMessage::Reply(IncomingDBusMessage const & incomingMessage, std::string method)
   {
     DBusMessage message;
     message.m_method = std::move(method);
     message.m_messageType = DBusMessageType::METHOD_RETURN;
+    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
+    message.m_destination = incomingMessage.GetHeader().GetSender();
     return message;
   }
 
@@ -158,6 +185,18 @@ namespace cxxbus
     DBusMessage message;
     message.m_method = std::move(signal);
     message.m_messageType = DBusMessageType::SIGNAL;
+    return message;
+  }
+
+  DBusMessage DBusMessage::Error(IncomingDBusMessage const & incomingMessage, std::string errorName, std::string errorMessage)
+  {
+    DBusMessage message;
+    message.m_messageType = DBusMessageType::ERROR;
+    message.m_errorName = std::move(errorName);
+    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
+    message.m_destination = incomingMessage.GetHeader().GetSender();
+    message.Parameter(std::move(errorMessage));
+
     return message;
   }
 
@@ -187,7 +226,7 @@ namespace cxxbus
 
   std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
   {
-    return CreateDBusMessage(m_messageType, serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");
+    return CreateDBusMessage(m_messageType, serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, m_errorName, m_replySerial);
   }
 
   std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const
@@ -195,27 +234,27 @@ namespace cxxbus
     return m_flags;
   }
 
-  ObjectPath const& DBusMessage::GetPath() const
+  std::optional<ObjectPath> const& DBusMessage::GetPath() const
   {
     return m_path;
   }
 
-  Signature const& DBusMessage::GetSignature() const
+  std::optional<Signature> const& DBusMessage::GetSignature() const
   {
-    return *m_signature;
+    return m_signature;
   }
 
-  std::string const& DBusMessage::GetInterface() const
+  std::optional<std::string> const& DBusMessage::GetInterface() const
   {
-    return *m_interface;
+    return m_interface;
   }
 
-  std::string const& DBusMessage::GetDestination() const
+  std::optional<std::string> const& DBusMessage::GetDestination() const
   {
-    return *m_destination;
+    return m_destination;
   }
 
-  std::string const& DBusMessage::GetMember() const
+  std::optional<std::string> const& DBusMessage::GetMember() const
   {
     return m_method;
   }

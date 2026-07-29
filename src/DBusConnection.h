@@ -22,6 +22,7 @@
 #include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
+#include "AwaitableSignal.h"
 
 namespace cxxbus
 {
@@ -49,7 +50,7 @@ namespace cxxbus
       // Same as above, but for our sync version
       std::map<uint32_t, std::function<void(IncomingDBusMessage)>> replySyncCallbacks;
 
-      boost::signals2::signal<void(IncomingDBusMessage)> onIncomingSignal;
+      AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
 
       // Send messages to the SendLoop() coroutine
       boost::asio::experimental::channel<void(
@@ -101,7 +102,7 @@ namespace cxxbus
                                                                           CreateConnectionDetached connectionMethod);
     static std::shared_ptr<DBusConnection> CreateSync(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
 
-    void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback);
+    void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);

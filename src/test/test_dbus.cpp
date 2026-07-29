@@ -3,10 +3,15 @@
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/system_timer.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <functional>
 
 #include "src/DBusConnection.h"
+#include "src/DBusMatchRule.h"
 #include "src/DBusMessage.h"
+#include "src/DBusTypes.h"
+#include "src/IncomingDBusMessage.h"
 #include "src/Log.h"
 
 using namespace cxxbus;
@@ -53,7 +58,8 @@ TEST_F(DBusConnectionTestSuite, TestConnectingToDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     EXPECT_TRUE(conn != nullptr);
   };
 }
@@ -62,7 +68,8 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface("org.freedesktop.DBus.Introspectable")
@@ -71,7 +78,8 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
-    EXPECT_EQ(reply.Get<std::string>(), R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    EXPECT_EQ(reply.Get<std::string>(),
+              R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
   <interface name="org.freedesktop.DBus">
@@ -222,7 +230,8 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface("org.freedesktop.DBus")
@@ -239,29 +248,35 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
 
     bool extensiveMatchRuleTriggered{};
     bool simpleMatchRuleTriggered{};
-    co_await conn->AddMatchRule(DBusMatchRule::Create()
-                                    .Type(DBusMessageType::SIGNAL)
-                                    .Member("NameOwnerChanged")
-                                    .Interface("org.freedesktop.DBus")
-                                    .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
-                                [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
+    DBusMatchRule const extensiveRule{DBusMatchRule::Create()
+                                          .Type(DBusMessageType::SIGNAL)
+                                          .Member("NameOwnerChanged")
+                                          .Interface("org.freedesktop.DBus")
+                                          .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
+    co_await conn->AddMatchRule(
+        extensiveRule, [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
 
-    co_await conn->AddMatchRule(DBusMatchRule::Create().Member("NameOwnerChanged"),
+    DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
+    co_await conn->AddMatchRule(simpleRule,
                                 [&simpleMatchRuleTriggered](IncomingDBusMessage) { simpleMatchRuleTriggered = true; });
 
-    co_await conn->SendMessage(
-        DBusMessage::Method("RequestName")
-            .Path(ObjectPath{"/org/freedesktop/DBus"})
-            .Interface("org.freedesktop.DBus")
-            .Destination("org.freedesktop.DBus")
-            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-  
+    co_await conn->SendMessage(DBusMessage::Method("RequestName")
+                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                   .Interface("org.freedesktop.DBus")
+                                   .Destination("org.freedesktop.DBus")
+                                   .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                                       DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
+
     EXPECT_TRUE(extensiveMatchRuleTriggered);
     EXPECT_TRUE(simpleMatchRuleTriggered);
+
+    EXPECT_NO_THROW(co_await conn->RemoveMatchRule(extensiveRule));
+    EXPECT_NO_THROW(co_await conn->RemoveMatchRule(simpleRule));
   };
 }
 
@@ -269,7 +284,8 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     DBusMessage message{DBusMessage::Method("RequestName")
                             .Interface("org.freedesktop.DBus")
                             .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -287,5 +303,41 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
       EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
       EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
     }
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestReplying)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    LOGGER.LogInfo("Making first connection");
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    LOGGER.LogInfo("Making second connection");
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"},
+                                                 CreateConnectionDetached::NO);
+
+    conn2->ReceiveIncomingMessages(
+        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        {
+          // wtf we just got something sent SO stupid. Let's send a reply error back
+          LOGGER.LogInfo("Connection2 received the message, returning an error");
+          co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
+        });
+
+    LOGGER.LogInfo("Sending a message from connection1 to connection2");
+    EXPECT_THROW(
+        co_await conn->SendMessage(
+            DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
+        DBusError);
+    LOGGER.LogInfo("Finished sending message");
+
+    using namespace std::chrono_literals;
+    boost::asio::system_timer timer{ioService};
+    timer.expires_after(1s);
+    co_await timer.async_wait(boost::asio::use_awaitable);
+
+    co_await conn2->Close();
+    LOGGER.LogTrace("Finished closing 2nd connection");
   };
 }

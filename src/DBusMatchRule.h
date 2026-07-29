@@ -97,7 +97,7 @@ namespace cxxbus
     // Check if the incoming message matches any of our defined rules
     // We also pass a list of well-known names here in case the SENDER header field in the incoming message is a unique connection name.
     // That way, we can still check for well-known name instead of forcing the user to figure out the unique connection name of the sender.
-    bool Matches(IncomingDBusMessage const& message, std::vector<DBusWellKnownName> const& wellKnownNames) const;
+    bool Matches(IncomingDBusMessage const& message, std::vector<std::string> const& wellKnownNames) const;
 
     auto operator<=>(DBusMatchRule const&) const noexcept = default;
   };

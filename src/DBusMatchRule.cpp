@@ -187,7 +187,7 @@ namespace cxxbus
   }
 #endif  // CXX_BUS_CHECK_MATCH_OPTIONAL
 
-  bool DBusMatchRule::Matches(IncomingDBusMessage const& message, std::vector<DBusWellKnownName> const& wellKnownNames) const
+  bool DBusMatchRule::Matches(IncomingDBusMessage const& message, std::vector<std::string> const& wellKnownNames) const
   {
     DBusMessageHeader const& header{message.GetHeader()};
     bool matches{true};
@@ -197,9 +197,9 @@ namespace cxxbus
 
     auto const& sender = header.GetSender();
     CXX_BUS_CHECK_MATCH_OPTIONAL(matches, sender, m_sender)
-    for (DBusWellKnownName const& wellKnownName : wellKnownNames)
+    for (std::string const& wellKnownName : wellKnownNames)
     {
-      CXX_BUS_CHECK_MATCH(matches, sender, wellKnownName.GetName())
+      CXX_BUS_CHECK_MATCH(matches, sender, wellKnownName)
     }
 
     CXX_BUS_CHECK_MATCH_OPTIONAL(matches, header.GetInterface(), m_interface)

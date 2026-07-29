@@ -45,7 +45,7 @@ namespace cxxbus
     LOGGER.LogTrace(
         std::format("NameOwnerChanged signal triggered: '{}', '{}', '{}'", parameters.GetType<0>(), parameters.GetType<1>(), parameters.GetType<2>()));
 
-    DBusWellKnownName const wellKnownName{parameters.GetType<0>()};
+    std::string const wellKnownName{parameters.GetType<0>()};
     std::string const oldUniqueName{parameters.GetType<1>()};
     std::string const uniqueName{parameters.GetType<2>()};
 
@@ -71,13 +71,13 @@ namespace cxxbus
     }
   }
 
-  std::vector<DBusWellKnownName> DBusNameCache::GetWellKnownNames(std::string const& uniqueName) const
+  std::vector<std::string> DBusNameCache::GetWellKnownNames(std::string const& uniqueName) const
   {
-    std::vector<DBusWellKnownName> wellKnownNames{};
+    std::vector<std::string> wellKnownNames{};
     auto const it = m_wellKnownNames.find(uniqueName);
     if (it != m_wellKnownNames.cend())
     {
-      for (DBusWellKnownName const& wellKnownName : it->second)
+      for (std::string const& wellKnownName : it->second)
       {
         wellKnownNames.push_back(wellKnownName);
       }

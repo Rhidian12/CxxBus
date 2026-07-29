@@ -4,7 +4,6 @@
 #include <set>
 #include <unordered_map>
 
-#include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 
 namespace cxxbus
@@ -15,7 +14,7 @@ namespace cxxbus
   {
    private:
     DBusConnection& m_conn;
-    std::unordered_map<std::string, std::set<DBusWellKnownName>> m_wellKnownNames;
+    std::unordered_map<std::string, std::set<std::string>> m_wellKnownNames;
 
    private:
     void OnNameOwnerChanged(IncomingDBusMessage message);
@@ -29,6 +28,6 @@ namespace cxxbus
     // Returns a list of well-known names associated with the given unique connection name.
     // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be
     // present nor a valid unique connection name.
-    std::vector<DBusWellKnownName> GetWellKnownNames(std::string const& uniqueName) const;
+    std::vector<std::string> GetWellKnownNames(std::string const& uniqueName) const;
   };
 }  // namespace cxxbus
