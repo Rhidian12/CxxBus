@@ -96,6 +96,7 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
   boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
   boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
+  boost::asio::awaitable<void> SendReply(DBusMessage message);
 
   boost::asio::awaitable<void> EmitSignal(DBusMessage message);
 

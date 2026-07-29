@@ -8,6 +8,18 @@
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 
+class EmptyDBusMatchRule : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class InvalidDBusMatchRule : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
+};
+
 class DBusMatchRule
 {
 private:

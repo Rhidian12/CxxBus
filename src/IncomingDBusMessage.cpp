@@ -48,6 +48,7 @@ namespace
             .objectPath = {},
             .interface = {},
             .member = {},
+            .errorName = std::nullopt,
             .signature = std::nullopt,
             .sender = std::nullopt,
             .destination = std::nullopt,
@@ -154,6 +155,20 @@ namespace
       }
     }
 
+    auto const errorNameIt =
+        std::ranges::find_if(headerFieldData, [](DBusMessageHeader::HeaderFieldReplyData const& data) { return data.code == HeaderFieldCode::ERROR_NAME; });
+    if (errorNameIt == headerFieldData.cend())
+    {
+      auto const requiredHeaderFieldIt =
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::ERROR_NAME; });
+      assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
+      if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+      {
+        throw DBusMalformedInputError{"Incoming DBus message is missing the required 'ERROR_NAME' header field"};
+      }
+    }
+
+    data.errorName = errorNameIt == headerFieldData.cend() ? std::nullopt : std::optional{errorNameIt->data.UnmarshalData<std::string>()};
     data.destination = destinationIt == headerFieldData.cend() ? std::nullopt : std::optional{destinationIt->data.UnmarshalData<std::string>()};
     data.sender = senderIt == headerFieldData.cend() ? std::nullopt : std::optional{senderIt->data.UnmarshalData<std::string>()};
     data.objectPath = objectPathIt == headerFieldData.cend() ? std::nullopt : std::optional{objectPathIt->data.UnmarshalData<ObjectPath>()};
@@ -223,6 +238,11 @@ std::optional<std::string> const& DBusMessageHeader::GetSender() const
 std::optional<std::string> const& DBusMessageHeader::GetDestination() const
 {
   return m_data.destination;
+}
+
+std::optional<std::string> const& DBusMessageHeader::GetErrorName() const
+{
+  return m_data.errorName;
 }
 
 void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)

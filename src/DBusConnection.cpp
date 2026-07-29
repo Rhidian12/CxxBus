@@ -164,7 +164,7 @@ boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
   if (!reply.starts_with("OK"))
   {
     LOGGER.LogError("Authentication failed!");
-    throw DBusError{"Authentication failed!"};
+    throw std::runtime_error{"Authentication failed!"};
   }
 
   // Yippee! All worked, so now start our DBus Connection!
@@ -353,7 +353,7 @@ boost::asio::awaitable<void> DBusConnection::ReadLoop()
 
         if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
         {
-          for (MatchRuleInfo const & info : state->matchRules | std::views::values)
+          for (MatchRuleInfo const& info : state->matchRules | std::views::values)
           {
             if (info.rule.Matches(message, state->nameCache.GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
             {
@@ -426,9 +426,13 @@ boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendM
   if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
   {
     // We got an error, so throw an error here
-    throw DBusError{std::format("DBus Error Reply received: {}", reply.HasArguments() && reply.GetHeader().GetSignature() == "s"
-                                                                     ? std::format("Error Message: {}", reply.Get<std::string>())
-                                                                     : "No error message was provided by the remote")};
+    if (!reply.GetHeader().GetErrorName().has_value())
+    {
+      LOGGER.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
+    }
+
+    throw DBusError{reply.GetHeader().GetErrorName().has_value() ? reply.GetHeader().GetErrorName().value() : "Missing",
+                    reply.HasArguments() && reply.GetHeader().GetSignature() == "s" ? reply.Get<std::string>() : "No error message was provided by the remote"};
   }
 
   co_return reply;
@@ -474,6 +478,8 @@ boost::asio::awaitable<void> DBusConnection::SendMessageNoReply(DBusMessage mess
 
   co_return;
 }
+
+boost::asio::awaitable<void> DBusConnection::SendReply(DBusMessage message) {}
 
 boost::asio::awaitable<void> DBusConnection::EmitSignal(DBusMessage message)
 {

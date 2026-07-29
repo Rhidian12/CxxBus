@@ -143,6 +143,14 @@ DBusMessage DBusMessage::Method(std::string method)
   return message;
 }
 
+DBusMessage DBusMessage::Reply(std::string method)
+{
+  DBusMessage message;
+  message.m_method = std::move(method);
+  message.m_messageType = DBusMessageType::METHOD_RETURN;
+  return message;
+}
+
 DBusMessage DBusMessage::Signal(std::string signal)
 {
   DBusMessage message;

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -206,8 +207,20 @@ class DBusWellKnownName
 
 class DBusError : public std::runtime_error
 {
+ private:
+  std::string m_errorName;
+  std::string m_errorReason;
+
  public:
-  using std::runtime_error::runtime_error;
+  DBusError(std::string errorName, std::string errorReason)
+    : std::runtime_error{std::format("DBus error occurred: {} - {}", errorName, errorReason)}
+    , m_errorName(std::move(errorName))
+    , m_errorReason(std::move(errorReason))
+  {
+  }
+
+  std::string const & GetErrorName() const { return m_errorName; }
+  std::string const & GetErrorReason() const { return m_errorReason; }
 };
 
 class InternalError : public std::runtime_error

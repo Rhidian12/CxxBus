@@ -81,13 +81,31 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
   co_await timer.async_wait(boost::asio::use_awaitable);
 }
 
+boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> conn)
+{
+  LOGGER.LogInfo("Sending first message");
+  try
+  {
+    co_await conn->SendMessage(DBusMessage::Method("RequestName")
+                                   .Interface("org.freedesktop.DBus")
+                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                   .Destination("org.freedesktop.DBus")
+                                   .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01}));
+  }
+  catch (std::exception const & ex)
+  {
+    LOGGER.LogError(ex.what());
+  }
+}
+
 boost::asio::awaitable<void> async_main(boost::asio::io_context& ioService)
 {
   std::shared_ptr<DBusConnection> conn{co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::YES)};
 
   // co_await DBusEchoTest(conn);
   // co_await DBusReceiveMessagesTest(conn, ioService);
-  co_await DBusSubscribeToSignal(conn, ioService);
+  // co_await DBusSubscribeToSignal(conn, ioService);
+  co_await DBusGetErrorReply(conn);
 
   co_await conn->Close();
 }

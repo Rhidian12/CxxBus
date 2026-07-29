@@ -38,7 +38,9 @@ class DBusMessage
   DBusMessage() = default;
 
   static DBusMessage Method(std::string method);
+  static DBusMessage Reply(std::string method);
   static DBusMessage Signal(std::string signal);
+  static DBusMessage Error(std::string errorName, std::string errorMessage);
 
   DBusMessage& Path(ObjectPath path);
   DBusMessage& Interface(std::string interface);

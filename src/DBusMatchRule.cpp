@@ -6,6 +6,7 @@
 
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
+#include "Log.h"
 
 namespace
 {
@@ -15,7 +16,13 @@ namespace
     "error",
     "signal"
   };
-} // namespace
+
+#ifndef CXX_BUS_LOGLEVEL
+#define CXX_BUS_LOGLEVEL Error
+#endif  // CXX_BUS_LOGLEVEL
+
+  Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+}  // namespace
 
 DBusMatchRule DBusMatchRule::Create()
 {
@@ -29,7 +36,8 @@ DBusMatchRule& DBusMatchRule::Type(DBusMessageType messageType)
     case DBusMessageType::INVALID:
     case DBusMessageType::NONE:
     case DBusMessageType::OPTIONAL:
-      throw DBusError{std::format("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on")};
+      LOGGER.LogError("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on");
+      throw InvalidDBusMatchRule{std::format("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on")};
     default:
       break;
   }
@@ -64,7 +72,7 @@ DBusMatchRule& DBusMatchRule::Path(ObjectPath path)
 {
   if (m_pathNamespace.has_value())
   {
-    throw DBusError{"It is not allowed for a match rule to contain both 'Path' and 'PathNamespace'"};
+    throw InvalidDBusMatchRule{"It is not allowed for a match rule to contain both 'Path' and 'PathNamespace'"};
   }
 
   m_path = std::move(path);
@@ -76,7 +84,7 @@ DBusMatchRule& DBusMatchRule::PathNamespace(ObjectPath path)
 {
   if (m_path.has_value())
   {
-    throw DBusError{"It is not allowed for a match rule to contain both 'Path' and 'PathNamespace'"};
+    throw InvalidDBusMatchRule{"It is not allowed for a match rule to contain both 'Path' and 'PathNamespace'"};
   }
 
   m_pathNamespace = std::move(path);
@@ -95,7 +103,7 @@ DBusMatchRule& DBusMatchRule::Argument(uint8_t index, std::string member)
 {
   if (index > 63)
   {
-    throw DBusError{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
+    throw InvalidDBusMatchRule{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
   }
 
   m_args.emplace_back(member, index);
@@ -106,7 +114,7 @@ DBusMatchRule& DBusMatchRule::ArgumentPath(uint8_t index, std::string member)
 {
   if (index > 63)
   {
-    throw DBusError{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
+    throw InvalidDBusMatchRule{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
   }
 
   m_argPaths.emplace_back(member, index);
@@ -164,7 +172,7 @@ std::string DBusMatchRule::GetRule() const
 
   if (rule.empty())
   {
-    throw DBusError{"Can't add an empty match rule"};
+    throw EmptyDBusMatchRule{"Can't add an empty match rule"};
   }
 
   return rule;

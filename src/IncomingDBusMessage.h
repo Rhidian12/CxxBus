@@ -22,6 +22,7 @@ class DBusMessageHeader
     std::optional<ObjectPath> objectPath;
     std::optional<std::string> interface;
     std::optional<std::string> member;
+    std::optional<std::string> errorName;
     std::optional<Signature> signature;
     std::optional<std::string> sender;
     std::optional<std::string> destination;
@@ -49,6 +50,7 @@ class DBusMessageHeader
   std::optional<std::string> const& GetMember() const;
   std::optional<std::string> const& GetSender() const;
   std::optional<std::string> const& GetDestination() const;
+  std::optional<std::string> const& GetErrorName() const;
 
   void ParseHeaderFieldLength(std::vector<byte> data);
   void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);

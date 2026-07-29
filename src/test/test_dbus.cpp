@@ -262,3 +262,28 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
     EXPECT_TRUE(simpleMatchRuleTriggered);
   };
 }
+
+TEST_F(DBusConnectionTestSuite, TestGettingErrors)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    DBusMessage message{DBusMessage::Method("RequestName")
+                            .Interface("org.freedesktop.DBus")
+                            .Path(ObjectPath{"/org/freedesktop/DBus"})
+                            .Destination("org.freedesktop.DBus")
+                            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
+
+    EXPECT_THROW(co_await conn->SendMessage(message), DBusError);
+
+    try
+    {
+      co_await conn->SendMessage(message);
+    }
+    catch (DBusError const& ex)
+    {
+      EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
+      EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
+    }
+  };
+}
