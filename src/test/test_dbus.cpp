@@ -31,7 +31,7 @@ struct DBusConnectionTestSuite : ::testing::Test
         {
           co_await coroutineToRun();
           LOGGER.LogTrace("Finished running coroutine");
-          
+
           if (conn != nullptr)
           {
             LOGGER.LogTrace("Closing DBus connection");
@@ -61,7 +61,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
-    auto reply = co_await conn->SendMessage(DBusMessage::Create("Introspect")
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface("org.freedesktop.DBus.Introspectable")
                                                 .Destination("org.freedesktop.DBus"));
@@ -221,7 +221,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
-    auto reply = co_await conn->SendMessage(DBusMessage::Create("NameHasOwner")
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface("org.freedesktop.DBus")
                                                 .Destination("org.freedesktop.DBus")
@@ -230,5 +230,35 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
     EXPECT_TRUE(reply.HasArguments());
     EXPECT_EQ(reply.Get<bool>(), true);
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMatchRule)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+
+    bool extensiveMatchRuleTriggered{};
+    bool simpleMatchRuleTriggered{};
+    co_await conn->AddMatchRule(DBusMatchRule::Create()
+                                    .Type(DBusMessageType::SIGNAL)
+                                    .Member("NameOwnerChanged")
+                                    .Interface("org.freedesktop.DBus")
+                                    .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
+                                [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
+
+    co_await conn->AddMatchRule(DBusMatchRule::Create().Member("NameOwnerChanged"),
+                                [&simpleMatchRuleTriggered](IncomingDBusMessage) { simpleMatchRuleTriggered = true; });
+
+    co_await conn->SendMessage(
+        DBusMessage::Method("RequestName")
+            .Path(ObjectPath{"/org/freedesktop/DBus"})
+            .Interface("org.freedesktop.DBus")
+            .Destination("org.freedesktop.DBus")
+            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
+  
+    EXPECT_TRUE(extensiveMatchRuleTriggered);
+    EXPECT_TRUE(simpleMatchRuleTriggered);
   };
 }

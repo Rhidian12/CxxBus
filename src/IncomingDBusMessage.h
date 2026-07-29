@@ -23,6 +23,8 @@ class DBusMessageHeader
     std::optional<std::string> interface;
     std::optional<std::string> member;
     std::optional<Signature> signature;
+    std::optional<std::string> sender;
+    std::optional<std::string> destination;
     uint32_t messageLength;
     uint32_t headerFieldLength;
     std::vector<HeaderFieldReplyData> headerFields;
@@ -45,6 +47,8 @@ class DBusMessageHeader
   std::optional<std::string> const& GetInterface() const;
   // Either method name or signal name, depending on message type
   std::optional<std::string> const& GetMember() const;
+  std::optional<std::string> const& GetSender() const;
+  std::optional<std::string> const& GetDestination() const;
 
   void ParseHeaderFieldLength(std::vector<byte> data);
   void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);

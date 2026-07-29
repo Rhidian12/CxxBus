@@ -49,6 +49,8 @@ namespace
             .interface = {},
             .member = {},
             .signature = std::nullopt,
+            .sender = std::nullopt,
+            .destination = std::nullopt,
             .messageLength = header.GetType<4>(),
             .headerFieldLength = 0,
             .headerFields = {}};
@@ -126,6 +128,34 @@ namespace
       }
     }
 
+    auto const senderIt =
+        std::ranges::find_if(headerFieldData, [](DBusMessageHeader::HeaderFieldReplyData const& data) { return data.code == HeaderFieldCode::SENDER; });
+    if (senderIt == headerFieldData.cend())
+    {
+      auto const requiredHeaderFieldIt =
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::SENDER; });
+      assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
+      if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+      {
+        throw DBusMalformedInputError{"Incoming DBus message is missing the required 'SENDER' header field"};
+      }
+    }
+
+    auto const destinationIt =
+        std::ranges::find_if(headerFieldData, [](DBusMessageHeader::HeaderFieldReplyData const& data) { return data.code == HeaderFieldCode::DESTINATION; });
+    if (destinationIt == headerFieldData.cend())
+    {
+      auto const requiredHeaderFieldIt =
+          std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::DESTINATION; });
+      assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
+      if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+      {
+        throw DBusMalformedInputError{"Incoming DBus message is missing the required 'DESTINATION' header field"};
+      }
+    }
+
+    data.destination = destinationIt == headerFieldData.cend() ? std::nullopt : std::optional{destinationIt->data.UnmarshalData<std::string>()};
+    data.sender = senderIt == headerFieldData.cend() ? std::nullopt : std::optional{senderIt->data.UnmarshalData<std::string>()};
     data.objectPath = objectPathIt == headerFieldData.cend() ? std::nullopt : std::optional{objectPathIt->data.UnmarshalData<ObjectPath>()};
     data.interface = interfaceIt == headerFieldData.cend() ? std::nullopt : std::optional{interfaceIt->data.UnmarshalData<std::string>()};
     data.member = memberIt == headerFieldData.cend() ? std::nullopt : std::optional{memberIt->data.UnmarshalData<std::string>()};
@@ -183,6 +213,16 @@ std::optional<std::string> const& DBusMessageHeader::GetInterface() const
 std::optional<std::string> const& DBusMessageHeader::GetMember() const
 {
   return m_data.member;
+}
+
+std::optional<std::string> const& DBusMessageHeader::GetSender() const
+{
+  return m_data.sender;
+}
+
+std::optional<std::string> const& DBusMessageHeader::GetDestination() const
+{
+  return m_data.destination;
 }
 
 void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)

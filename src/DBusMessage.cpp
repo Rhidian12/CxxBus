@@ -19,8 +19,7 @@ namespace
   template <DBusMessageType T>
   concept IsAcceptedMessageType = requires { requires T == DBusMessageType::METHOD_CALL || T == DBusMessageType::SIGNAL; };
 
-  template <DBusMessageType MsgType>
-  std::vector<byte> CreateDBusMessage(uint32_t serial, std::vector<byte> messageBody, std::vector<DBusMessageFlags> const& messageFlags,
+  std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody, std::vector<DBusMessageFlags> const& messageFlags,
                                       std::string const& method, ObjectPath const& objectPath, std::optional<std::string> const& interface,
                                       std::optional<std::string> destination, std::optional<Signature> const& signature,
                                       [[maybe_unused]] std::string const& error)
@@ -53,7 +52,7 @@ namespace
 
     std::vector<std::tuple<uint8_t, Variant>> headerFields{};
     std::vector<HeaderField> requiredHeaderFields{std::ranges::to<std::vector>(
-        std::views::filter(HEADER_FIELDS, [](HeaderField const& headerField) { return std::ranges::contains(headerField.requiredMessageType, MsgType); }))};
+        std::views::filter(HEADER_FIELDS, [msgType](HeaderField const& headerField) { return std::ranges::contains(headerField.requiredMessageType, msgType); }))};
     if (!messageBody.empty())
     {
       requiredHeaderFields.push_back(
@@ -83,7 +82,7 @@ namespace
           if (!interface.has_value() || interface->empty())
           {
             // Print this as a string
-            throw DBusSerializationError{std::format("Interface is required for message type {}", static_cast<uint8_t>(MsgType))};
+            throw DBusSerializationError{std::format("Interface is required for message type {}", static_cast<uint8_t>(msgType))};
           }
           variant = Variant{interface.value()};
           break;
@@ -93,7 +92,7 @@ namespace
         case HeaderFieldCode::SIGNATURE:
           if (!signature.has_value() || signature->Empty())
           {
-            throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body", static_cast<uint8_t>(MsgType))};
+            throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body", static_cast<uint8_t>(msgType))};
           }
           variant = Variant{*signature};
           break;
@@ -119,7 +118,7 @@ namespace
 
     MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, std::vector<std::tuple<uint8_t, Variant>>> header{
         static_cast<uint8_t>(Endianness::LITTLE_ENDIAN_TYPE),                                                                        // Endianness
-        static_cast<uint8_t>(MsgType),                                                                                               // Message Type
+        static_cast<uint8_t>(msgType),                                                                                               // Message Type
         std::ranges::fold_left(messageFlagsCasted, static_cast<uint8_t>(0), [](uint8_t a, uint8_t b) -> uint8_t { return a | b; }),  // Flags
         static_cast<uint8_t>(1),                                                                                                     // Major version
         static_cast<uint32_t>(messageBody.size()),  // Length of the message body in bytes
@@ -136,10 +135,19 @@ namespace
   }
 }  // namespace
 
-DBusMessage DBusMessage::Create(std::string method)
+DBusMessage DBusMessage::Method(std::string method)
 {
   DBusMessage message;
   message.m_method = std::move(method);
+  message.m_messageType = DBusMessageType::METHOD_CALL;
+  return message;
+}
+
+DBusMessage DBusMessage::Signal(std::string signal)
+{
+  DBusMessage message;
+  message.m_method = std::move(signal);
+  message.m_messageType = DBusMessageType::SIGNAL;
   return message;
 }
 
@@ -169,7 +177,7 @@ DBusMessage& DBusMessage::Flag(DBusMessageFlags flag)
 
 std::vector<uint8_t> DBusMessage::Serialize(uint32_t serial) const
 {
-  return CreateDBusMessage<DBusMessageType::METHOD_CALL>(serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");
+  return CreateDBusMessage(m_messageType, serial, m_messageBody, m_flags, m_method, m_path, m_interface, m_destination, m_signature, "");
 }
 
 std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const

@@ -15,23 +15,13 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stdexcept>
+#include <unordered_map>
 
+#include "DBusMatchRule.h"
 #include "DBusMessage.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
-
-class DBusError : public std::runtime_error
-{
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class InternalError : public std::runtime_error
-{
- public:
-  using std::runtime_error::runtime_error;
-};
+#include "DBusNameCache.h"
 
 enum class CreateConnectionDetached : uint8_t
 {
@@ -42,6 +32,12 @@ enum class CreateConnectionDetached : uint8_t
 class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 {
  private:
+  struct MatchRuleInfo
+  {
+    DBusMatchRule rule;
+    std::function<void(IncomingDBusMessage)> callback;
+  };
+
   struct InternalState
   {
     boost::asio::local::stream_protocol::socket socket;
@@ -62,6 +58,11 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
     uint32_t serial;
     std::string uniqueConnection;
     DBusWellKnownName wellKnownName;
+
+    uint32_t subscriptionCounter;
+    std::unordered_map<uint32_t, MatchRuleInfo> matchRules;
+
+    DBusNameCache nameCache;
   };
 
  private:
@@ -89,6 +90,14 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
                                                                         CreateConnectionDetached connectionMethod);
 
   void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback);
+
+  boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
+  boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
+
   boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
   boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
+
+  boost::asio::awaitable<void> EmitSignal(DBusMessage message);
+
+  DBusWellKnownName const& GetWellKnownName() const;
 };

@@ -169,6 +169,23 @@ class InvalidDBusName : public std::runtime_error
   using std::runtime_error::runtime_error;
 };
 
+class DBusUniqueConnectionName
+{
+ private:
+  std::string m_name;
+
+ public:
+  explicit DBusUniqueConnectionName(std::string uniqueConnectionName);
+
+  std::string const& GetName() const;
+
+  uint32_t size() const;
+  bool empty() const;
+  explicit operator std::string() const;
+
+  auto operator<=>(DBusUniqueConnectionName const &) const noexcept = default;
+};
+
 class DBusWellKnownName
 {
  private:
@@ -181,6 +198,22 @@ class DBusWellKnownName
 
   uint32_t size() const;
   explicit operator std::string() const;
+
+  auto operator<=>(DBusWellKnownName const &) const noexcept = default;
+};
+
+// [TODO]: Interfaces should also be strongly typed so we can validate the name
+
+class DBusError : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class InternalError : public std::runtime_error
+{
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 // Signature of a DBus Header is yyyyuua(yv)

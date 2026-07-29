@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <format>
 #include <optional>
 
 #include "DBusHelpers.h"
@@ -12,7 +13,7 @@ namespace
 
   // Returns std::nullopt if the provided name is valid
   // Returns a filled std::optional containing an error reason if the name is invalid
-  std::optional<std::string> ValidateWellKnownName(std::string const& wellKnownName)
+  std::optional<std::string> ValidateDBusName(std::string const& name, bool validateWellKnownName)
   {
     // A well-known name must be:
     //  - Non-empty
@@ -22,11 +23,14 @@ namespace
     //  - Names must contain at least one '.' (and thus at least 2 elements)
     //  - Not be longer than 255
 
-    if (wellKnownName.empty()) return "Well-known name cannot be empty";
-    if (wellKnownName[0] == ':') return "Well-known name cannot start with ':'";
-    if (wellKnownName[0] == '.') return "Well-known name cannot start with '.'";
-    if (std::count(wellKnownName.begin(), wellKnownName.end(), '.') == 0) return "Well-known must contain at least 1 '.'";
-    if (wellKnownName.size() >= MAX_DBUS_NAME_LENGTH) return "Well-known name must be shorter than 255 characters";
+    std::string const prefix{validateWellKnownName ? "Well-known" : "Unique connection"};
+
+    if (name.empty()) return std::format("{} name cannot be empty", prefix);
+    if (validateWellKnownName && name[0] == ':') return "Well-known name cannot start with ':'";
+    if (!validateWellKnownName && name[0] != ':') return "Unique connection name must start with ':'";
+    if (name[0] == '.') return std::format("{} name cannot start with '.'", prefix);
+    if (std::count(name.begin(), name.end(), '.') == 0) return std::format("{} must contain at least 1 '.'", prefix);
+    if (name.size() >= MAX_DBUS_NAME_LENGTH) return std::format("{} name must be shorter than 255 characters", prefix);
 
     return std::nullopt;
   }
@@ -73,10 +77,41 @@ bool ObjectPath::Empty() const
   return m_path.empty();
 }
 
+DBusUniqueConnectionName::DBusUniqueConnectionName(std::string uniqueConnectionName)
+  : m_name()
+{
+  if (auto result{ValidateDBusName(uniqueConnectionName, false)}; result.has_value())
+  {
+    throw InvalidDBusName{result.value()};
+  }
+
+  m_name = std::move(uniqueConnectionName);
+}
+
+std::string const& DBusUniqueConnectionName::GetName() const
+{
+  return m_name;
+}
+
+uint32_t DBusUniqueConnectionName::size() const
+{
+  return m_name.size();
+}
+
+bool DBusUniqueConnectionName::empty() const
+{
+  return m_name.empty();
+}
+
+DBusUniqueConnectionName::operator std::string() const
+{
+  return m_name;
+}
+
 DBusWellKnownName::DBusWellKnownName(std::string wellKnownName)
   : m_name()
 {
-  if (auto result{ValidateWellKnownName(wellKnownName)}; result.has_value())
+  if (auto result{ValidateDBusName(wellKnownName, true)}; result.has_value())
   {
     throw InvalidDBusName{result.value()};
   }

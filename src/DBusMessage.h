@@ -28,6 +28,7 @@ class DBusMessage
   ObjectPath m_path;     // Non-optional
   std::optional<std::string> m_interface;
   std::vector<DBusMessageFlags> m_flags;
+  DBusMessageType m_messageType;
 
   std::optional<Signature> m_signature;
   std::optional<std::string> m_destination;
@@ -36,8 +37,9 @@ class DBusMessage
  public:
   DBusMessage() = default;
 
-  // The methods to create a DBus Message with. It starts with `Create()` and then allows other methods to chain into it.
-  static DBusMessage Create(std::string method);
+  static DBusMessage Method(std::string method);
+  static DBusMessage Signal(std::string signal);
+
   DBusMessage& Path(ObjectPath path);
   DBusMessage& Interface(std::string interface);
   DBusMessage& Destination(std::string destination);

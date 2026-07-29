@@ -58,7 +58,7 @@ TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
   // 2 bytes of padding (offset 94-95) bring the body start to offset
   // 96, an 8-byte boundary -- required even though the body is empty.
   // Total message length: 96 bytes.
-  DBusMessage msg{DBusMessage::Create("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus")};
+  DBusMessage msg{DBusMessage::Method("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus")};
  
   EXPECT_EQ(msg.Serialize(/*serial=*/1),
             (std::vector<byte>{
@@ -106,7 +106,7 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
   // Body length = 4, so the SIGNATURE header field (code 8, "g") must
   // be present -- it's how a reader knows how to interpret the body
   // bytes that follow.
-  DBusMessage msg{DBusMessage::Create("M").Path(ObjectPath{"/o"}).Interface("i").Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
+  DBusMessage msg{DBusMessage::Method("M").Path(ObjectPath{"/o"}).Interface("i").Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
  
   EXPECT_EQ(msg.Serialize(/*serial=*/5),
             (std::vector<byte>{
