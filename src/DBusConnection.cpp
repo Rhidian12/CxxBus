@@ -479,8 +479,6 @@ boost::asio::awaitable<void> DBusConnection::SendMessageNoReply(DBusMessage mess
   co_return;
 }
 
-boost::asio::awaitable<void> DBusConnection::SendReply(DBusMessage message) {}
-
 boost::asio::awaitable<void> DBusConnection::EmitSignal(DBusMessage message)
 {
   // A signal is the same as a message without a reply
