@@ -44,6 +44,9 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
 
     // Store channels to make our 'SendMessage' be awaitable
     std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*> replyChannels;
+    // Same as above, but for our sync version
+    std::map<uint32_t, std::function<void(IncomingDBusMessage)>> replySyncCallbacks;
+
     boost::signals2::signal<void(IncomingDBusMessage)> onIncomingSignal;
 
     // Send messages to the SendLoop() coroutine
@@ -74,6 +77,9 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   boost::asio::awaitable<void> Connect();
   boost::asio::awaitable<void> SendLoop();
   boost::asio::awaitable<void> ReadLoop();
+  
+  void AuthenticateDBusConnectionSync();
+  void ConnectSync();
 
  private:
   DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
@@ -81,21 +87,30 @@ class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
   // Prefer 'SendMessage()' whenever possible
   boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage message);
+  std::optional<IncomingDBusMessage> SendMessageInternalSync(DBusMessage message);
 
  public:
   ~DBusConnection();
   boost::asio::awaitable<void> Close();
+  void CloseSync();
 
   static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
                                                                         CreateConnectionDetached connectionMethod);
+  static std::shared_ptr<DBusConnection> CreateSync(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
 
   void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage)> callback);
 
   boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
   boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
 
+  void AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
+  void RemoveMatchRuleSync(DBusMatchRule rule);
+
   boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
   boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
+
+  IncomingDBusMessage SendMessageSync(DBusMessage message);
+  void SendMessageNoReplySync(DBusMessage message);
 
   DBusWellKnownName const& GetWellKnownName() const;
 };

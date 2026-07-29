@@ -98,7 +98,7 @@ boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> c
   }
 }
 
-boost::asio::awaitable<void> async_main(boost::asio::io_context& ioService)
+boost::asio::awaitable<void> AsyncMain(boost::asio::io_context& ioService)
 {
   std::shared_ptr<DBusConnection> conn{co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::YES)};
 
@@ -114,7 +114,7 @@ int main()
 {
   boost::asio::io_context ioService;
 
-  boost::asio::co_spawn(ioService, async_main(ioService),
+  boost::asio::co_spawn(ioService, AsyncMain(ioService),
                         [](std::exception_ptr e)
                         {
                           if (e) std::rethrow_exception(e);

@@ -22,6 +22,7 @@ class DBusNameCache
   DBusNameCache(DBusConnection& conn);
 
   boost::asio::awaitable<void> SubscribeToNameChanges();
+  void SubscribeToNameChangesSync();
 
   // Returns a list of well-known names associated with the given unique connection name.
   // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be

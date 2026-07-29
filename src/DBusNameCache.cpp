@@ -16,6 +16,16 @@ DBusNameCache::DBusNameCache(DBusConnection & conn)
 {
 }
 
+void DBusNameCache::SubscribeToNameChangesSync()
+{
+  m_conn.AddMatchRuleSync(DBusMatchRule::Create()
+                                    .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
+                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                    .Interface("org.freedesktop.DBus")
+                                    .Member("NameOwnerChanged"),
+                                [this](IncomingDBusMessage message) { OnNameOwnerChanged(std::move(message)); });
+}
+
 boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
 {
   co_await m_conn.AddMatchRule(DBusMatchRule::Create()

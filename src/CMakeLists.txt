@@ -22,6 +22,11 @@ create_binary(NAME cxxbus-test
               LIBRARIES cxxbus-lib
               INCLUDE_DIRS ${cxxbus-include-dir})
 
+create_binary(NAME cxxbus-test-sync
+              SOURCES main_sync.cpp
+              LIBRARIES cxxbus-lib
+              INCLUDE_DIRS ${cxxbus-include-dir})
+
 add_subdirectory(test)
 
 # Build the combined executable if we registered any unit tests
