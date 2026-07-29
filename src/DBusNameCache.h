@@ -1,0 +1,30 @@
+#pragma once
+
+#include <boost/asio/awaitable.hpp>
+#include <set>
+#include <unordered_map>
+
+#include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
+
+class DBusConnection;
+
+class DBusNameCache
+{
+ private:
+  DBusConnection& m_conn;
+  std::unordered_map<std::string, std::set<DBusWellKnownName>> m_wellKnownNames;
+
+ private:
+  void OnNameOwnerChanged(IncomingDBusMessage message);
+
+ public:
+  DBusNameCache(DBusConnection& conn);
+
+  boost::asio::awaitable<void> SubscribeToNameChanges();
+
+  // Returns a list of well-known names associated with the given unique connection name.
+  // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be
+  // present nor a valid unique connection name.
+  std::vector<DBusWellKnownName> GetWellKnownNames(std::string const& uniqueName) const;
+};
