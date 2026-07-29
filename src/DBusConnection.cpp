@@ -479,12 +479,6 @@ boost::asio::awaitable<void> DBusConnection::SendMessageNoReply(DBusMessage mess
   co_return;
 }
 
-boost::asio::awaitable<void> DBusConnection::EmitSignal(DBusMessage message)
-{
-  // A signal is the same as a message without a reply
-  co_return co_await SendMessageNoReply(std::move(message));
-}
-
 boost::asio::awaitable<void> DBusConnection::AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback)
 {
   LOGGER.LogTrace(std::format("Adding match rule '{}'", rule.GetRule()));
