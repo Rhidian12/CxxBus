@@ -5,6 +5,8 @@
 
 #include "src/DBus.h"
 
+using namespace cxxbus;
+
 struct MarshalTestSuite : ::testing::Test
 {
 };

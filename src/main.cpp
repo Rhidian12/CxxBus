@@ -13,6 +13,8 @@
 #include "DBusMatchRule.h"
 #include "Log.h"
 
+using namespace cxxbus;
+
 namespace
 {
   Logger const LOGGER{.logLevel = LogLevel::Info};

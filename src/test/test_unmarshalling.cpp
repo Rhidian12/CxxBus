@@ -4,6 +4,8 @@
 
 #include "src/DBus.h"
 
+using namespace cxxbus;
+
 struct UnmarshalTestSuite : ::testing::Test
 {
 };

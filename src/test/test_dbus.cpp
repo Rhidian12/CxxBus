@@ -9,6 +9,8 @@
 #include "src/DBusMessage.h"
 #include "src/Log.h"
 
+using namespace cxxbus;
+
 Logger const LOGGER{.logLevel = LogLevel::Trace};
 
 struct DBusConnectionTestSuite : ::testing::Test

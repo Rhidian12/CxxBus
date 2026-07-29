@@ -5,79 +5,82 @@
 #include "DBus.h"
 #include "DBusTypes.h"
 
-class DBusMessageHeader
+namespace cxxbus
 {
- public:
-  struct HeaderFieldReplyData
+  class DBusMessageHeader
   {
-    HeaderFieldCode code;
-    Variant data;
+   public:
+    struct HeaderFieldReplyData
+    {
+      HeaderFieldCode code;
+      Variant data;
+    };
+
+    struct ReplyData
+    {
+      uint32_t serial;
+      std::optional<uint32_t> replySerial;
+      DBusMessageType messageType;
+      std::optional<ObjectPath> objectPath;
+      std::optional<std::string> interface;
+      std::optional<std::string> member;
+      std::optional<std::string> errorName;
+      std::optional<Signature> signature;
+      std::optional<std::string> sender;
+      std::optional<std::string> destination;
+      uint32_t messageLength;
+      uint32_t headerFieldLength;
+      std::vector<HeaderFieldReplyData> headerFields;
+    };
+
+   private:
+    ReplyData m_data;
+
+   public:
+    DBusMessageHeader() = default;
+    DBusMessageHeader(std::vector<byte> data);
+
+    uint32_t GetSerial() const;
+    std::optional<uint32_t> const& GetReplySerial() const;
+    DBusMessageType GetMessageType() const;
+    uint32_t GetHeaderFieldsLength() const;
+    uint32_t GetMessageLength() const;
+    std::optional<Signature> const& GetSignature() const;
+    std::optional<ObjectPath> const& GetObjectPath() const;
+    std::optional<std::string> const& GetInterface() const;
+    // Either method name or signal name, depending on message type
+    std::optional<std::string> const& GetMember() const;
+    std::optional<std::string> const& GetSender() const;
+    std::optional<std::string> const& GetDestination() const;
+    std::optional<std::string> const& GetErrorName() const;
+
+    void ParseHeaderFieldLength(std::vector<byte> data);
+    void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
   };
 
-  struct ReplyData
+  class IncomingDBusMessage
   {
-    uint32_t serial;
-    std::optional<uint32_t> replySerial;
-    DBusMessageType messageType;
-    std::optional<ObjectPath> objectPath;
-    std::optional<std::string> interface;
-    std::optional<std::string> member;
-    std::optional<std::string> errorName;
-    std::optional<Signature> signature;
-    std::optional<std::string> sender;
-    std::optional<std::string> destination;
-    uint32_t messageLength;
-    uint32_t headerFieldLength;
-    std::vector<HeaderFieldReplyData> headerFields;
+   private:
+    std::vector<uint8_t> m_messageBody;
+    DBusMessageHeader m_header;
+
+   public:
+    IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
+    IncomingDBusMessage() = default;
+
+    DBusMessageHeader const& GetHeader() const;
+
+    template <IsDBusType T>
+    T Get() const
+    {
+      return UnmarshalDBusType<T>(m_messageBody, m_header.GetSignature()->GetSignature());
+    }
+
+    // Do we have any arguments in our message body?
+    // i.e. is the message body empty or not?
+    bool HasArguments() const;
+
+    // Only useful for debugging purposes
+    std::vector<byte> const& GetRawData() const;
   };
-
- private:
-  ReplyData m_data;
-
- public:
-  DBusMessageHeader() = default;
-  DBusMessageHeader(std::vector<byte> data);
-
-  uint32_t GetSerial() const;
-  std::optional<uint32_t> const& GetReplySerial() const;
-  DBusMessageType GetMessageType() const;
-  uint32_t GetHeaderFieldsLength() const;
-  uint32_t GetMessageLength() const;
-  std::optional<Signature> const& GetSignature() const;
-  std::optional<ObjectPath> const& GetObjectPath() const;
-  std::optional<std::string> const& GetInterface() const;
-  // Either method name or signal name, depending on message type
-  std::optional<std::string> const& GetMember() const;
-  std::optional<std::string> const& GetSender() const;
-  std::optional<std::string> const& GetDestination() const;
-  std::optional<std::string> const& GetErrorName() const;
-
-  void ParseHeaderFieldLength(std::vector<byte> data);
-  void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
-};
-
-class IncomingDBusMessage
-{
- private:
-  std::vector<uint8_t> m_messageBody;
-  DBusMessageHeader m_header;
-
- public:
-  IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
-  IncomingDBusMessage() = default;
-
-  DBusMessageHeader const& GetHeader() const;
-
-  template <IsDBusType T>
-  T Get() const
-  {
-    return UnmarshalDBusType<T>(m_messageBody, m_header.GetSignature()->GetSignature());
-  }
-
-  // Do we have any arguments in our message body?
-  // i.e. is the message body empty or not?
-  bool HasArguments() const;
-
-  // Only useful for debugging purposes
-  std::vector<byte> const& GetRawData() const;
-};
+}  // namespace cxxbus

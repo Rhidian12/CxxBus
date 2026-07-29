@@ -9,67 +9,70 @@
 #include "DBusHelpers.h"
 #include "DBusTypes.h"
 
-class InvalidDBusPath : public std::runtime_error
+namespace cxxbus
 {
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class DBusSerializationError : public std::runtime_error
-{
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class DBusMessage
-{
- private:
-  std::string m_method;  // Member. Non-optional
-  ObjectPath m_path;     // Non-optional
-  std::optional<std::string> m_interface;
-  std::vector<DBusMessageFlags> m_flags;
-  DBusMessageType m_messageType;
-
-  std::optional<Signature> m_signature;
-  std::optional<std::string> m_destination;
-  std::vector<uint8_t> m_messageBody;
-
- public:
-  DBusMessage() = default;
-
-  static DBusMessage Method(std::string method);
-  static DBusMessage Reply(std::string method);
-  static DBusMessage Signal(std::string signal);
-  static DBusMessage Error(std::string errorName, std::string errorMessage);
-
-  DBusMessage& Path(ObjectPath path);
-  DBusMessage& Interface(std::string interface);
-  DBusMessage& Destination(std::string destination);
-  DBusMessage& Flag(DBusMessageFlags flag);
-  template <typename T>
-  DBusMessage& Parameter(T&& value)
+  class InvalidDBusPath : public std::runtime_error
   {
-    m_signature = GetTypeSignature<std::remove_cvref_t<T>>();
-    m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
+   public:
+    using std::runtime_error::runtime_error;
+  };
 
-    return *this;
-  }
+  class DBusSerializationError : public std::runtime_error
+  {
+   public:
+    using std::runtime_error::runtime_error;
+  };
 
-  DBusMessage(DBusMessage const&) = default;
-  DBusMessage(DBusMessage&&) = default;
-  DBusMessage& operator=(DBusMessage const&) = default;
-  DBusMessage& operator=(DBusMessage&&) = default;
+  class DBusMessage
+  {
+   private:
+    std::string m_method;  // Member. Non-optional
+    ObjectPath m_path;     // Non-optional
+    std::optional<std::string> m_interface;
+    std::vector<DBusMessageFlags> m_flags;
+    DBusMessageType m_messageType;
 
-  std::vector<uint8_t> Serialize(uint32_t serial) const;
+    std::optional<Signature> m_signature;
+    std::optional<std::string> m_destination;
+    std::vector<uint8_t> m_messageBody;
 
-  std::vector<DBusMessageFlags> const& GetFlags() const;
+   public:
+    DBusMessage() = default;
 
-  ObjectPath const& GetPath() const;
-  Signature const& GetSignature() const;
-  std::string const& GetInterface() const;
-  std::string const& GetDestination() const;
-  std::string const& GetMember() const;
+    static DBusMessage Method(std::string method);
+    static DBusMessage Reply(std::string method);
+    static DBusMessage Signal(std::string signal);
+    static DBusMessage Error(std::string errorName, std::string errorMessage);
 
-  // Only useful for debugging purposes
-  std::vector<byte> const& GetRawData() const;
-};
+    DBusMessage& Path(ObjectPath path);
+    DBusMessage& Interface(std::string interface);
+    DBusMessage& Destination(std::string destination);
+    DBusMessage& Flag(DBusMessageFlags flag);
+    template <typename T>
+    DBusMessage& Parameter(T&& value)
+    {
+      m_signature = GetTypeSignature<std::remove_cvref_t<T>>();
+      m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
+
+      return *this;
+    }
+
+    DBusMessage(DBusMessage const&) = default;
+    DBusMessage(DBusMessage&&) = default;
+    DBusMessage& operator=(DBusMessage const&) = default;
+    DBusMessage& operator=(DBusMessage&&) = default;
+
+    std::vector<uint8_t> Serialize(uint32_t serial) const;
+
+    std::vector<DBusMessageFlags> const& GetFlags() const;
+
+    ObjectPath const& GetPath() const;
+    Signature const& GetSignature() const;
+    std::string const& GetInterface() const;
+    std::string const& GetDestination() const;
+    std::string const& GetMember() const;
+
+    // Only useful for debugging purposes
+    std::vector<byte> const& GetRawData() const;
+  };
+}  // namespace cxxbus

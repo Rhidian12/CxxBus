@@ -7,6 +7,8 @@
 #include "src/IncomingDBusMessage.h"
 #include "src/DBusTypes.h"
 
+using namespace cxxbus;
+
 namespace
 {
   IncomingDBusMessage ParseFullMessage(std::vector<byte> const& fullMessageBytes)

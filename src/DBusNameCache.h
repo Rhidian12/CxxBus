@@ -7,25 +7,28 @@
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 
-class DBusConnection;
-
-class DBusNameCache
+namespace cxxbus
 {
- private:
-  DBusConnection& m_conn;
-  std::unordered_map<std::string, std::set<DBusWellKnownName>> m_wellKnownNames;
+  class DBusConnection;
 
- private:
-  void OnNameOwnerChanged(IncomingDBusMessage message);
+  class DBusNameCache
+  {
+   private:
+    DBusConnection& m_conn;
+    std::unordered_map<std::string, std::set<DBusWellKnownName>> m_wellKnownNames;
 
- public:
-  DBusNameCache(DBusConnection& conn);
+   private:
+    void OnNameOwnerChanged(IncomingDBusMessage message);
 
-  boost::asio::awaitable<void> SubscribeToNameChanges();
-  void SubscribeToNameChangesSync();
+   public:
+    DBusNameCache(DBusConnection& conn);
 
-  // Returns a list of well-known names associated with the given unique connection name.
-  // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be
-  // present nor a valid unique connection name.
-  std::vector<DBusWellKnownName> GetWellKnownNames(std::string const& uniqueName) const;
-};
+    boost::asio::awaitable<void> SubscribeToNameChanges();
+    void SubscribeToNameChangesSync();
+
+    // Returns a list of well-known names associated with the given unique connection name.
+    // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be
+    // present nor a valid unique connection name.
+    std::vector<DBusWellKnownName> GetWellKnownNames(std::string const& uniqueName) const;
+  };
+}  // namespace cxxbus

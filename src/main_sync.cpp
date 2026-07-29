@@ -3,7 +3,6 @@
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <cstdint>
-#include <exception>
 #include <memory>
 
 #include "DBusConnection.h"
@@ -12,6 +11,8 @@
 #include "IncomingDBusMessage.h"
 #include "DBusMatchRule.h"
 #include "Log.h"
+
+using namespace cxxbus;
 
 namespace
 {
