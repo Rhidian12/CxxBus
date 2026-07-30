@@ -1,4 +1,5 @@
 #include "DBusNameCache.h"
+#include <boost/asio/awaitable.hpp>
 
 #include "DBusConnection.h"
 #include "DBusMatchRule.h"
@@ -35,7 +36,7 @@ namespace cxxbus
                                      .Path(ObjectPath{"/org/freedesktop/DBus"})
                                      .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                      .Member("NameOwnerChanged"),
-                                 [this](IncomingDBusMessage message) { OnNameOwnerChanged(std::move(message)); });
+                                 [this](IncomingDBusMessage message) -> boost::asio::awaitable<void> { OnNameOwnerChanged(std::move(message)); co_return; });
   }
 
   void DBusNameCache::OnNameOwnerChanged(IncomingDBusMessage message)
@@ -73,7 +74,9 @@ namespace cxxbus
 
   std::vector<std::string> DBusNameCache::GetWellKnownNames(std::string const& uniqueName) const
   {
-    std::vector<std::string> wellKnownNames{};
+    // Add the uniqueName itself as it's a valid sender and we might not have gotten any other names so far
+    // If we don't do this we might not be able to match signals from a sender that has no well-known name yet
+    std::vector<std::string> wellKnownNames{uniqueName};
     auto const it = m_wellKnownNames.find(uniqueName);
     if (it != m_wellKnownNames.cend())
     {

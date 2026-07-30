@@ -3,8 +3,10 @@
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/experimental/basic_channel.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include <boost/system/detail/error_code.hpp>
 #include <functional>
 
 #include "src/DBusConnection.h"
@@ -258,12 +260,20 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                           .Member("NameOwnerChanged")
                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                           .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
-    co_await conn->AddMatchRule(
-        extensiveRule, [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
+    co_await conn->AddMatchRule(extensiveRule,
+                                [&extensiveMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                                {
+                                  extensiveMatchRuleTriggered = true;
+                                  co_return;
+                                });
 
     DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
     co_await conn->AddMatchRule(simpleRule,
-                                [&simpleMatchRuleTriggered](IncomingDBusMessage) { simpleMatchRuleTriggered = true; });
+                                [&simpleMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                                {
+                                  simpleMatchRuleTriggered = true;
+                                  co_return;
+                                });
 
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -324,12 +334,14 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
           LOGGER.LogDebug("Connection2 received the message, returning an error");
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
-    
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"}, [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
-    {
-      LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
-      co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-    });
+
+    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
+                                     [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+                                     {
+                                       LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
+                                       co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
+                                           MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+                                     });
 
     LOGGER.LogDebug("Sending a message from connection1 to connection2");
     EXPECT_THROW(
@@ -339,7 +351,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     try
     {
       co_await conn->SendMessage(
-            DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
+          DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
     }
     catch (DBusError const& ex)
     {
@@ -347,11 +359,54 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
       EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
     }
 
-    EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method").Path(ObjectPath{"/com/dbus/CxxTest2/Method"}).Destination("com.dbus.CxxTest2")))
+    EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
+                                               .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
+                                               .Destination("com.dbus.CxxTest2")))
                    .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
               (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
     co_await conn2->Close();
     LOGGER.LogTrace("Finished closing 2nd connection");
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn =
+        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"},
+                                                 CreateConnectionDetached::NO);
+
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+    bool signalEmitted{};
+    co_await conn2->AddMatchRule(
+        DBusMatchRule::Create().Member("SignalEmitted"),
+        [&signalEmitted, chann, this](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        {
+          LOGGER.LogInfo("Received emitted signal");
+          signalEmitted = true;
+          EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
+                    (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+
+          boost::asio::co_spawn(
+              ioService, [chann]() -> boost::asio::awaitable<void>
+              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+          co_return;
+        });
+
+    co_await conn->SendMessageNoReply(
+        DBusMessage::Signal("SignalEmitted")
+            .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
+            .Path(ObjectPath{"/com/dbus/CxxTest"})
+            .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+
+    LOGGER.LogDebug("Waiting for signal to be received");
+    co_await chann->async_receive(boost::asio::use_awaitable);
+    EXPECT_TRUE(signalEmitted);
+
+    co_await conn2->Close();
   };
 }

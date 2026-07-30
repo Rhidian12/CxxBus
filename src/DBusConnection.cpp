@@ -64,7 +64,7 @@ namespace cxxbus
       return newStr;
     }
 
-    boost::asio::awaitable<void> InvokeIncomingCallback(
+    boost::asio::awaitable<void> InvokeAsyncCallback(
         std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback, IncomingDBusMessage message)
     {
       co_return co_await callback(std::move(message));
@@ -592,12 +592,22 @@ namespace cxxbus
 
           if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
           {
+            LOGGER.LogTrace("Incoming message is signal, checking match rules");
+
             for (MatchRuleInfo const& info : state->matchRules | std::views::values)
             {
               if (info.rule.Matches(message,
                                     state->nameCache.GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
               {
-                info.callback(message);
+                LOGGER.LogTrace(std::format("Rule '{}' matched incoming signal", info.rule.GetRule()));
+                if (info.callback != nullptr)
+                {
+                  co_await (*info.callback)(message);
+                }
+                else
+                {
+                  info.callbackSync(message);
+                }
               }
             }
           }
@@ -820,8 +830,8 @@ namespace cxxbus
     SendMessageInternalSync(std::move(message));
   }
 
-  boost::asio::awaitable<void> DBusConnection::AddMatchRule(DBusMatchRule rule,
-                                                            std::function<void(IncomingDBusMessage)> callback)
+  boost::asio::awaitable<void> DBusConnection::AddMatchRule(
+      DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
     LOGGER.LogTrace(std::format("Adding match rule '{}'", rule.GetRule()));
 
@@ -831,8 +841,19 @@ namespace cxxbus
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()));
 
-    m_state->matchRules.emplace(m_state->subscriptionCounter++,
-                                MatchRuleInfo{.rule = std::move(rule), .callback = std::move(callback)});
+    std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> signal = std::make_shared<AwaitableSignal<void, IncomingDBusMessage>>();
+    signal->connect(
+        [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
+        {
+          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+          // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
+          // out-of-scope
+          { return InvokeAsyncCallback(cb, std::move(message)); };
+        });
+
+    m_state->matchRules.emplace(
+        m_state->subscriptionCounter++,
+        MatchRuleInfo{.rule = std::move(rule), .callback = std::move(signal), .callbackSync = {}});
 
     co_return;
   }
@@ -865,7 +886,7 @@ namespace cxxbus
                         .Parameter(rule.GetRule()));
 
     m_state->matchRules.emplace(m_state->subscriptionCounter++,
-                                MatchRuleInfo{.rule = std::move(rule), .callback = std::move(callback)});
+                                MatchRuleInfo{.rule = std::move(rule), .callback = nullptr, .callbackSync = std::move(callback)});
   }
 
   void DBusConnection::RemoveMatchRuleSync(DBusMatchRule rule)
@@ -890,7 +911,7 @@ namespace cxxbus
           return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
           // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
           // out-of-scope
-          { return InvokeIncomingCallback(cb, std::move(message)); };
+          { return InvokeAsyncCallback(cb, std::move(message)); };
         });
   }
 
@@ -903,7 +924,7 @@ namespace cxxbus
           return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
           // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
           // out-of-scope
-          { return InvokeIncomingCallback(cb, std::move(message)); };
+          { return InvokeAsyncCallback(cb, std::move(message)); };
         });
   }
 

@@ -38,7 +38,8 @@ namespace cxxbus
     struct MatchRuleInfo
     {
       DBusMatchRule rule;
-      std::function<void(IncomingDBusMessage)> callback;
+      std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> callback;
+      std::function<void(IncomingDBusMessage)> callbackSync;
     };
 
     struct InternalState
@@ -109,7 +110,7 @@ namespace cxxbus
     void RegisterObjectPathHandler(ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
-    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
 
     void AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
