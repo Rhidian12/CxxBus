@@ -36,7 +36,7 @@ namespace cxxbus
    private:
     std::optional<DBusMessageType> m_messageType;
     std::optional<std::string> m_sender;
-    std::optional<std::string> m_interface;
+    std::optional<DBusInterfaceName> m_interface;
     std::optional<std::string> m_member;
     std::optional<ObjectPath> m_path;
     std::optional<ObjectPath> m_pathNamespace;
@@ -60,7 +60,7 @@ namespace cxxbus
     DBusMatchRule& Sender(std::variant<DBusWellKnownName, DBusUniqueConnectionName> name);
 
     // The interface of the message to match on
-    DBusMatchRule& Interface(std::string interface);
+    DBusMatchRule& Interface(DBusInterfaceName interface);
 
     // The name of the member to match on
     DBusMatchRule& Member(std::string member);

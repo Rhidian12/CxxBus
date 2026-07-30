@@ -51,7 +51,7 @@ namespace cxxbus
     return *this;
   }
 
-  DBusMatchRule& DBusMatchRule::Interface(std::string interface)
+  DBusMatchRule& DBusMatchRule::Interface(DBusInterfaceName interface)
   {
     m_interface = std::move(interface);
 
@@ -151,9 +151,9 @@ namespace cxxbus
     std::string rule;
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_messageType, "type", MESSAGE_TYPE_STRINGS[static_cast<uint8_t>(*m_messageType) - 1])
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_sender, "sender", *m_sender)
-    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_interface, "interface", *m_interface)
+    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_interface, "interface", m_interface->GetName())
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_member, "member", *m_member)
-    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_path, "path", std::string{*m_path})
+    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_path, "path", m_path->GetPath())
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_pathNamespace, "path_namespace", std::string{*m_pathNamespace})
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_destination, "destination", std::string{*m_destination})
     for (ArgInfo const& argInfo : m_args)

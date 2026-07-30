@@ -60,7 +60,7 @@ TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
   // 2 bytes of padding (offset 94-95) bring the body start to offset
   // 96, an 8-byte boundary -- required even though the body is empty.
   // Total message length: 96 bytes.
-  DBusMessage msg{DBusMessage::Method("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface("org.freedesktop.DBus")};
+  DBusMessage msg{DBusMessage::Method("Hello").Path(ObjectPath{"/org/freedesktop/DBus"}).Interface(DBusInterfaceName{"org.freedesktop.DBus"})};
  
   EXPECT_EQ(msg.Serialize(/*serial=*/1),
             (std::vector<byte>{
@@ -108,7 +108,7 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
   // Body length = 4, so the SIGNATURE header field (code 8, "g") must
   // be present -- it's how a reader knows how to interpret the body
   // bytes that follow.
-  DBusMessage msg{DBusMessage::Method("M").Path(ObjectPath{"/o"}).Interface("i").Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
+  DBusMessage msg{DBusMessage::Method("M").Path(ObjectPath{"/o"}).Interface(DBusInterfaceName{"com.dbus.CxxTest"}).Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
  
   EXPECT_EQ(msg.Serialize(/*serial=*/5),
             (std::vector<byte>{
@@ -116,7 +116,7 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
                 'l', 0x01, 0x00, 0x01,   // endian, type, flags, version
                 0x04, 0x00, 0x00, 0x00,  // body length = 4
                 0x05, 0x00, 0x00, 0x00,  // serial = 5
-                0x37, 0x00, 0x00, 0x00,  // header fields length = 55
+                0x47, 0x00, 0x00, 0x00,  // header fields length = 55
  
                 // PATH field (code 1, "o") -- starts at offset 16
                 0x01, 0x01, 'o', 0x00,
@@ -128,25 +128,25 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
  
                 // INTERFACE field (code 2, "s") -- starts at offset 32
                 0x02, 0x01, 's', 0x00,
-                0x01, 0x00, 0x00, 0x00,  // string length = 1
-                'i',
+                0x10, 0x00, 0x00, 0x00,  // string length = 16
+                'c', 'o', 'm', '.', 'd', 'b', 'u', 's', '.', 'C', 'x', 'x', 'T', 'e', 's', 't',
                 0x00,
  
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // pad to offset 48
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // pad to offset 64
  
-                // MEMBER field (code 3, "s") -- starts at offset 48
+                // MEMBER field (code 3, "s") -- starts at offset 64
                 0x03, 0x01, 's', 0x00,
                 0x01, 0x00, 0x00, 0x00,  // string length = 1
                 'M',
                 0x00,
  
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // pad to offset 64
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // pad to offset 80
  
-                // SIGNATURE field (code 8, "g") -- starts at offset 64
+                // SIGNATURE field (code 8, "g") -- starts at offset 80
                 0x08, 0x01, 'g', 0x00,
                 0x01, 'u', 0x00,  // signature length = 1, "u", NUL
  
-                0x00,  // pad to offset 72 (body start)
+                0x00,  // pad to offset 88 (body start)
  
                 // Body: uint32_t = 7
                 0x07, 0x00, 0x00, 0x00,

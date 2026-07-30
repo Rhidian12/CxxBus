@@ -32,11 +32,34 @@ namespace cxxbus
       if (!validateWellKnownName && name[0] != ':') return "Unique connection name must start with ':'";
       if (name[0] == '.') return std::format("{} name cannot start with '.'", prefix);
       if (std::count(name.begin(), name.end(), '.') == 0) return std::format("{} must contain at least 1 '.'", prefix);
-      if (name.size() >= MAX_DBUS_NAME_LENGTH) return std::format("{} name must be shorter than 255 characters", prefix);
+      if (name.size() >= MAX_DBUS_NAME_LENGTH)
+        return std::format("{} name must be shorter than 255 characters", prefix);
+
+      return std::nullopt;
+    }
+
+    // Returns std::nullopt if the provided name is valid
+    // Returns a filled std::optional containing an error reason if the name is invalid
+    std::optional<std::string> ValidateDBusInterfaceName(std::string const& name)
+    {
+      // An interface name must be:
+      //  - Non-empty
+      //  - Composed of one or more elements seperated by a '.'. All elements must be non-empty
+      //  - Names must contain at least one '.' (and thus at least 2 elements)
+      //  - Not be longer than 255
+
+      if (name.empty()) return "Interface name cannot be empty";
+      if (std::count(name.begin(), name.end(), '.') == 0) return "Interface name must contain at least 1 '.'";
+      if (name.size() >= MAX_DBUS_NAME_LENGTH) return "Interface name must be shorter than 255 characters";
 
       return std::nullopt;
     }
   }  // namespace
+
+  std::string const & ObjectPath::GetPath() const
+  {
+    return m_path;
+  }
 
   Signature::Signature(std::string signature)
     : m_signature(std::move(signature))
@@ -134,5 +157,41 @@ namespace cxxbus
   DBusWellKnownName::operator std::string() const
   {
     return m_name;
+  }
+
+  DBusInterfaceName::DBusInterfaceName(std::string interfaceName)
+    : m_name()
+  {
+    if (auto result{ValidateDBusInterfaceName(interfaceName)}; result.has_value())
+    {
+      throw InvalidDBusName{result.value()};
+    }
+
+    m_name = std::move(interfaceName);
+  }
+
+  std::string const& DBusInterfaceName::GetName() const
+  {
+    return m_name;
+  }
+
+  uint32_t DBusInterfaceName::size() const
+  {
+    return m_name.size();
+  }
+
+  bool DBusInterfaceName::empty() const
+  {
+    return m_name.empty();
+  }
+
+  DBusInterfaceName::operator std::string() const
+  {
+    return m_name;
+  }
+
+  bool DBusInterfaceName::operator==(std::string const & str) const
+  {
+    return m_name == str;
   }
 }  // namespace cxxbus

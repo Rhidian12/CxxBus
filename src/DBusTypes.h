@@ -32,25 +32,28 @@ namespace cxxbus
   enum class DBusMessageFlags : uint8_t
   {
     NONE = 0,
-    NO_REPLY_EXPECTED = 0x1,               // We don't expect replies, even if it can have replies
-    NO_AUTO_START = 0x2,                   // The bus must not launch an owner for the destination name in response to this message
-    ALLOW_INTERACTIVE_AUTHORIZATION = 0x4  // We are informing the receiver of our message that we are prepared to wait for interactive authorization
+    NO_REPLY_EXPECTED = 0x1,  // We don't expect replies, even if it can have replies
+    NO_AUTO_START = 0x2,      // The bus must not launch an owner for the destination name in response to this message
+    ALLOW_INTERACTIVE_AUTHORIZATION =
+        0x4  // We are informing the receiver of our message that we are prepared to wait for interactive authorization
   };
 
   enum class HeaderFieldCode : uint8_t
   {
     INVALID = 0,
-    PATH = 1,          // The object to send a call to, or the object a signal is emitted from. Controlled by message sender
-    INTERFACE = 2,     // The interface to invoke a method call on, or the interface a signal is emitted from. Optional for method calls, required for signals.
-                       // Controlled by message sender.
+    PATH = 1,  // The object to send a call to, or the object a signal is emitted from. Controlled by message sender
+    INTERFACE = 2,  // The interface to invoke a method call on, or the interface a signal is emitted from. Optional for
+                    // method calls, required for signals. Controlled by message sender.
     MEMBER = 3,        // The member, either method name or signal name. Controlled by message sender
     ERROR_NAME = 4,    // The name of the error that occurred.
     REPLY_SERIAL = 5,  // The serial number of the message this message is a reply to. Controlled by the message sender.
     DESTINATION = 6,   // Name of the connection message is intended for. Controlled by the message sender.
-    SENDER = 7,        // Unique name of the sending connection. On a message bus, controlled by the message bus, otherwise controlled by message sender.
-    SIGNATURE = 8,     // Signature of the message body. If not present, assume signature is "" (meaning body must be 0-length). Controlled by message sender
-    UNIX_FDS =
-        9,  // Number of Unix file descriptors that accompany the message. If not present, assume no FDs accompany the message. Controlled by message sender.
+    SENDER = 7,     // Unique name of the sending connection. On a message bus, controlled by the message bus, otherwise
+                    // controlled by message sender.
+    SIGNATURE = 8,  // Signature of the message body. If not present, assume signature is "" (meaning body must be
+                    // 0-length). Controlled by message sender
+    UNIX_FDS = 9,   // Number of Unix file descriptors that accompany the message. If not present, assume no FDs
+                    // accompany the message. Controlled by message sender.
 
     NONE = 255  // Internal Usage. Not part of DBus Spec.
   };
@@ -113,6 +116,8 @@ namespace cxxbus
       return m_path;
     }
 
+    std::string const & GetPath() const;
+
     bool Empty() const;
 
     auto operator<=>(ObjectPath const&) const noexcept = default;
@@ -164,7 +169,7 @@ namespace cxxbus
     {
       return std::get<I>(m_types);
     }
-  
+
     auto operator<=>(MultipleCompleteTypes const&) const noexcept = default;
   };
 
@@ -207,7 +212,24 @@ namespace cxxbus
     auto operator<=>(DBusWellKnownName const&) const noexcept = default;
   };
 
-  // [TODO]: Interfaces should also be strongly typed so we can validate the name
+  class DBusInterfaceName
+  {
+   private:
+    std::string m_name;
+
+   public:
+    explicit DBusInterfaceName(std::string interfaceName);
+
+    std::string const& GetName() const;
+
+    uint32_t size() const;
+    explicit operator std::string() const;
+    bool empty() const;
+
+    auto operator<=>(DBusInterfaceName const&) const noexcept = default;
+    bool operator==(DBusInterfaceName const&) const = default;
+    bool operator==(std::string const & str) const;
+  };
 
   class DBusError : public std::runtime_error
   {
@@ -250,11 +272,10 @@ namespace cxxbus
   // 3rd byte is bitwise-OR flags
   // 4th byte is major protocol version, is always 1
   // 1st uint32_t is length in bytes of the message body, starting from the end of the header
-  // 2nd uint32_t is the serial of this message, used as a cookie by the sender to identify the reply correspending to this request.
-  // Must be non-zero value Array of struct of byte, variant are the header fields.
-  // The message type specifies which fields are required
-  // Here we keep track of the set starting size of any DBus message:
-  // The 4 bytes, the 2 u32's. We use this data to parse the DBus Message piece-by-piece
+  // 2nd uint32_t is the serial of this message, used as a cookie by the sender to identify the reply correspending to
+  // this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message type
+  // specifies which fields are required Here we keep track of the set starting size of any DBus message: The 4 bytes,
+  // the 2 u32's. We use this data to parse the DBus Message piece-by-piece
   inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 2;
 
   // Alignment boundary of the DBus Message Body (not the Header)

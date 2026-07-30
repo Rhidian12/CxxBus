@@ -58,7 +58,7 @@ namespace cxxbus
     {
       return "d";
     }
-    else if constexpr (IsString<T>)
+    else if constexpr (IsString<T> || std::same_as<T, DBusInterfaceName>)
     {
       return "s";
     }

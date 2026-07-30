@@ -30,7 +30,7 @@ namespace cxxbus
    private:
     std::optional<std::string> m_method;
     std::optional<ObjectPath> m_path;
-    std::optional<std::string> m_interface;
+    std::optional<DBusInterfaceName> m_interface;
     std::vector<DBusMessageFlags> m_flags;
     DBusMessageType m_messageType;
 
@@ -49,7 +49,7 @@ namespace cxxbus
     static DBusMessage Error(IncomingDBusMessage const & incomingMessage, std::string errorName, std::string errorMessage);
 
     DBusMessage& Path(ObjectPath path);
-    DBusMessage& Interface(std::string interface);
+    DBusMessage& Interface(DBusInterfaceName interface);
     DBusMessage& Destination(std::string destination);
     DBusMessage& Flag(DBusMessageFlags flag);
     template <typename T>
@@ -72,7 +72,7 @@ namespace cxxbus
 
     std::optional<ObjectPath> const& GetPath() const;
     std::optional<Signature> const& GetSignature() const;
-    std::optional<std::string> const& GetInterface() const;
+    std::optional<DBusInterfaceName> const& GetInterface() const;
     std::optional<std::string> const& GetDestination() const;
     std::optional<std::string> const& GetMember() const;
 

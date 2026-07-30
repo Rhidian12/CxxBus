@@ -23,7 +23,7 @@ namespace cxxbus
     m_conn.AddMatchRuleSync(DBusMatchRule::Create()
                                 .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                .Interface("org.freedesktop.DBus")
+                                .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                 .Member("NameOwnerChanged"),
                             [this](IncomingDBusMessage message) { OnNameOwnerChanged(std::move(message)); });
   }
@@ -33,7 +33,7 @@ namespace cxxbus
     co_await m_conn.AddMatchRule(DBusMatchRule::Create()
                                      .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
                                      .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                     .Interface("org.freedesktop.DBus")
+                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                      .Member("NameOwnerChanged"),
                                  [this](IncomingDBusMessage message) { OnNameOwnerChanged(std::move(message)); });
   }

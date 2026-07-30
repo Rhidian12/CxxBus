@@ -72,7 +72,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
         co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                .Interface("org.freedesktop.DBus.Introspectable")
+                                                .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                                 .Destination("org.freedesktop.DBus"));
 
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
@@ -234,7 +234,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
         co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                .Interface("org.freedesktop.DBus")
+                                                .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                 .Destination("org.freedesktop.DBus")
                                                 .Parameter(std::string{"com.dbus.CxxTest"}));
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
@@ -256,7 +256,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
     DBusMatchRule const extensiveRule{DBusMatchRule::Create()
                                           .Type(DBusMessageType::SIGNAL)
                                           .Member("NameOwnerChanged")
-                                          .Interface("org.freedesktop.DBus")
+                                          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                           .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
     co_await conn->AddMatchRule(
         extensiveRule, [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
@@ -267,7 +267,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                   .Interface("org.freedesktop.DBus")
+                                   .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                    .Destination("org.freedesktop.DBus")
                                    .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                        DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
@@ -287,7 +287,7 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
     conn =
         co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
     DBusMessage message{DBusMessage::Method("RequestName")
-                            .Interface("org.freedesktop.DBus")
+                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                             .Path(ObjectPath{"/org/freedesktop/DBus"})
                             .Destination("org.freedesktop.DBus")
                             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};

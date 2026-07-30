@@ -506,7 +506,7 @@ namespace cxxbus
   {
     std::string const str{std::string{value}};
 
-    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath>)
+    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
     {
       // Encode the length
       MarshalBasicFixedType(static_cast<uint32_t>(str.size()), dbusType);
@@ -794,12 +794,13 @@ namespace cxxbus
   T UnmarshalDBusBasicStringlikeType(std::vector<byte> const& dbusType, uint32_t& arrPointer)
   {
     uint32_t strLength{};
-    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath>)
+    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
     {
       strLength = UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer);
     }
     else
     {
+      // Signature needs to unmarshal a u8
       strLength = static_cast<uint32_t>(UnmarshalDBusBasicFixedType<uint8_t>(dbusType, arrPointer));
     }
 

@@ -12,6 +12,7 @@ namespace cxxbus
 {
   class Signature;
   class ObjectPath;
+  class DBusInterfaceName;
   class Variant;
   template <typename... Ts>
   class MultipleCompleteTypes;
@@ -40,7 +41,7 @@ namespace cxxbus
   concept IsString = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
 
   template <typename T>
-  concept IsDBusBasicStringlikeType = IsString<T> || std::same_as<T, ObjectPath> || std::same_as<T, Signature>;
+  concept IsDBusBasicStringlikeType = IsString<T> || std::same_as<T, ObjectPath> || std::same_as<T, Signature> || std::same_as<T, DBusInterfaceName>;
 
   template <typename T>
   concept IsDBusMultipleCompleteTypes = IsSpecialisation<T, MultipleCompleteTypes>;

@@ -175,7 +175,7 @@ namespace cxxbus
       data.destination = destinationIt == headerFieldData.cend() ? std::nullopt : std::optional{destinationIt->data.UnmarshalData<std::string>()};
       data.sender = senderIt == headerFieldData.cend() ? std::nullopt : std::optional{senderIt->data.UnmarshalData<std::string>()};
       data.objectPath = objectPathIt == headerFieldData.cend() ? std::nullopt : std::optional{objectPathIt->data.UnmarshalData<ObjectPath>()};
-      data.interface = interfaceIt == headerFieldData.cend() ? std::nullopt : std::optional{interfaceIt->data.UnmarshalData<std::string>()};
+      data.interface = interfaceIt == headerFieldData.cend() ? std::nullopt : std::optional{interfaceIt->data.UnmarshalData<DBusInterfaceName>()};
       data.member = memberIt == headerFieldData.cend() ? std::nullopt : std::optional{memberIt->data.UnmarshalData<std::string>()};
       data.replySerial = serialIt == headerFieldData.cend() ? std::nullopt : std::optional{serialIt->data.UnmarshalData<uint32_t>()};
       data.signature = signatureIt == headerFieldData.cend() ? std::nullopt : std::optional{signatureIt->data.UnmarshalData<Signature>()};
@@ -223,7 +223,7 @@ namespace cxxbus
     return m_data.objectPath;
   }
 
-  std::optional<std::string> const& DBusMessageHeader::GetInterface() const
+  std::optional<DBusInterfaceName> const& DBusMessageHeader::GetInterface() const
   {
     return m_data.interface;
   }

@@ -170,7 +170,7 @@ namespace cxxbus
     IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
                                                              .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                              .Destination("org.freedesktop.DBus")
-                                                             .Interface("org.freedesktop.DBus")
+                                                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                              .Parameter(std::string{m_state->wellKnownName}));
 
     switch (ret.Get<uint32_t>())
@@ -208,7 +208,7 @@ namespace cxxbus
     IncomingDBusMessage const ret = SendMessageSync(DBusMessage::Method("ReleaseName")
                                                         .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                         .Destination("org.freedesktop.DBus")
-                                                        .Interface("org.freedesktop.DBus")
+                                                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                         .Parameter(std::string{m_state->wellKnownName}));
 
     switch (ret.Get<uint32_t>())
@@ -321,7 +321,7 @@ namespace cxxbus
     std::optional<IncomingDBusMessage> reply =
         co_await SendMessageInternal(DBusMessage::Method("Hello")
                                          .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                         .Interface("org.freedesktop.DBus")
+                                         .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                          .Destination("org.freedesktop.DBus"));
     if (reply.has_value())
     {
@@ -335,7 +335,7 @@ namespace cxxbus
     // Now, request a well-known name from the dbus-daemon
     reply = co_await SendMessageInternal(DBusMessage::Method("RequestName")
                                              .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                             .Interface("org.freedesktop.DBus")
+                                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                              .Destination("org.freedesktop.DBus")
                                              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                                  m_state->wellKnownName.GetName(), static_cast<uint32_t>(0x1)}));
@@ -402,10 +402,11 @@ namespace cxxbus
 
     LOGGER.LogTrace("Read loop started. Starting connection handshake");
     // Get our unique bus name
-    std::optional<IncomingDBusMessage> reply = SendMessageInternalSync(DBusMessage::Method("Hello")
-                                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                                           .Interface("org.freedesktop.DBus")
-                                                                           .Destination("org.freedesktop.DBus"));
+    std::optional<IncomingDBusMessage> reply =
+        SendMessageInternalSync(DBusMessage::Method("Hello")
+                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                    .Destination("org.freedesktop.DBus"));
     if (reply.has_value())
     {
       m_state->uniqueConnection = reply->Get<std::string>();
@@ -416,7 +417,7 @@ namespace cxxbus
     // Now, request a well-known name from the dbus-daemon
     reply = SendMessageInternalSync(DBusMessage::Method("RequestName")
                                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                        .Interface("org.freedesktop.DBus")
+                                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                         .Destination("org.freedesktop.DBus")
                                         .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                             m_state->wellKnownName.GetName(), static_cast<uint32_t>(0x1)}));
@@ -479,11 +480,11 @@ namespace cxxbus
         co_await boost::asio::async_write(state->socket, boost::asio::buffer(message.Serialize(serial)),
                                           boost::asio::use_awaitable);
 
-        LOGGER.LogTrace(
-            std::format("Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-                        message.GetMember().value_or(""), serial,
-                        message.GetPath().transform([](ObjectPath const& p) { return std::string{p}; }).value_or(""),
-                        message.GetInterface().value_or("")));
+        LOGGER.LogTrace(std::format(
+            "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
+            message.GetMember().value_or(""), serial,
+            message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
+            message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
         co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
       }
       catch (boost::system::system_error const& ex)
@@ -717,11 +718,11 @@ namespace cxxbus
 
     // 2nd, actually send the message (sync)
     boost::asio::write(m_state->socket, boost::asio::buffer(message.Serialize(serial)));
-    LOGGER.LogTrace(
-        std::format("Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-                    message.GetMember().value_or(""), serial,
-                    message.GetPath().transform([](ObjectPath const& p) { return std::string{p}; }).value_or(""),
-                    message.GetInterface().value_or("")));
+    LOGGER.LogTrace(std::format(
+        "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
+        message.GetMember().value_or(""), serial,
+        message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
+        message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
 
     // 3rd, run the io_context until reply arrives
     while (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
@@ -826,7 +827,7 @@ namespace cxxbus
 
     co_await SendMessage(DBusMessage::Method("AddMatch")
                              .Path(ObjectPath{"/org/freedesktop/DBus"})
-                             .Interface("org.freedesktop.DBus")
+                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()));
 
@@ -842,7 +843,7 @@ namespace cxxbus
 
     co_await SendMessage(DBusMessage::Method("RemoveMatch")
                              .Path(ObjectPath{"/org/freedesktop/DBus"})
-                             .Interface("org.freedesktop.DBus")
+                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()));
 
@@ -859,7 +860,7 @@ namespace cxxbus
 
     SendMessageSync(DBusMessage::Method("AddMatch")
                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                        .Interface("org.freedesktop.DBus")
+                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                         .Destination("org.freedesktop.DBus")
                         .Parameter(rule.GetRule()));
 
@@ -871,7 +872,7 @@ namespace cxxbus
   {
     SendMessageSync(DBusMessage::Method("RemoveMatch")
                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                        .Interface("org.freedesktop.DBus")
+                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                         .Destination("org.freedesktop.DBus")
                         .Parameter(rule.GetRule()));
 

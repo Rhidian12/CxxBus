@@ -22,7 +22,7 @@ namespace cxxbus
       std::optional<uint32_t> replySerial;
       DBusMessageType messageType;
       std::optional<ObjectPath> objectPath;
-      std::optional<std::string> interface;
+      std::optional<DBusInterfaceName> interface;
       std::optional<std::string> member;
       std::optional<std::string> errorName;
       std::optional<Signature> signature;
@@ -47,7 +47,7 @@ namespace cxxbus
     uint32_t GetMessageLength() const;
     std::optional<Signature> const& GetSignature() const;
     std::optional<ObjectPath> const& GetObjectPath() const;
-    std::optional<std::string> const& GetInterface() const;
+    std::optional<DBusInterfaceName> const& GetInterface() const;
     // Either method name or signal name, depending on message type
     std::optional<std::string> const& GetMember() const;
     std::optional<std::string> const& GetSender() const;

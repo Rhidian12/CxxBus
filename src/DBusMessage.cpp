@@ -26,7 +26,7 @@ namespace cxxbus
 
     std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody,
                                         std::vector<DBusMessageFlags> const& messageFlags, std::optional<std::string> const& method,
-                                        std::optional<ObjectPath> const& objectPath, std::optional<std::string> const& interface,
+                                        std::optional<ObjectPath> const& objectPath, std::optional<DBusInterfaceName> const& interface,
                                         std::optional<std::string> destination, std::optional<Signature> const& signature,
                                         std::optional<std::string> const& errorName, std::optional<uint32_t> const& replySerial)
     {
@@ -103,7 +103,7 @@ namespace cxxbus
             {
               throw DBusSerializationError{std::format("Interface is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{interface.value()};
+            variant = Variant{*interface};
             break;
           case HeaderFieldCode::MEMBER:
             if (!method.has_value() || method->empty())
@@ -201,7 +201,7 @@ namespace cxxbus
     return *this;
   }
 
-  DBusMessage& DBusMessage::Interface(std::string interface)
+  DBusMessage& DBusMessage::Interface(DBusInterfaceName interface)
   {
     m_interface = std::move(interface);
     return *this;
@@ -239,7 +239,7 @@ namespace cxxbus
     return m_signature;
   }
 
-  std::optional<std::string> const& DBusMessage::GetInterface() const
+  std::optional<DBusInterfaceName> const& DBusMessage::GetInterface() const
   {
     return m_interface;
   }
