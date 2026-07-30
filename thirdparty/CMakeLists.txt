@@ -1,0 +1,1 @@
+set(thirdparty-include-dir ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)

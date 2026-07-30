@@ -9,6 +9,8 @@
 #include <tuple>
 #include <utility>
 
+#include <magic_enum.hpp>
+
 #include "DBus.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
@@ -78,48 +80,42 @@ namespace cxxbus
           case HeaderFieldCode::REPLY_SERIAL:
             if (!replySerial.has_value())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("replySerial is required for message type {}", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("replySerial is required for message type {}", magic_enum::enum_name(msgType))};
             }
             variant = Variant{replySerial.value()};
             break;
           case HeaderFieldCode::ERROR_NAME:
             if (!errorName.has_value() || errorName->empty())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("ErrorName is required for message type {}", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("ErrorName is required for message type {}", magic_enum::enum_name(msgType))};
             }
             variant = Variant{errorName.value()};
             break;
           case HeaderFieldCode::PATH:
             if (!objectPath.has_value() || objectPath->Empty())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("Path is required for message type {}", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("Path is required for message type {}", magic_enum::enum_name(msgType))};
             }
             variant = Variant{*objectPath};
             break;
           case HeaderFieldCode::INTERFACE:
             if (!interface.has_value() || interface->empty())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("Interface is required for message type {}", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("Interface is required for message type {}", magic_enum::enum_name(msgType))};
             }
             variant = Variant{interface.value()};
             break;
           case HeaderFieldCode::MEMBER:
             if (!method.has_value() || method->empty())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("Method is required for message type {}", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("Method is required for message type {}", magic_enum::enum_name(msgType))};
             }
             variant = Variant{*method};
             break;
           case HeaderFieldCode::SIGNATURE:
             if (!signature.has_value() || signature->Empty())
             {
-              // [TODO]: Print this as a string
-              throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body", static_cast<uint8_t>(msgType))};
+              throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body", magic_enum::enum_name(msgType))};
             }
             variant = Variant{*signature};
             break;

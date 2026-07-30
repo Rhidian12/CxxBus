@@ -41,4 +41,5 @@ include("build-system/CreateBinary.cmake")
 
 enable_testing()
 
+add_subdirectory(thirdparty)
 add_subdirectory(src)

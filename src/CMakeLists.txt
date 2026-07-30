@@ -15,6 +15,8 @@ add_library(cxxbus-lib  DBusConnection.cpp
                         DBusMatchRule.cpp
                         DBusNameCache.cpp)
 
+target_include_directories(cxxbus-lib PUBLIC ${thirdparty-include-dir})
+
 set(cxxbus-include-dir ${CMAKE_SOURCE_DIR})
 
 create_binary(NAME cxxbus-test
