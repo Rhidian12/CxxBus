@@ -50,6 +50,7 @@ namespace cxxbus
       // Same as above, but for our sync version
       std::map<uint32_t, std::function<void(IncomingDBusMessage)>> replySyncCallbacks;
 
+      std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>> objectPathHandlers;
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
 
       // Send messages to the SendLoop() coroutine
@@ -85,6 +86,8 @@ namespace cxxbus
     void AuthenticateDBusConnectionSync();
     void ConnectSync();
 
+    void CloseData();
+
    private:
     DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
 
@@ -102,6 +105,8 @@ namespace cxxbus
                                                                           CreateConnectionDetached connectionMethod);
     static std::shared_ptr<DBusConnection> CreateSync(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
 
+    // Receive messages on a specific object path
+    void RegisterObjectPathHandler(ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);

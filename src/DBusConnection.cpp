@@ -32,6 +32,14 @@ namespace cxxbus
 #define CXX_BUS_LOGLEVEL Error
 #endif  // CXX_BUS_LOGLEVEL
 
+#ifndef CXX_BUS_EXIT_IF_EXPIRED
+#define CXX_BUS_EXIT_IF_EXPIRED(var) \
+  if ((var).expired())               \
+  {                                  \
+    co_return;                       \
+  }
+#endif  // CXX_BUS_EXIT_IF_EXPIRED
+
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
 
     std::string ParseDBusAddress()
@@ -104,6 +112,7 @@ namespace cxxbus
               std::map<uint32_t,
                        boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
           .replySyncCallbacks = {},
+          .objectPathHandlers = {},
           .onIncomingSignal = {},
           .sendLoop =
               boost::asio::experimental::channel<void(
@@ -125,13 +134,25 @@ namespace cxxbus
 
   DBusConnection::~DBusConnection()
   {
+    // We do this check because preferably the user used `Close()` or `CloseAsync()` to already kill the connection
+    if (m_state->socket.is_open())
+    {
+      CloseData();
+    }
+  }
+
+  void DBusConnection::CloseData()
+  {
+    LOGGER.LogTrace("Closing sockets, channels and signals");
     if (m_state->socket.is_open())
     {
       boost::system::error_code ec;
       std::ignore = m_state->socket.close(ec);
-      m_state->sendLoop.close();
-      m_state->onIncomingSignal.disconnect_all_slots();
     }
+
+    m_state->sendLoop.close();
+    m_state->onIncomingSignal.disconnect_all_slots();
+    m_state->objectPathHandlers.clear();
   }
 
   boost::asio::awaitable<void> DBusConnection::Close()
@@ -170,11 +191,7 @@ namespace cxxbus
         break;
     }
 
-    LOGGER.LogTrace("Closing sockets, channels and signals");
-    boost::system::error_code ec;
-    std::ignore = m_state->socket.close(ec);
-    m_state->sendLoop.close();
-    m_state->onIncomingSignal.disconnect_all_slots();
+    CloseData();
   }
 
   void DBusConnection::CloseSync()
@@ -212,9 +229,7 @@ namespace cxxbus
         break;
     }
 
-    boost::system::error_code ec;
-    std::ignore = m_state->socket.close(ec);
-    m_state->sendLoop.close();
+    CloseData();
   }
 
   void DBusConnection::AuthenticateDBusConnectionSync()
@@ -243,19 +258,27 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
   {
+    std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
+
+    auto state = m_state;
+
     // First send a single '\0' byte
-    co_await m_state->socket.async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
+    co_await state->socket.async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Next we must authenticate ourselves, we use the EXTERNAL
     // authentication method
-    co_await m_state->socket.async_send(
+    co_await state->socket.async_send(
         boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))),
         boost::asio::use_awaitable);
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Now we expect to see OK <guid>
     std::string reply{};
-    co_await boost::asio::async_read_until(m_state->socket, boost::asio::dynamic_buffer(reply), "\r\n",
+    co_await boost::asio::async_read_until(state->socket, boost::asio::dynamic_buffer(reply), "\r\n",
                                            boost::asio::use_awaitable);
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     if (!reply.starts_with("OK"))
     {
@@ -264,16 +287,25 @@ namespace cxxbus
     }
 
     // Yippee! All worked, so now start our DBus Connection!
-    co_await m_state->socket.async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
+    co_await state->socket.async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
   }
 
   boost::asio::awaitable<void> DBusConnection::Connect()
   {
+    std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
+
+    auto state = m_state;
+
     // Connect to DBus daemon
     boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-    co_await m_state->socket.async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+    co_await state->socket.async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     co_await AuthenticateDBusConnection();
+
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     LOGGER.LogTrace("Connected to DBus-daemon. Starting Send loop");
     boost::asio::co_spawn(m_ioContext, SendLoop(), boost::asio::detached);
@@ -282,6 +314,9 @@ namespace cxxbus
     boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
 
     LOGGER.LogTrace("Read loop started. Starting connection handshake");
+
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
+
     // Get our unique bus name
     std::optional<IncomingDBusMessage> reply =
         co_await SendMessageInternal(DBusMessage::Method("Hello")
@@ -294,6 +329,8 @@ namespace cxxbus
     }
 
     LOGGER.LogInfo(std::format("Unique Connection ID: {}", m_state->uniqueConnection));
+
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Now, request a well-known name from the dbus-daemon
     reply = co_await SendMessageInternal(DBusMessage::Method("RequestName")
@@ -338,11 +375,15 @@ namespace cxxbus
 
     LOGGER.LogTrace("Connection handshake completed.");
 
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
+
     m_state->connectionReady = true;
     if (m_state->nrOfWaiters > 0)
     {
       co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
     }
+
+    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     LOGGER.LogTrace("Subscribing to NameOwnerChanged signal");
     co_await m_state->nameCache.SubscribeToNameChanges();
@@ -513,6 +554,7 @@ namespace cxxbus
         IncomingDBusMessage message{std::move(messageHeader),
                                     std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
 
+        // We're dealing with a reply from a previously sent message
         if (message.GetHeader().GetReplySerial().has_value())
         {
           uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
@@ -539,6 +581,7 @@ namespace cxxbus
             state->replySyncCallbacks[replySerial](std::move(message));
           }
         }
+        // Simply an incoming message
         else
         {
           LOGGER.LogTrace(std::format("Received incoming message with serial '{}' and signature '{}' and member '{}'",
@@ -556,6 +599,16 @@ namespace cxxbus
                 info.callback(message);
               }
             }
+          }
+          else if (message.GetHeader().GetObjectPath().has_value() &&
+                   state->objectPathHandlers.contains(
+                       message.GetHeader()
+                           .GetObjectPath()
+                           .transform([](ObjectPath const& path) { return std::string{path}; })
+                           .value()))
+          {
+            co_await state->objectPathHandlers[std::string{message.GetHeader().GetObjectPath().value()}](
+                std::move(message));
           }
           else
           {
@@ -825,6 +878,19 @@ namespace cxxbus
     auto const it = std::ranges::find_if(m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     m_state->matchRules.erase(it);
+  }
+
+  void DBusConnection::RegisterObjectPathHandler(
+      ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
+  {
+    m_state->objectPathHandlers[std::string{path}].connect(
+        [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
+        {
+          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+          // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
+          // out-of-scope
+          { return InvokeIncomingCallback(cb, std::move(message)); };
+        });
   }
 
   void DBusConnection::ReceiveIncomingMessages(

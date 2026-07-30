@@ -324,6 +324,12 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
           LOGGER.LogDebug("Connection2 received the message, returning an error");
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
+    
+    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"}, [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+    {
+      LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
+      co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+    });
 
     LOGGER.LogDebug("Sending a message from connection1 to connection2");
     EXPECT_THROW(
@@ -340,6 +346,10 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
       EXPECT_EQ(ex.GetErrorName(), "com.you.Stupid");
       EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
     }
+
+    EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method").Path(ObjectPath{"/com/dbus/CxxTest2/Method"}).Destination("com.dbus.CxxTest2")))
+                   .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
+              (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
     co_await conn2->Close();
     LOGGER.LogTrace("Finished closing 2nd connection");

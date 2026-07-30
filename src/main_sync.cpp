@@ -1,4 +1,6 @@
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
@@ -52,12 +54,23 @@ void DBusSubscribeToSignal(std::shared_ptr<DBusConnection> conn)
 int main()
 {
   boost::asio::io_context ioService{};
-  
-  std::shared_ptr<DBusConnection> conn{DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"})};
-  
-  DBusSubscribeToSignal(conn);
 
-  conn->CloseSync();
+  boost::asio::co_spawn(
+      ioService,
+      [&ioService]() -> boost::asio::awaitable<void>
+      {
+        LOGGER.LogInfo("Running Sync Main");
+        std::shared_ptr<DBusConnection> conn{
+            DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"})};
 
+        DBusSubscribeToSignal(conn);
+
+        conn->CloseSync();
+
+        co_return;
+      },
+      boost::asio::detached);
+
+  LOGGER.LogInfo("Running IOService");
   ioService.run();
 }

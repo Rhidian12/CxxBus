@@ -170,10 +170,9 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage DBusMessage::Reply(IncomingDBusMessage const & incomingMessage, std::string method)
+  DBusMessage DBusMessage::Reply(IncomingDBusMessage const & incomingMessage)
   {
     DBusMessage message;
-    message.m_method = std::move(method);
     message.m_messageType = DBusMessageType::METHOD_RETURN;
     message.m_replySerial = incomingMessage.GetHeader().GetSerial();
     message.m_destination = incomingMessage.GetHeader().GetSender();

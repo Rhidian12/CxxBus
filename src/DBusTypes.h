@@ -164,6 +164,8 @@ namespace cxxbus
     {
       return std::get<I>(m_types);
     }
+  
+    auto operator<=>(MultipleCompleteTypes const&) const noexcept = default;
   };
 
   class InvalidDBusName : public std::runtime_error

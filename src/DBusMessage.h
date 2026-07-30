@@ -44,7 +44,7 @@ namespace cxxbus
     DBusMessage() = default;
 
     static DBusMessage Method(std::string method);
-    static DBusMessage Reply(IncomingDBusMessage const & incomingMessage, std::string method);
+    static DBusMessage Reply(IncomingDBusMessage const & incomingMessage);
     static DBusMessage Signal(std::string signal);
     static DBusMessage Error(IncomingDBusMessage const & incomingMessage, std::string errorName, std::string errorMessage);
 
