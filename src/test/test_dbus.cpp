@@ -321,21 +321,25 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
-          LOGGER.LogInfo("Connection2 received the message, returning an error");
+          LOGGER.LogDebug("Connection2 received the message, returning an error");
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
 
-    LOGGER.LogInfo("Sending a message from connection1 to connection2");
+    LOGGER.LogDebug("Sending a message from connection1 to connection2");
     EXPECT_THROW(
         co_await conn->SendMessage(
             DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
         DBusError);
-    LOGGER.LogInfo("Finished sending message");
-
-    using namespace std::chrono_literals;
-    boost::asio::system_timer timer{ioService};
-    timer.expires_after(1s);
-    co_await timer.async_wait(boost::asio::use_awaitable);
+    try
+    {
+      co_await conn->SendMessage(
+            DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
+    }
+    catch (DBusError const& ex)
+    {
+      EXPECT_EQ(ex.GetErrorName(), "com.you.Stupid");
+      EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
+    }
 
     co_await conn2->Close();
     LOGGER.LogTrace("Finished closing 2nd connection");
