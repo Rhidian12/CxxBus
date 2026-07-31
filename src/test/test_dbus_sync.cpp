@@ -5,17 +5,19 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <functional>
+#include <memory>
 
-#include "src/SyncDBusConnection.h"
 #include "src/DBusMatchRule.h"
 #include "src/DBusMessage.h"
 #include "src/DBusTypes.h"
 #include "src/IncomingDBusMessage.h"
 #include "src/Log.h"
+#include "src/SyncDBusConnection.h"
 
 using namespace cxxbus;
 
@@ -26,16 +28,23 @@ struct SyncDBusConnectionTestSuite : ::testing::Test
  public:
   boost::asio::io_context ioService;
   std::shared_ptr<SyncDBusConnection> conn;
+  std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> workGuard;
+  std::thread ioThread;
 
-  void SetUp() override
+  void StartIoThread()
   {
-    // Setup code here.
+    workGuard.emplace(boost::asio::make_work_guard(ioService));
+    ioThread = std::thread([this] { ioService.run(); });
   }
 
   void TearDown() override
   {
-    ioService.run();
-    LOGGER.LogTrace("Finished running ioService");
+    if (ioThread.joinable())
+    {
+      workGuard.reset();
+      ioService.stop();
+      ioThread.join();
+    }
   }
 };
 
@@ -49,9 +58,9 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
   auto reply = conn->SendMessage(DBusMessage::Method("Introspect")
-                                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                         .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                         .Destination("org.freedesktop.DBus"));
+                                     .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
+                                     .Destination("org.freedesktop.DBus"));
 
   EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
   EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
@@ -288,6 +297,25 @@ TEST_F(SyncDBusConnectionTestSuite, TestGettingErrors)
   }
 }
 
+boost::asio::awaitable<void> PollSocket(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
+                                        boost::asio::local::stream_protocol::socket& socket);
+void PollConnection(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
+                    boost::asio::local::stream_protocol::socket& socket)
+{
+  if (conn.expired()) return;
+
+  conn.lock()->Poll();
+  boost::asio::co_spawn(ioContext, PollSocket(ioContext, conn, socket), boost::asio::detached);
+}
+
+boost::asio::awaitable<void> PollSocket(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
+                                        boost::asio::local::stream_protocol::socket& socket)
+{
+  socket.async_wait(boost::asio::local::stream_protocol::socket::wait_read,
+                    [&](boost::system::error_code const&) { PollConnection(ioContext, conn, socket); });
+  co_return;
+}
+
 TEST_F(SyncDBusConnectionTestSuite, TestReplying)
 {
   LOGGER.LogInfo("Making first connection");
@@ -295,48 +323,58 @@ TEST_F(SyncDBusConnectionTestSuite, TestReplying)
   LOGGER.LogInfo("Making second connection");
   auto conn2 = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
 
-  auto dispatchMessages = [](SyncDBusConnection & conn)
+  auto dispatchMessages = [](std::weak_ptr<SyncDBusConnection> conn)
   {
-    while (conn.DispatchIncomingMessages() != DispatchStatus::COMPLETED)
+    if (conn.expired()) return;
+    while (conn.lock()->DispatchIncomingMessages() != DispatchStatus::COMPLETED)
     {
       // boo
     }
   };
 
+  auto weakConn = std::weak_ptr{conn};
   conn->SetDispatchHandler(
-      [dispatchMessages, this](DispatchStatus status)
+      [dispatchMessages, weakConn](DispatchStatus status)
       {
         if (status == DispatchStatus::DISPATCH_PENDING)
         {
-          dispatchMessages(*conn);
+          dispatchMessages(weakConn);
         }
       });
 
   conn2->SetDispatchHandler(
-      [dispatchMessages, conn2](DispatchStatus status)
+      [dispatchMessages, conn = std::weak_ptr{conn2}](DispatchStatus status)
       {
+        if (conn.expired()) return;
         if (status == DispatchStatus::DISPATCH_PENDING)
         {
-          dispatchMessages(*conn2);
+          dispatchMessages(conn);
         }
       });
 
+  StartIoThread();
+
+  boost::asio::io_context& ioContext{ioService};
+  conn2->SetPollHandler(
+      [&ioContext, weakConn = std::weak_ptr{conn2}](boost::asio::local::stream_protocol::socket& socket)
+      { boost::asio::co_spawn(ioContext, PollSocket(ioContext, weakConn, socket), boost::asio::detached); });
+
   conn2->ReceiveIncomingMessages(
-      [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+      [conn = std::weak_ptr{conn2}](IncomingDBusMessage message)
       {
+        if (conn.expired()) return;
         // wtf we just got something sent SO stupid. Let's send a reply error back
         LOGGER.LogDebug("Connection2 received the message, returning an error");
-        conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
-        co_return;
+        conn.lock()->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
       });
 
   conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
-                                   [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+                                   [conn = std::weak_ptr{conn2}](IncomingDBusMessage message)
                                    {
+                                     if (conn.expired()) return;
                                      LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
-                                     conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
+                                     conn.lock()->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
                                          MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-                                     co_return;
                                    });
 
   LOGGER.LogDebug("Sending a message from connection1 to connection2");
@@ -355,49 +393,61 @@ TEST_F(SyncDBusConnectionTestSuite, TestReplying)
   }
 
   EXPECT_EQ(((conn->SendMessage(DBusMessage::Method("Method")
-                                        .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
-                                        .Destination("com.dbus.CxxTest2")))
+                                    .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
+                                    .Destination("com.dbus.CxxTest2")))
                  .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
             (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
   LOGGER.LogTrace("Finished closing 2nd connection");
 }
 
-// TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
-// {
-//   coroutineToRun = [this]() -> boost::asio::awaitable<void>
-//   {
-//     conn =
-//         co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-//     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"},
-//                                                  CreateConnectionDetached::NO);
+TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
+{
+  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+  conn->SetLogLevel(LogLevel::Error);
+  auto conn2 = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
 
-//     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
-//         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
-//     bool signalEmitted{};
-//     co_await conn2->AddMatchRule(
-//         DBusMatchRule::Create().Member("SignalEmitted"),
-//         [&signalEmitted, chann, this](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
-//         {
-//           LOGGER.LogInfo("Received emitted signal");
-//           signalEmitted = true;
-//           EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
-//                     (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+  std::shared_ptr<bool> signalEmitted{std::make_shared<bool>()};
+  conn2->AddMatchRule(DBusMatchRule::Create().Member("SignalEmitted"),
+                      [signalEmitted](IncomingDBusMessage msg)
+                      {
+                        LOGGER.LogInfo("Received emitted signal");
+                        *signalEmitted = true;
+                        EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
+                                  (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+                      });
 
-//           boost::asio::co_spawn(
-//               ioService, [chann]() -> boost::asio::awaitable<void>
-//               { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
-//           co_return;
-//         });
+  auto dispatchMessages = [](std::weak_ptr<SyncDBusConnection> conn)
+  {
+    if (conn.expired()) return;
+    while (conn.lock()->DispatchIncomingMessages() != DispatchStatus::COMPLETED)
+    {
+      // boo
+    }
+  };
 
-//     co_await conn->SendMessageNoReply(
-//         DBusMessage::Signal("SignalEmitted")
-//             .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
-//             .Path(ObjectPath{"/com/dbus/CxxTest"})
-//             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+  conn2->SetDispatchHandler(
+      [dispatchMessages, conn = std::weak_ptr{conn2}](DispatchStatus status)
+      {
+        if (conn.expired()) return;
+        if (status == DispatchStatus::DISPATCH_PENDING)
+        {
+          dispatchMessages(conn);
+        }
+      });
 
-//     LOGGER.LogDebug("Waiting for signal to be received");
-//     co_await chann->async_receive(boost::asio::use_awaitable);
-//     EXPECT_TRUE(signalEmitted);
-//   };
-// }
+  conn->SendMessageNoReply(
+      DBusMessage::Signal("SignalEmitted")
+          .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
+          .Path(ObjectPath{"/com/dbus/CxxTest"})
+          .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+
+  // Send a message to the bus, this will pump our queue of messages
+  conn2->SendMessage(DBusMessage::Method("NameHasOwner")
+                         .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                         .Destination("org.freedesktop.DBus")
+                         .Path(ObjectPath{"/org/freedesktop/DBus"})
+                         .Parameter(std::string{"com.dbus.CxxTest2"}));
+
+  EXPECT_TRUE(*signalEmitted);
+}

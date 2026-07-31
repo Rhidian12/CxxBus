@@ -18,6 +18,7 @@
 #include <tuple>
 
 #include "DBus.h"
+#include "DBusHelpers.h"
 #include "DBusMatchRule.h"
 #include "DBusMessage.h"
 #include "DBusTypes.h"
@@ -41,28 +42,6 @@ namespace cxxbus
 #endif  // CXX_BUS_EXIT_IF_EXPIRED
 
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
-
-    std::string ParseDBusAddress()
-    {
-      // Looks something like: unix:path=/run/user/1000/bus
-      std::string_view const dbusAddress{getenv("DBUS_SESSION_BUS_ADDRESS")};
-
-      if (!dbusAddress.starts_with("unix:"))
-      {
-        throw std::runtime_error{"Only support unix sockets for DBus-daemon connections"};
-      }
-
-      LOGGER.LogInfo(std::format("DBus address: {}", dbusAddress));
-
-      return std::string{dbusAddress.substr(dbusAddress.find("=") + 1)};
-    }
-
-    std::string HexEncodeString(std::string const& str)
-    {
-      std::string newStr;
-      std::ranges::for_each(str, [&newStr](unsigned char c) { newStr += std::format("{:x}", c); });
-      return newStr;
-    }
 
     boost::asio::awaitable<void> InvokeAsyncCallback(
         std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback, IncomingDBusMessage message)
@@ -841,7 +820,8 @@ namespace cxxbus
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()));
 
-    std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> signal = std::make_shared<AwaitableSignal<void, IncomingDBusMessage>>();
+    std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> signal =
+        std::make_shared<AwaitableSignal<void, IncomingDBusMessage>>();
     signal->connect(
         [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
         {
@@ -885,8 +865,9 @@ namespace cxxbus
                         .Destination("org.freedesktop.DBus")
                         .Parameter(rule.GetRule()));
 
-    m_state->matchRules.emplace(m_state->subscriptionCounter++,
-                                MatchRuleInfo{.rule = std::move(rule), .callback = nullptr, .callbackSync = std::move(callback)});
+    m_state->matchRules.emplace(
+        m_state->subscriptionCounter++,
+        MatchRuleInfo{.rule = std::move(rule), .callback = nullptr, .callbackSync = std::move(callback)});
   }
 
   void DBusConnection::RemoveMatchRuleSync(DBusMatchRule rule)
