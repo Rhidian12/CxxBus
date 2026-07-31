@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio/awaitable.hpp>
+#include <functional>
 #include <set>
 #include <unordered_map>
 
@@ -9,11 +10,12 @@
 namespace cxxbus
 {
   class DBusConnection;
+  class SyncDBusConnection;
 
   class DBusNameCache
   {
    private:
-    DBusConnection& m_conn;
+    std::variant<std::reference_wrapper<DBusConnection>, std::reference_wrapper<SyncDBusConnection>> m_conn;
     std::unordered_map<std::string, std::set<std::string>> m_wellKnownNames;
 
    private:
@@ -21,6 +23,7 @@ namespace cxxbus
 
    public:
     DBusNameCache(DBusConnection& conn);
+    DBusNameCache(SyncDBusConnection& conn);
 
     boost::asio::awaitable<void> SubscribeToNameChanges();
     void SubscribeToNameChangesSync();

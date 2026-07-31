@@ -18,7 +18,9 @@ namespace cxxbus
   bool IsDBusTypeCode(std::string const& str);
   bool AreDBusTypeCodeBracketsEven(std::string const& str);
   uint8_t GetAlignmentOfSignature(Signature const& signature);
-
+  std::string ParseDBusAddress();
+  std::string HexEncodeString(std::string const& str);
+  
   template <IsDBusType T>
   constexpr std::string GetTypeSignature()
   {

@@ -2,6 +2,7 @@
 
 #include <format>
 #include <stdexcept>
+#include <algorithm>
 
 #include "DBusTypes.h"
 
@@ -128,7 +129,28 @@ namespace cxxbus
       case DBusTypeCodes::STRUCT_BEGIN:
         return 8;
       default:
-        throw std::runtime_error{std::format("Alignment of signature '{}' cannot be requested", signature.GetSignature()[0])};
+        throw std::runtime_error{
+            std::format("Alignment of signature '{}' cannot be requested", signature.GetSignature()[0])};
     }
+  }
+
+  std::string ParseDBusAddress()
+  {
+    // Looks something like: unix:path=/run/user/1000/bus
+    std::string_view const dbusAddress{getenv("DBUS_SESSION_BUS_ADDRESS")};
+
+    if (!dbusAddress.starts_with("unix:"))
+    {
+      throw std::runtime_error{"Only support unix sockets for DBus-daemon connections"};
+    }
+
+    return std::string{dbusAddress.substr(dbusAddress.find("=") + 1)};
+  }
+
+  std::string HexEncodeString(std::string const& str)
+  {
+    std::string newStr;
+    std::ranges::for_each(str, [&newStr](unsigned char c) { newStr += std::format("{:x}", c); });
+    return newStr;
   }
 }  // namespace cxxbus
