@@ -20,6 +20,11 @@ else()
   add_compile_options(-Wall -Wextra) # -Werror
 endif()
 
+if(SANITIZERS)
+  set(ASAN 1)
+  set(USAN 1)
+endif()
+
 if(ASAN)
   message(STATUS "Enabling AddressSanitizer")
 
@@ -32,6 +37,13 @@ if(USAN)
 
   add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=undefined -fno-omit-frame-pointer)
+endif()
+
+if(TSAN)
+  message(STATUS "Enabling ThreadSanitizer")
+
+  add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=thread -fno-omit-frame-pointer)
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
