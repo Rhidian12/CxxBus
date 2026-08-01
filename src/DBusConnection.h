@@ -17,12 +17,12 @@
 #include <optional>
 #include <unordered_map>
 
+#include "AwaitableSignal.h"
 #include "DBusMatchRule.h"
 #include "DBusMessage.h"
 #include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
-#include "AwaitableSignal.h"
 
 namespace cxxbus
 {
@@ -39,7 +39,6 @@ namespace cxxbus
     {
       DBusMatchRule rule;
       std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> callback;
-      std::function<void(IncomingDBusMessage)> callbackSync;
     };
 
     struct InternalState
@@ -47,17 +46,17 @@ namespace cxxbus
       boost::asio::local::stream_protocol::socket socket;
 
       // Store channels to make our 'SendMessage' be awaitable
-      std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*> replyChannels;
-      // Same as above, but for our sync version
-      std::map<uint32_t, std::function<void(IncomingDBusMessage)>> replySyncCallbacks;
+      std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
+          replyChannels;
 
       std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>> objectPathHandlers;
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
 
       // Send messages to the SendLoop() coroutine
-      boost::asio::experimental::channel<void(
-          boost::system::error_code, std::tuple<DBusMessage /* message */, uint32_t /* serial */,
-                                                std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> /* messageSentChannel */>)>
+      boost::asio::experimental::channel<void(boost::system::error_code,
+                                              std::tuple<DBusMessage /* message */, uint32_t /* serial */,
+                                                         std::shared_ptr<boost::asio::experimental::channel<void(
+                                                             boost::system::error_code)>> /* messageSentChannel */>)>
           sendLoop;
 
       bool connectionReady;
@@ -84,9 +83,6 @@ namespace cxxbus
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
 
-    void AuthenticateDBusConnectionSync();
-    void ConnectSync();
-
     void CloseData();
 
    private:
@@ -100,27 +96,22 @@ namespace cxxbus
    public:
     ~DBusConnection();
     boost::asio::awaitable<void> Close();
-    void CloseSync();
 
-    static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName,
+    static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
+                                                                          DBusWellKnownName wellKnownName,
                                                                           CreateConnectionDetached connectionMethod);
-    static std::shared_ptr<DBusConnection> CreateSync(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
 
     // Receive messages on a specific object path
-    void RegisterObjectPathHandler(ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    void RegisterObjectPathHandler(ObjectPath path,
+                                   std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
-    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> AddMatchRule(
+        DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
-
-    void AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
-    void RemoveMatchRuleSync(DBusMatchRule rule);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
-
-    IncomingDBusMessage SendMessageSync(DBusMessage message);
-    void SendMessageNoReplySync(DBusMessage message);
 
     DBusWellKnownName const& GetWellKnownName() const;
   };
