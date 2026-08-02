@@ -1,6 +1,7 @@
 #include "Log.h"
 
 #include <iostream>
+#include <format>
 
 namespace cxxbus
 {
