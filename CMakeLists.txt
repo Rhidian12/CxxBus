@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 4.3)
 
-project(cxxbus VERSION 1.0.0)
+project(cxxbus VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
