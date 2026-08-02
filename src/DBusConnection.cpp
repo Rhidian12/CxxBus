@@ -425,7 +425,7 @@ namespace cxxbus
             throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
           }
 
-          co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message));
+          co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
         }
         // Simply an incoming message
         else

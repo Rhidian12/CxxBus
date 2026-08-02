@@ -25,17 +25,29 @@ namespace cxxbus
       std::vector<byte> tempBuffer{};
       tempBuffer.resize(FIRST_HEADER_PART_SIZE);
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
+#if  __cpp_lib_containers_ranges
       rawFullReply.append_range(tempBuffer);
+#else
+      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
       DBusMessageHeader messageHeader{std::move(tempBuffer)};
 
       tempBuffer.resize(sizeof(uint32_t));
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
+#if  __cpp_lib_containers_ranges
       rawFullReply.append_range(tempBuffer);
+#else
+      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
       messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
 
       tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
+#if  __cpp_lib_containers_ranges
       rawFullReply.append_range(std::move(tempBuffer));
+#else
+      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
 
       uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
       messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
@@ -47,9 +59,15 @@ namespace cxxbus
       tempBuffer.resize(nrOfPaddingBytes + messageHeader.GetMessageLength());
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
 
+#if __cpp_lib_ranges_to_container
       // Skip over the padding, we don't care about it
       IncomingDBusMessage message{std::move(messageHeader),
                                   std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
+#else
+      // Skip over the padding, we don't care about it
+      IncomingDBusMessage message{std::move(messageHeader),
+                                  std::vector<byte>(tempBuffer.begin() + nrOfPaddingBytes, tempBuffer.end())};
+#endif
 
       logger.LogTrace(std::format(
           "Received incoming message with serial '{}' and signature '{}' and member '{}' and type '{}'",
