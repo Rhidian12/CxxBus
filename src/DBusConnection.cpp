@@ -364,17 +364,29 @@ namespace cxxbus
         std::vector<byte> tempBuffer{};
         tempBuffer.resize(FIRST_HEADER_PART_SIZE);
         co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+#if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
+#else
+        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
         DBusMessageHeader messageHeader{std::move(tempBuffer)};
 
         tempBuffer.resize(sizeof(uint32_t));
         co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+#if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
+#else
+        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
         messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
 
         tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
         co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+#if __cpp_lib_containers_ranges
         rawFullReply.append_range(std::move(tempBuffer));
+#else
+        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
 
         uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
         messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
@@ -387,8 +399,13 @@ namespace cxxbus
         co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 
         // Skip over the padding, we don't care about it
+#if __cpp_lib_ranges_to_container
         IncomingDBusMessage message{std::move(messageHeader),
                                     std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
+#else
+        IncomingDBusMessage message{std::move(messageHeader),
+                                    std::vector<byte>(tempBuffer.begin() + nrOfPaddingBytes, tempBuffer.end())};
+#endif
 
         // We're dealing with a reply from a previously sent message
         if (message.GetHeader().GetReplySerial().has_value())

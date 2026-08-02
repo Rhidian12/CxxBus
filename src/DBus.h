@@ -28,7 +28,11 @@ namespace cxxbus
     uint32_t const result{static_cast<uint32_t>(bytes.size()) % alignment};
     if (result == 0) return;
 
+#if  __cpp_lib_containers_ranges
     bytes.append_range(std::vector<byte>(static_cast<uint8_t>(alignment - result), '\0'));
+#else
+    bytes.insert(bytes.end(), static_cast<uint8_t>(alignment - result), '\0');
+#endif
   }
 
   inline void AddPaddingToSize(uint32_t& size, uint8_t alignment)
@@ -1117,9 +1121,15 @@ namespace cxxbus
     uint32_t amountOfData{};
     GetSizeOfDBusType(signature, amountOfData);
 
+#if __cpp_lib_ranges_to_container
     T deserializedVariant{deserialized_variant_tag, signature,
                           std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) |
                                                        std::views::take(GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer)))};
+#else
+    T deserializedVariant{deserialized_variant_tag, signature,
+                          std::vector<byte>(dbusType.begin() + arrPointer,
+                                            dbusType.begin() + arrPointer + GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer))};
+#endif
     arrPointer += GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer);
 
     return deserializedVariant;
