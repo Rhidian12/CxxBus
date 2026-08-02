@@ -71,7 +71,6 @@ namespace cxxbus
     };
 
    private:
-    boost::asio::io_context& m_ioContext;
     std::shared_ptr<InternalState> m_state;
 
    private:

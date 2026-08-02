@@ -85,8 +85,7 @@ namespace cxxbus
   }  // namespace
 
   SyncDBusConnection::SyncDBusConnection(boost::asio::io_context& ioContext, DBusWellKnownName wellKnownName)
-    : m_ioContext(ioContext)
-    , m_state(new InternalState{.socket = boost::asio::local::stream_protocol::socket{ioContext},
+    : m_state(new InternalState{.socket = boost::asio::local::stream_protocol::socket{ioContext},
                                 .objectPathHandlers = {},
                                 .onIncomingSignal = {},
                                 .serial = 1,
