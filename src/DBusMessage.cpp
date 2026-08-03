@@ -51,7 +51,6 @@ namespace cxxbus
       // Do a bit of reserving for the header of our message
       dbusMessage.reserve(4 * sizeof(uint8_t) + 2 * sizeof(uint32_t));
 
-      // Same as the old std::accumulate
       std::vector<uint8_t> messageFlagsCasted;
       std::ranges::transform(messageFlags, std::back_inserter(messageFlagsCasted),
                              [](DBusMessageFlags flag) -> uint8_t { return static_cast<uint8_t>(flag); });
