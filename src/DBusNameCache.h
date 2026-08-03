@@ -1,7 +1,6 @@
 #pragma once
 
 #include <boost/asio/awaitable.hpp>
-#include <functional>
 #include <set>
 #include <unordered_map>
 
@@ -15,7 +14,7 @@ namespace cxxbus
   class DBusNameCache
   {
    private:
-    std::variant<std::reference_wrapper<DBusConnection>, std::reference_wrapper<SyncDBusConnection>> m_conn;
+    DBusConnection& m_conn;
     std::unordered_map<std::string, std::set<std::string>> m_wellKnownNames;
 
    private:
@@ -23,10 +22,8 @@ namespace cxxbus
 
    public:
     DBusNameCache(DBusConnection& conn);
-    DBusNameCache(SyncDBusConnection& conn);
 
     boost::asio::awaitable<void> SubscribeToNameChanges();
-    void SubscribeToNameChangesSync();
 
     // Returns a list of well-known names associated with the given unique connection name.
     // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not guaranteed to be

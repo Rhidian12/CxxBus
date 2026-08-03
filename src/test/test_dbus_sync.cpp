@@ -3,6 +3,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <memory>
 
+#include "src/DBusConnection.h"
 #include "src/DBusMatchRule.h"
 #include "src/DBusMessage.h"
 #include "src/DBusTypes.h"
@@ -27,46 +29,50 @@ struct SyncDBusConnectionTestSuite : ::testing::Test
 {
  public:
   boost::asio::io_context ioService;
-  std::shared_ptr<SyncDBusConnection> conn;
-  std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> workGuard;
-  std::thread ioThread;
-
-  void StartIoThread()
-  {
-    workGuard.emplace(boost::asio::make_work_guard(ioService));
-    ioThread = std::thread([this] { ioService.run(); });
-  }
+  std::shared_ptr<DBusConnection> asyncConn;
+  std::function<boost::asio::awaitable<void>()> coroutineToRun;
 
   void TearDown() override
   {
-    if (ioThread.joinable())
-    {
-      workGuard.reset();
-      ioService.stop();
-      ioThread.join();
-    }
+    EXPECT_NO_THROW(boost::asio::co_spawn(
+        ioService,
+        [this]() -> boost::asio::awaitable<void>
+        {
+          asyncConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+
+          co_await coroutineToRun();
+          LOGGER.LogTrace("Finished running coroutine");
+
+          if (asyncConn != nullptr)
+          {
+            LOGGER.LogTrace("Closing DBus connection");
+            co_await asyncConn->Close();
+          }
+        },
+        [](std::exception_ptr e)
+        {
+          if (e) std::rethrow_exception(e);
+        }));
+
+    ioService.run();
   }
 };
 
-TEST_F(SyncDBusConnectionTestSuite, TestConnectingToDBusDaemon)
-{
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  EXPECT_TRUE(conn != nullptr);
-}
-
 TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  auto reply = conn->SendMessage(DBusMessage::Method("Introspect")
-                                     .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                     .Destination("org.freedesktop.DBus"));
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    auto conn = SyncDBusConnection::Create(*asyncConn);
+    auto reply = conn->SendMessage(DBusMessage::Method("Introspect")
+                                       .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                       .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
+                                       .Destination("org.freedesktop.DBus"));
 
-  EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
-  EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
-  EXPECT_TRUE(reply.HasArguments());
-  EXPECT_EQ(reply.Get<std::string>(),
-            R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
+    EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
+    EXPECT_TRUE(reply.HasArguments());
+    EXPECT_EQ(reply.Get<std::string>(),
+              R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
   <interface name="org.freedesktop.DBus">
@@ -210,244 +216,148 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   </interface>
 </node>
 )");
+
+    co_return;
+  };
 }
 
 TEST_F(SyncDBusConnectionTestSuite, TestMethodCall)
 {
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  auto reply = conn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                     .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                     .Destination("org.freedesktop.DBus")
-                                     .Parameter(std::string{"com.dbus.CxxTest"}));
-  EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
-  EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
-  EXPECT_TRUE(reply.HasArguments());
-  EXPECT_EQ(reply.Get<bool>(), true);
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    auto conn = SyncDBusConnection::Create(*asyncConn);
+    auto reply = conn->SendMessage(DBusMessage::Method("NameHasOwner")
+                                       .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                       .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                       .Destination("org.freedesktop.DBus")
+                                       .Parameter(std::string{"com.dbus.CxxTest"}));
+    EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
+    EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
+    EXPECT_TRUE(reply.HasArguments());
+    EXPECT_EQ(reply.Get<bool>(), true);
+
+    co_return;
+  };
 }
 
 TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
 {
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-
-  auto dispatchMessages = [this]()
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    while (conn->DispatchIncomingMessages() != DispatchStatus::COMPLETED)
-    {
-      // boo
-    }
+    auto conn = SyncDBusConnection::Create(*asyncConn);
+
+    bool extensiveMatchRuleTriggered{};
+    bool simpleMatchRuleTriggered{};
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann2{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+
+    LOGGER.LogDebug("Adding extensive match rule");
+    DBusMatchRule const extensiveRule{DBusMatchRule::Create()
+                                          .Type(DBusMessageType::SIGNAL)
+                                          .Member("NameOwnerChanged")
+                                          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                          .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
+    conn->AddMatchRule(extensiveRule,
+                       [&extensiveMatchRuleTriggered, chann](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                       {
+                         LOGGER.LogInfo("Extensive match rule was triggered");
+                         extensiveMatchRuleTriggered = true;
+                         chann->async_send(boost::system::error_code{}, boost::asio::detached);
+                         co_return;
+                       });
+
+    LOGGER.LogDebug("Adding simple match rule");
+    DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
+    conn->AddMatchRule(simpleRule,
+                       [&simpleMatchRuleTriggered, chann2](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                       {
+                         LOGGER.LogInfo("Simple match rule was triggered");
+                         simpleMatchRuleTriggered = true;
+                         chann2->async_send(boost::system::error_code{}, boost::asio::detached);
+                         co_return;
+                       });
+
+    conn->SendMessage(DBusMessage::Method("RequestName")
+                          .Path(ObjectPath{"/org/freedesktop/DBus"})
+                          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                          .Destination("org.freedesktop.DBus")
+                          .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                              DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
+    LOGGER.LogInfo("Finished request name call");
+
+    co_await chann->async_receive(boost::asio::use_awaitable);
+    co_await chann2->async_receive(boost::asio::use_awaitable);
+
+    EXPECT_TRUE(extensiveMatchRuleTriggered);
+    EXPECT_TRUE(simpleMatchRuleTriggered);
+
+    EXPECT_NO_THROW(conn->RemoveMatchRule(extensiveRule));
+    EXPECT_NO_THROW(conn->RemoveMatchRule(simpleRule));
+
+    co_return;
   };
-
-  conn->SetDispatchHandler(
-      [dispatchMessages](DispatchStatus status)
-      {
-        if (status == DispatchStatus::DISPATCH_PENDING)
-        {
-          dispatchMessages();
-        }
-      });
-
-  bool extensiveMatchRuleTriggered{};
-  bool simpleMatchRuleTriggered{};
-
-  DBusMatchRule const extensiveRule{DBusMatchRule::Create()
-                                        .Type(DBusMessageType::SIGNAL)
-                                        .Member("NameOwnerChanged")
-                                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                        .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
-  conn->AddMatchRule(extensiveRule,
-                     [&extensiveMatchRuleTriggered](IncomingDBusMessage) { extensiveMatchRuleTriggered = true; });
-
-  DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
-  conn->AddMatchRule(simpleRule, [&simpleMatchRuleTriggered](IncomingDBusMessage) { simpleMatchRuleTriggered = true; });
-
-  conn->SendMessage(DBusMessage::Method("RequestName")
-                        .Path(ObjectPath{"/org/freedesktop/DBus"})
-                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                        .Destination("org.freedesktop.DBus")
-                        .Parameter(MultipleCompleteTypes<std::string, uint32_t>{DBusWellKnownName{"com.dbus.CxxTest2"},
-                                                                                static_cast<uint32_t>(0x1)}));
-
-  EXPECT_TRUE(extensiveMatchRuleTriggered);
-  EXPECT_TRUE(simpleMatchRuleTriggered);
-
-  EXPECT_NO_THROW(conn->RemoveMatchRule(extensiveRule));
-  EXPECT_NO_THROW(conn->RemoveMatchRule(simpleRule));
 }
 
 TEST_F(SyncDBusConnectionTestSuite, TestGettingErrors)
 {
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  DBusMessage message{DBusMessage::Method("RequestName")
-                          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                          .Path(ObjectPath{"/org/freedesktop/DBus"})
-                          .Destination("org.freedesktop.DBus")
-                          .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
-
-  EXPECT_THROW(conn->SendMessage(message), DBusError);
-
-  try
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn->SendMessage(message);
-  }
-  catch (DBusError const& ex)
-  {
-    EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
-    EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
-  }
-}
+    auto conn = SyncDBusConnection::Create(*asyncConn);
+    DBusMessage message{DBusMessage::Method("RequestName")
+                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                            .Path(ObjectPath{"/org/freedesktop/DBus"})
+                            .Destination("org.freedesktop.DBus")
+                            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
 
-boost::asio::awaitable<void> PollSocket(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
-                                        boost::asio::local::stream_protocol::socket& socket);
-void PollConnection(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
-                    boost::asio::local::stream_protocol::socket& socket)
-{
-  if (conn.expired()) return;
+    EXPECT_THROW(conn->SendMessage(message), DBusError);
 
-  conn.lock()->Poll();
-  boost::asio::co_spawn(ioContext, PollSocket(ioContext, conn, socket), boost::asio::detached);
-}
-
-boost::asio::awaitable<void> PollSocket(boost::asio::io_context& ioContext, std::weak_ptr<SyncDBusConnection> conn,
-                                        boost::asio::local::stream_protocol::socket& socket)
-{
-  socket.async_wait(boost::asio::local::stream_protocol::socket::wait_read,
-                    [&](boost::system::error_code const&) { PollConnection(ioContext, conn, socket); });
-  co_return;
-}
-
-TEST_F(SyncDBusConnectionTestSuite, TestReplying)
-{
-  LOGGER.LogInfo("Making first connection");
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  LOGGER.LogInfo("Making second connection");
-  auto conn2 = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
-
-  auto dispatchMessages = [](std::weak_ptr<SyncDBusConnection> conn)
-  {
-    if (conn.expired()) return;
-    while (conn.lock()->DispatchIncomingMessages() != DispatchStatus::COMPLETED)
+    try
     {
-      // boo
+      conn->SendMessage(message);
     }
+    catch (DBusError const& ex)
+    {
+      EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
+      EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
+    }
+
+    co_return;
   };
-
-  auto weakConn = std::weak_ptr{conn};
-  conn->SetDispatchHandler(
-      [dispatchMessages, weakConn](DispatchStatus status)
-      {
-        if (status == DispatchStatus::DISPATCH_PENDING)
-        {
-          dispatchMessages(weakConn);
-        }
-      });
-
-  conn2->SetDispatchHandler(
-      [dispatchMessages, conn = std::weak_ptr{conn2}](DispatchStatus status)
-      {
-        if (conn.expired()) return;
-        if (status == DispatchStatus::DISPATCH_PENDING)
-        {
-          dispatchMessages(conn);
-        }
-      });
-
-  StartIoThread();
-
-  boost::asio::io_context& ioContext{ioService};
-  conn2->SetPollHandler(
-      [&ioContext, weakConn = std::weak_ptr{conn2}](boost::asio::local::stream_protocol::socket& socket)
-      { boost::asio::co_spawn(ioContext, PollSocket(ioContext, weakConn, socket), boost::asio::detached); });
-
-  conn2->ReceiveIncomingMessages(
-      [conn = std::weak_ptr{conn2}](IncomingDBusMessage message)
-      {
-        if (conn.expired()) return;
-        // wtf we just got something sent SO stupid. Let's send a reply error back
-        LOGGER.LogDebug("Connection2 received the message, returning an error");
-        conn.lock()->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
-      });
-
-  conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
-                                   [conn = std::weak_ptr{conn2}](IncomingDBusMessage message)
-                                   {
-                                     if (conn.expired()) return;
-                                     LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
-                                     conn.lock()->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
-                                         MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-                                   });
-
-  LOGGER.LogDebug("Sending a message from connection1 to connection2");
-  EXPECT_THROW(conn->SendMessage(
-                   DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
-               DBusError);
-  try
-  {
-    conn->SendMessage(
-        DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
-  }
-  catch (DBusError const& ex)
-  {
-    EXPECT_EQ(ex.GetErrorName(), "com.you.Stupid");
-    EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
-  }
-
-  EXPECT_EQ(((conn->SendMessage(DBusMessage::Method("Method")
-                                    .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
-                                    .Destination("com.dbus.CxxTest2")))
-                 .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
-            (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-
-  LOGGER.LogTrace("Finished closing 2nd connection");
 }
 
 TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
 {
-  conn = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-  conn->SetLogLevel(LogLevel::Error);
-  auto conn2 = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
-
-  std::shared_ptr<bool> signalEmitted{std::make_shared<bool>()};
-  conn2->AddMatchRule(DBusMatchRule::Create().Member("SignalEmitted"),
-                      [signalEmitted](IncomingDBusMessage msg)
-                      {
-                        LOGGER.LogInfo("Received emitted signal");
-                        *signalEmitted = true;
-                        EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
-                                  (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
-                      });
-
-  auto dispatchMessages = [](std::weak_ptr<SyncDBusConnection> conn)
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    if (conn.expired()) return;
-    while (conn.lock()->DispatchIncomingMessages() != DispatchStatus::COMPLETED)
-    {
-      // boo
-    }
-  };
+    auto conn = SyncDBusConnection::Create(*asyncConn);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
 
-  conn2->SetDispatchHandler(
-      [dispatchMessages, conn = std::weak_ptr{conn2}](DispatchStatus status)
-      {
-        if (conn.expired()) return;
-        if (status == DispatchStatus::DISPATCH_PENDING)
+    std::shared_ptr<bool> signalEmitted{std::make_shared<bool>()};
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+
+    co_await conn2->AddMatchRule(
+        DBusMatchRule::Create().Member("SignalEmitted"),
+        [signalEmitted, chann](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         {
-          dispatchMessages(conn);
-        }
-      });
+          LOGGER.LogInfo("Received emitted signal");
+          *signalEmitted = true;
+          EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
+                    (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+          co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+          co_return;
+        });
 
-  conn->SendMessageNoReply(
-      DBusMessage::Signal("SignalEmitted")
-          .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
-          .Path(ObjectPath{"/com/dbus/CxxTest"})
-          .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
+    conn->SendMessageNoReply(
+        DBusMessage::Signal("SignalEmitted")
+            .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
+            .Path(ObjectPath{"/com/dbus/CxxTest"})
+            .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
-  // Send a message to the bus, this will pump our queue of messages
-  conn2->SendMessage(DBusMessage::Method("NameHasOwner")
-                         .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                         .Destination("org.freedesktop.DBus")
-                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                         .Parameter(std::string{"com.dbus.CxxTest2"}));
+    co_await chann->async_receive(boost::asio::use_awaitable);
 
-  EXPECT_TRUE(*signalEmitted);
+    EXPECT_TRUE(*signalEmitted);
+  };
 }

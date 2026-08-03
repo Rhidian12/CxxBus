@@ -18,7 +18,7 @@
 #include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
-#include "Log.h"
+#include "DBusConnection.h"
 
 namespace cxxbus
 {
@@ -44,77 +44,38 @@ namespace cxxbus
       std::shared_future<IncomingDBusMessage> future;
     };
 
-   private:
-    struct MatchRuleInfo
-    {
-      DBusMatchRule rule;
-      std::function<void(IncomingDBusMessage const&)> callback;
-    };
-
     struct InternalState
     {
+      // Gotten from DBusConnection
       std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
-
-      std::unordered_map<std::string, boost::signals2::signal<void(IncomingDBusMessage const&)>> objectPathHandlers;
-      boost::signals2::signal<void(IncomingDBusMessage const&)> onIncomingSignal;
-
-      uint32_t serial;
-      std::string uniqueConnection;
-      DBusWellKnownName wellKnownName;
-
-      uint32_t subscriptionCounter;
-      std::unordered_map<uint32_t, MatchRuleInfo> matchRules;
-
+      std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
+      std::shared_ptr<DBusWellKnownName> wellKnownName;
+      std::shared_ptr<uint32_t> serial;
+      std::shared_ptr<uint32_t> subscriptionCounter;
+      std::shared_ptr<std::unordered_map<uint32_t, DBusConnection::MatchRuleInfo>> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
-      std::queue<IncomingDBusMessage> messagesToDispatch;
 
-      std::function<void(DispatchStatus)> dispatchHandler;
-
-      std::function<void(boost::asio::local::stream_protocol::socket&)> pollHandler;
-
-      Logger logger;
-
-      bool closeConnectionOnDestruction;
+      // Information to send back to DBusConnection
+      std::shared_ptr<std::queue<IncomingDBusMessage>> unhandledIncomingMessages;
     };
 
    private:
     std::shared_ptr<InternalState> m_state;
 
    private:
-    void Connect();
-    void CloseData();
-    bool HandleReadMessage(IncomingDBusMessage message);
-
-   private:
-    SyncDBusConnection(boost::asio::io_context& ioContext, DBusWellKnownName wellKnownName);
     SyncDBusConnection(DBusConnection & dbusConnection);
 
-   public:
-    ~SyncDBusConnection();
-    void Close();
+    bool HandleReadMessage(IncomingDBusMessage message, uint32_t expectedReplySerial);
 
-    static std::shared_ptr<SyncDBusConnection> Create(boost::asio::io_context& ioContext,
-                                                      DBusWellKnownName wellKnownName);
+   public:
     static std::shared_ptr<SyncDBusConnection> Create(DBusConnection & dbusConnection);
 
-    // Receive messages on a specific object path
-    void RegisterObjectPathHandler(ObjectPath path, std::function<void(IncomingDBusMessage const&)> callback);
-    void ReceiveIncomingMessages(std::function<void(IncomingDBusMessage const&)> callback);
-
-    void AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage const&)> callback);
+    void AddMatchRule(DBusMatchRule rule,  std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void RemoveMatchRule(DBusMatchRule rule);
 
     IncomingDBusMessage SendMessage(DBusMessage message);
     void SendMessageNoReply(DBusMessage message);
 
-    void SetDispatchHandler(std::function<void(DispatchStatus)> callback);
-    DispatchStatus DispatchIncomingMessages();
-
-    void SetPollHandler(std::function<void(boost::asio::local::stream_protocol::socket&)> callback);
-    void Poll();
-
     DBusWellKnownName const& GetWellKnownName() const;
-
-    void SetLogLevel(LogLevel logLevel);
   };
 }  // namespace cxxbus

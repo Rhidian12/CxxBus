@@ -427,31 +427,3 @@ TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
     EXPECT_EQ(reply.Get<std::string>(), syncReply.Get<std::string>());
   };
 }
-
-TEST_F(DBusConnectionTestSuite, TestSyncToAsync)
-{
-  coroutineToRun = [this] -> boost::asio::awaitable<void>
-  {
-    auto conn2 = SyncDBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
-
-    LOGGER.LogDebug("Sending Sync Introspect");
-    auto reply = conn2->SendMessage(DBusMessage::Method("Introspect")
-                                        .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                        .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                        .Destination("org.freedesktop.DBus"));
-
-    conn = DBusConnection::Create(*conn2);
-
-    LOGGER.LogDebug("Sending Async Introspect");
-    auto asyncReply =
-        co_await conn->SendMessage(DBusMessage::Method("Introspect")
-                                       .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                       .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                       .Destination("org.freedesktop.DBus"));
-
-    EXPECT_EQ(reply.GetHeader().GetSender(), asyncReply.GetHeader().GetSender());
-    EXPECT_EQ(reply.GetHeader().GetSignature(), asyncReply.GetHeader().GetSignature());
-    EXPECT_EQ(reply.GetHeader().GetDestination(), asyncReply.GetHeader().GetDestination());
-    EXPECT_EQ(reply.Get<std::string>(), asyncReply.Get<std::string>());
-  };
-}

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <boost/asio/awaitable.hpp>
+#include <functional>
+
 #include "DBusConcepts.h"
 
 namespace cxxbus
@@ -9,6 +12,7 @@ namespace cxxbus
   class Variant;
   template <typename... Ts>
   class MultipleCompleteTypes;
+  class IncomingDBusMessage;
 
   bool IsDBusBasicFixedTypeCode(unsigned char c);
   bool IsDBusBasicStringlikeTypeCode(unsigned char c);
@@ -20,7 +24,10 @@ namespace cxxbus
   uint8_t GetAlignmentOfSignature(Signature const& signature);
   std::string ParseDBusAddress();
   std::string HexEncodeString(std::string const& str);
-  
+
+  boost::asio::awaitable<void> InvokeAsyncCallback(
+      std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback, IncomingDBusMessage message);
+
   template <IsDBusType T>
   constexpr std::string GetTypeSignature()
   {
@@ -80,7 +87,9 @@ namespace cxxbus
     {
       std::string type{"("};
       [&type]<size_t... Is>(std::index_sequence<Is...>)
-      { type += (GetTypeSignature<std::tuple_element_t<Is, T>>() + ...); }(std::make_index_sequence<std::tuple_size_v<T>>{});
+      {
+        type += (GetTypeSignature<std::tuple_element_t<Is, T>>() + ...);
+      }(std::make_index_sequence<std::tuple_size_v<T>>{});
       type += ")";
       return type;
     }
@@ -90,12 +99,15 @@ namespace cxxbus
     }
     else if constexpr (IsDBusMap<T>)
     {
-      return std::string{"a{"} + GetTypeSignature<typename T::key_type>() + GetTypeSignature<typename T::mapped_type>() + "}";
+      return std::string{"a{"} + GetTypeSignature<typename T::key_type>() +
+             GetTypeSignature<typename T::mapped_type>() + "}";
     }
     else if constexpr (IsDBusMultipleCompleteTypes<T>)
     {
-      return std::string{[]<size_t... Is>(std::index_sequence<Is...>) { return (GetTypeSignature<std::tuple_element_t<Is, typename T::type>>() + ...); }(
-                             std::make_index_sequence<std::tuple_size_v<typename T::type>>{})};
+      return std::string{[]<size_t... Is>(std::index_sequence<Is...>)
+                         {
+                           return (GetTypeSignature<std::tuple_element_t<Is, typename T::type>>() + ...);
+                         }(std::make_index_sequence<std::tuple_size_v<typename T::type>>{})};
     }
   }
 

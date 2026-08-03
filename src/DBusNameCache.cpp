@@ -26,46 +26,9 @@ namespace cxxbus
   {
   }
 
-  DBusNameCache::DBusNameCache(SyncDBusConnection& conn)
-    : m_conn(conn)
-    , m_wellKnownNames()
-  {
-  }
-
-  void DBusNameCache::SubscribeToNameChangesSync()
-  {
-    if (std::holds_alternative<std::reference_wrapper<DBusConnection>>(m_conn))
-    {
-      LOGGER.LogFatal(
-          "SubscribeToNameChangesSync() should not be called on a DBusConnection, use SubscribeToNameChanges() "
-          "instead");
-      throw InternalError{
-          "SubscribeToNameChangesSync() should not be called on a DBusConnection, use SubscribeToNameChanges() "
-          "instead"};
-    }
-
-    std::get<std::reference_wrapper<SyncDBusConnection>>(m_conn).get().AddMatchRule(
-        DBusMatchRule::Create()
-            .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
-            .Path(ObjectPath{"/org/freedesktop/DBus"})
-            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-            .Member("NameOwnerChanged"),
-        [this](IncomingDBusMessage message) { OnNameOwnerChanged(std::move(message)); });
-  }
-
   boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
   {
-    if (std::holds_alternative<std::reference_wrapper<SyncDBusConnection>>(m_conn))
-    {
-      LOGGER.LogFatal(
-          "SubscribeToNameChanges() should not be called on a SyncDBusConnection, use SubscribeToNameChangesSync() "
-          "instead");
-      throw InternalError{
-          "SubscribeToNameChanges() should not be called on a SyncDBusConnection, use SubscribeToNameChangesSync() "
-          "instead"};
-    }
-
-    co_await std::get<std::reference_wrapper<DBusConnection>>(m_conn).get().AddMatchRule(
+    co_await m_conn.AddMatchRule(
         DBusMatchRule::Create()
             .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
             .Path(ObjectPath{"/org/freedesktop/DBus"})

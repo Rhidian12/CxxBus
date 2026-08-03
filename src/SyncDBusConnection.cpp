@@ -20,7 +20,9 @@ namespace cxxbus
 #define CXX_BUS_LOGLEVEL Error
 #endif  // CXX_BUS_LOGLEVEL
 
-    IncomingDBusMessage ReadMessageFromSocket(boost::asio::local::stream_protocol::socket& socket, Logger logger)
+    Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+
+    IncomingDBusMessage ReadMessageFromSocket(boost::asio::local::stream_protocol::socket& socket)
     {
       std::vector<byte> rawFullReply{};
       std::vector<byte> tempBuffer{};
@@ -70,144 +72,26 @@ namespace cxxbus
                                   std::vector<byte>(tempBuffer.begin() + nrOfPaddingBytes, tempBuffer.end())};
 #endif
 
-      logger.LogTrace(std::format(
+      LOGGER.LogTrace(std::format(
           "Received incoming message with serial '{}' and signature '{}' and member '{}' and type '{}'",
           message.GetHeader().GetSerial(), std::string{message.GetHeader().GetSignature().value_or(Signature{""})},
           message.GetHeader().GetMember().value_or(""), magic_enum::enum_name(message.GetHeader().GetMessageType())));
 
       return message;
     }
-
-    void AuthenticateDBusConnection(boost::asio::local::stream_protocol::socket& socket, Logger logger)
-    {
-      // First send a single '\0' byte
-      socket.send(boost::asio::buffer("\0", 1));
-
-      // Next we must authenticate ourselves, we use the EXTERNAL
-      // authentication method
-      socket.send(
-          boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))));
-
-      // Now we expect to see OK <guid>
-      std::string reply{};
-      boost::asio::read_until(socket, boost::asio::dynamic_buffer(reply), "\r\n");
-
-      if (!reply.starts_with("OK"))
-      {
-        logger.LogError("Authentication failed!");
-        throw std::runtime_error{"Authentication failed!"};
-      }
-
-      // Yippee! All worked, so now start our DBus Connection!
-      socket.send(boost::asio::buffer("BEGIN\r\n", 7));
-    }
   }  // namespace
-
-  SyncDBusConnection::SyncDBusConnection(boost::asio::io_context& ioContext, DBusWellKnownName wellKnownName)
-    : m_state(new InternalState{.socket = std::make_shared<boost::asio::local::stream_protocol::socket>(ioContext),
-                                .objectPathHandlers = {},
-                                .onIncomingSignal = {},
-                                .serial = 1,
-                                .uniqueConnection = "",
-                                .wellKnownName = std::move(wellKnownName),
-                                .subscriptionCounter = 0,
-                                .matchRules = {},
-                                .nameCache = std::make_shared<DBusNameCache>(*this),
-                                .messagesToDispatch = {},
-                                .dispatchHandler = {},
-                                .pollHandler = {},
-                                .logger = {.logLevel = LogLevel::CXX_BUS_LOGLEVEL},
-                                .closeConnectionOnDestruction = true})
-  {
-    Connect();
-  }
 
   SyncDBusConnection::SyncDBusConnection(DBusConnection& dbusConnection)
     : m_state(new InternalState{.socket = dbusConnection.m_state->socket,
-                                .objectPathHandlers = {},
-                                .onIncomingSignal = {},
-                                .serial = dbusConnection.m_state->serial + 1000, // Make sure we can't overlap serials
-                                .uniqueConnection = dbusConnection.m_state->uniqueConnection,
-                                .wellKnownName = dbusConnection.GetWellKnownName(),
-                                .subscriptionCounter = 0,
-                                .matchRules = {},
+      .uniqueConnection = dbusConnection.m_state->uniqueConnection,
+      .wellKnownName = dbusConnection.m_state->wellKnownName,
+                                .serial = dbusConnection.m_state->serial, // Make sure we can't overlap serials
+                                .subscriptionCounter = dbusConnection.m_state->subscriptionCounter,
+                                .matchRules = dbusConnection.m_state->matchRules,
                                 .nameCache = dbusConnection.m_state->nameCache,
-                                .messagesToDispatch = {},
-                                .dispatchHandler = {},
-                                .pollHandler = {},
-                                .logger = {.logLevel = LogLevel::CXX_BUS_LOGLEVEL},
-                                .closeConnectionOnDestruction = false})
+                                .unhandledIncomingMessages = dbusConnection.m_state->unhandledIncomingMessages})
   {
     // Don't connect here, we're coming from a 'DBusConnection' which should've already done all that stuff
-  }
-
-  SyncDBusConnection::~SyncDBusConnection()
-  {
-    if (m_state->socket->is_open())
-    {
-      Close();
-    }
-  }
-
-  void SyncDBusConnection::CloseData()
-  {
-    m_state->logger.LogTrace("Closing sockets, channels and signals");
-    if (m_state->socket->is_open())
-    {
-      boost::system::error_code ec;
-      std::ignore = m_state->socket->close(ec);
-    }
-  }
-
-  void SyncDBusConnection::Close()
-  {
-    if (!m_state->closeConnectionOnDestruction)
-    {
-      m_state->logger.LogDebug("Not closing DBusConnection as this connection is not the original owner of the socket and data");
-      return;
-    }
-
-    m_state->logger.LogInfo("Closing DBus Connection");
-
-    std::unordered_map<uint32_t, MatchRuleInfo> rules{m_state->matchRules};
-    for (auto const& [id, ruleInfo] : rules)
-    {
-      RemoveMatchRule(ruleInfo.rule);
-    }
-
-    // Release our well-known name from the dbus-daemon
-    IncomingDBusMessage const ret = SendMessage(DBusMessage::Method("ReleaseName")
-                                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                    .Destination("org.freedesktop.DBus")
-                                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                    .Parameter(std::string{m_state->wellKnownName}));
-
-    switch (ret.Get<uint32_t>())
-    {
-      case 1:
-        m_state->logger.LogDebug(
-            std::format("Successfully released well-known name '{}'", m_state->wellKnownName.GetName()));
-        break;
-      case 2:
-        m_state->logger.LogError(
-            std::format("Well-known name '{}' is not owned by the dbus-daemon", m_state->wellKnownName.GetName()));
-        break;
-      case 3:
-        m_state->logger.LogError(
-            std::format("Well-known name '{}' is not owned by this connection", m_state->wellKnownName.GetName()));
-        break;
-      default:
-        m_state->logger.LogError(std::format("Unknown return value from 'ReleaseName()': {}", ret.Get<uint32_t>()));
-        break;
-    }
-
-    CloseData();
-  }
-
-  std::shared_ptr<SyncDBusConnection> SyncDBusConnection::Create(boost::asio::io_context& ioContext,
-                                                                 DBusWellKnownName wellKnownName)
-  {
-    return std::shared_ptr<SyncDBusConnection>{new SyncDBusConnection{ioContext, std::move(wellKnownName)}};
   }
 
   std::shared_ptr<SyncDBusConnection> SyncDBusConnection::Create(DBusConnection& dbusConnection)
@@ -215,78 +99,9 @@ namespace cxxbus
     return std::shared_ptr<SyncDBusConnection>{new SyncDBusConnection{dbusConnection}};
   }
 
-  void SyncDBusConnection::Connect()
+  void SyncDBusConnection::AddMatchRule(DBusMatchRule rule,  std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    // Connect to DBus daemon
-    boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-    m_state->socket->connect(endpoint);
-
-    AuthenticateDBusConnection(*m_state->socket, m_state->logger);
-    m_state->logger.LogTrace("Connected to DBus-daemon.");
-
-    m_state->logger.LogTrace("Starting connection handshake");
-    // Get our unique bus name
-    IncomingDBusMessage reply = SendMessage(DBusMessage::Method("Hello")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                .Destination("org.freedesktop.DBus"));
-    m_state->uniqueConnection = reply.Get<std::string>();
-
-    m_state->logger.LogInfo(std::format("Unique Connection ID: {}", m_state->uniqueConnection));
-
-    // Now, request a well-known name from the dbus-daemon
-    reply = SendMessage(DBusMessage::Method("RequestName")
-                            .Path(ObjectPath{"/org/freedesktop/DBus"})
-                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                            .Destination("org.freedesktop.DBus")
-                            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{m_state->wellKnownName.GetName(),
-                                                                                    static_cast<uint32_t>(0x1)}));
-
-    switch (reply.Get<uint32_t>())
-    {
-      case 1:
-        m_state->logger.LogDebug(
-            std::format("Successfully acquired well-known name '{}'", m_state->wellKnownName.GetName()));
-        break;
-      // [TODO]: Allow user passing flags for the Well-known name.
-      case 2:
-        m_state->logger.LogError(
-            std::format("Well-known name '{}' is already owned by another connection and we did "
-                        "not ask to replace the name",
-                        m_state->wellKnownName.GetName()));
-        break;
-      case 3:
-        m_state->logger.LogError(
-            std::format("The well-known name '{}' already has an owner", m_state->wellKnownName.GetName()));
-        break;
-      case 4:
-        m_state->logger.LogDebug("We're already owner of our well-known name");
-        break;
-      default:
-        m_state->logger.LogError(std::format("Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>()));
-        break;
-    }
-
-    m_state->logger.LogTrace("Connection handshake completed.");
-
-    m_state->logger.LogTrace("Subscribing to NameOwnerChanged signal");
-    m_state->nameCache->SubscribeToNameChangesSync();
-  }
-
-  void SyncDBusConnection::RegisterObjectPathHandler(ObjectPath path,
-                                                     std::function<void(IncomingDBusMessage const&)> callback)
-  {
-    m_state->objectPathHandlers[path.GetPath()].connect(std::move(callback));
-  }
-
-  void SyncDBusConnection::ReceiveIncomingMessages(std::function<void(IncomingDBusMessage const&)> callback)
-  {
-    m_state->onIncomingSignal.connect(std::move(callback));
-  }
-
-  void SyncDBusConnection::AddMatchRule(DBusMatchRule rule, std::function<void(IncomingDBusMessage const&)> callback)
-  {
-    m_state->logger.LogTrace(std::format("Adding match rule '{}'", rule.GetRule()));
+    LOGGER.LogTrace(std::format("Adding match rule '{}'", rule.GetRule()));
 
     SendMessage(DBusMessage::Method("AddMatch")
                     .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -294,8 +109,19 @@ namespace cxxbus
                     .Destination("org.freedesktop.DBus")
                     .Parameter(rule.GetRule()));
 
-    m_state->matchRules.emplace(m_state->subscriptionCounter++,
-                                MatchRuleInfo{.rule = std::move(rule), .callback = std::move(callback)});
+    std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> signal =
+        std::make_shared<AwaitableSignal<void, IncomingDBusMessage>>();
+    signal->connect(
+        [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
+        {
+          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+          // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
+          // out-of-scope
+          { return InvokeAsyncCallback(cb, std::move(message)); };
+        });
+
+    m_state->matchRules->emplace((*m_state->subscriptionCounter)++,
+                                DBusConnection::MatchRuleInfo{.rule = std::move(rule), .callback = std::move(signal)});
   }
 
   void SyncDBusConnection::RemoveMatchRule(DBusMatchRule rule)
@@ -306,17 +132,17 @@ namespace cxxbus
                     .Destination("org.freedesktop.DBus")
                     .Parameter(rule.GetRule()));
 
-    auto const it = std::ranges::find_if(m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
+    auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, DBusConnection::MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
-    m_state->matchRules.erase(it);
+    m_state->matchRules->erase(it);
   }
 
-  bool SyncDBusConnection::HandleReadMessage(IncomingDBusMessage message)
+  bool SyncDBusConnection::HandleReadMessage(IncomingDBusMessage message, uint32_t expectedReplySerial)
   {
     if (message.GetHeader().GetReplySerial().has_value() &&
-        message.GetHeader().GetReplySerial().value() == m_state->serial - 1)
+        message.GetHeader().GetReplySerial().value() == expectedReplySerial)
     {
-      m_state->logger.LogTrace(
+      LOGGER.LogTrace(
           std::format("Message is a reply to serial '{}'", message.GetHeader().GetReplySerial().value()));
 
       if (message.GetHeader().GetMessageType() == DBusMessageType::ERROR)
@@ -324,7 +150,7 @@ namespace cxxbus
         // We got an error, so throw an error here
         if (!message.GetHeader().GetErrorName().has_value())
         {
-          m_state->logger.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
+          LOGGER.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
         }
 
         throw DBusError{
@@ -338,14 +164,9 @@ namespace cxxbus
     }
     else
     {
-      m_state->logger.LogTrace("New message added to dispatch queue");
+      LOGGER.LogTrace("Got incoming message that is not a reply. Adding it to queue");
 
-      m_state->messagesToDispatch.push(std::move(message));
-
-      if (m_state->dispatchHandler)
-      {
-        m_state->dispatchHandler(DispatchStatus::DISPATCH_PENDING);
-      }
+      m_state->unhandledIncomingMessages->push(std::move(message));
     }
 
     return false;
@@ -353,17 +174,19 @@ namespace cxxbus
 
   IncomingDBusMessage SyncDBusConnection::SendMessage(DBusMessage message)
   {
-    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
-    m_state->logger.LogTrace(std::format(
+    uint32_t const serial{(*m_state->serial)++};
+
+    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(serial)));
+    LOGGER.LogTrace(std::format(
         "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-        message.GetMember().value_or(""), m_state->serial - 1,
+        message.GetMember().value_or(""), serial,
         message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
         message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
 
     while (true)
     {
-      IncomingDBusMessage const message{ReadMessageFromSocket(*m_state->socket, m_state->logger)};
-      if (HandleReadMessage(message))
+      IncomingDBusMessage const message{ReadMessageFromSocket(*m_state->socket)};
+      if (HandleReadMessage(message, serial))
       {
         return message;
       }
@@ -378,94 +201,16 @@ namespace cxxbus
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
 
-    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
-    m_state->logger.LogTrace(std::format(
+    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize((*m_state->serial)++)));
+    LOGGER.LogTrace(std::format(
         "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-        message.GetMember().value_or(""), m_state->serial - 1,
+        message.GetMember().value_or(""), *m_state->serial,
         message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
         message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
   }
 
-  void SyncDBusConnection::SetDispatchHandler(std::function<void(DispatchStatus)> callback)
-  {
-    m_state->dispatchHandler = std::move(callback);
-  }
-
-  DispatchStatus SyncDBusConnection::DispatchIncomingMessages()
-  {
-    if (m_state->messagesToDispatch.empty())
-    {
-      m_state->logger.LogTrace("No more messages to dispatch");
-      return DispatchStatus::COMPLETED;
-    }
-
-    IncomingDBusMessage message = m_state->messagesToDispatch.front();
-    m_state->messagesToDispatch.pop();
-
-    m_state->logger.LogTrace(
-        std::format("Dispatching queued message with serial '{}', method '{}', interface '{}' and path '{}'",
-                    message.GetHeader().GetSerial(), message.GetHeader().GetMember().value_or(""),
-                    message.GetHeader()
-                        .GetInterface()
-                        .transform([](DBusInterfaceName const& name) { return name.GetName(); })
-                        .value_or(""),
-                    message.GetHeader()
-                        .GetObjectPath()
-                        .transform([](ObjectPath const& path) { return path.GetPath(); })
-                        .value_or("")));
-
-    if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
-    {
-      m_state->logger.LogTrace("Incoming message is signal, checking match rules");
-
-      for (MatchRuleInfo const& info : m_state->matchRules | std::views::values)
-      {
-        std::vector<std::string> wellKnownNames =
-            m_state->nameCache->GetWellKnownNames(message.GetHeader().GetSender().value_or(""));
-        if (info.rule.Matches(message, wellKnownNames))
-        {
-          m_state->logger.LogTrace(std::format("Rule '{}' matched incoming signal", info.rule.GetRule()));
-          info.callback(message);
-        }
-      }
-    }
-    else if (message.GetHeader().GetObjectPath().has_value() &&
-             m_state->objectPathHandlers.contains(message.GetHeader().GetObjectPath()->GetPath()))
-    {
-      m_state->logger.LogTrace("Message's object path has a registered handler. Calling the handler");
-      m_state->objectPathHandlers[message.GetHeader().GetObjectPath()->GetPath()](message);
-    }
-    else
-    {
-      m_state->logger.LogTrace(
-          "Falling back to general message handler as message did not match rules or object paths");
-      m_state->logger.LogTrace(std::format("Do we have handlers defined? {}", !m_state->onIncomingSignal.empty()));
-      m_state->onIncomingSignal(message);
-    }
-
-    return DispatchStatus::DISPATCH_PENDING;
-  }
-
-  void SyncDBusConnection::SetPollHandler(std::function<void(boost::asio::local::stream_protocol::socket&)> callback)
-  {
-    m_state->logger.LogTrace("Starting poll handler");
-    m_state->pollHandler = std::move(callback);
-    m_state->pollHandler(*m_state->socket);
-  }
-
-  void SyncDBusConnection::Poll()
-  {
-    m_state->logger.LogTrace("Polling message from socket");
-    HandleReadMessage(ReadMessageFromSocket(*m_state->socket, m_state->logger));
-  }
-
   DBusWellKnownName const& SyncDBusConnection::GetWellKnownName() const
   {
-    return m_state->wellKnownName;
-  }
-
-  void SyncDBusConnection::SetLogLevel(LogLevel logLevel)
-  {
-    m_state->logger.logLevel = logLevel;
+    return *m_state->wellKnownName;
   }
 }  // namespace cxxbus

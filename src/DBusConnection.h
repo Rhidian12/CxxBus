@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <unordered_map>
 
 #include "AwaitableSignal.h"
@@ -33,22 +34,20 @@ namespace cxxbus
    private:
     friend class SyncDBusConnection;
 
-   private:
+   public:
     struct MatchRuleInfo
     {
       DBusMatchRule rule;
       std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> callback;
     };
 
+   private:
     struct InternalState
     {
-      std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
-
       // Store channels to make our 'SendMessage' be awaitable
       std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
           replyChannels;
 
-      std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>> objectPathHandlers;
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
 
       // Send messages to the SendLoop() coroutine
@@ -62,16 +61,22 @@ namespace cxxbus
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
-      uint32_t serial;
-      std::string uniqueConnection;
-      DBusWellKnownName wellKnownName;
-
-      uint32_t subscriptionCounter;
-      std::unordered_map<uint32_t, MatchRuleInfo> matchRules;
-
+      // Shared with other connections
+      std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
+      std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
+      std::shared_ptr<DBusWellKnownName> wellKnownName;
+      std::shared_ptr<uint32_t> serial;
+      std::shared_ptr<uint32_t> subscriptionCounter;
+      std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
+      std::shared_ptr<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>> objectPathHandlers;
 
-      bool closeConnectionOnDestruction;
+      // Information gotten from other connections
+      std::shared_ptr<std::queue<IncomingDBusMessage>> unhandledIncomingMessages;
+
+      // Information to deal with unhandled messages
+      boost::asio::system_timer timer;
+      bool shouldQuit;
     };
 
    private:
@@ -82,12 +87,13 @@ namespace cxxbus
     boost::asio::awaitable<void> Connect();
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
+    boost::asio::awaitable<void> HandleUnhandledIncomingMessages();
+    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
 
     void CloseData();
 
    private:
     DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
-    DBusConnection(SyncDBusConnection & syncDBusConnection);
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
@@ -101,8 +107,7 @@ namespace cxxbus
     static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
                                                                           DBusWellKnownName wellKnownName);
     static std::shared_ptr<DBusConnection> CreateDetached(boost::asio::io_context& ioService,
-                                                                          DBusWellKnownName wellKnownName);
-    static std::shared_ptr<DBusConnection> Create(SyncDBusConnection & connection);
+                                                          DBusWellKnownName wellKnownName);
 
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path,

@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
@@ -152,5 +153,11 @@ namespace cxxbus
     std::string newStr;
     std::ranges::for_each(str, [&newStr](unsigned char c) { newStr += std::format("{:x}", c); });
     return newStr;
+  }
+
+  boost::asio::awaitable<void> InvokeAsyncCallback(
+      std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback, IncomingDBusMessage message)
+  {
+    co_return co_await callback(std::move(message));
   }
 }  // namespace cxxbus
