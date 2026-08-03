@@ -112,6 +112,7 @@ namespace cxxbus
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path,
                                    std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    void UnregisterObjectPathHandler(ObjectPath path);
     void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(

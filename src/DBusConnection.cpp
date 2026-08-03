@@ -711,6 +711,11 @@ namespace cxxbus
         });
   }
 
+  void DBusConnection::UnregisterObjectPathHandler(ObjectPath path)
+  {
+    (*m_state->objectPathHandlers).erase(path.GetPath());
+  }
+
   void DBusConnection::ReceiveIncomingMessages(
       std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
