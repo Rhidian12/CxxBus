@@ -28,12 +28,6 @@ namespace cxxbus
 {
   class SyncDBusConnection;
 
-  enum class CreateConnectionDetached : uint8_t
-  {
-    NO = 0,
-    YES = 1,
-  };
-
   class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   {
    private:
@@ -105,8 +99,9 @@ namespace cxxbus
     boost::asio::awaitable<void> Close();
 
     static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
-                                                                          DBusWellKnownName wellKnownName,
-                                                                          CreateConnectionDetached connectionMethod);
+                                                                          DBusWellKnownName wellKnownName);
+    static std::shared_ptr<DBusConnection> CreateDetached(boost::asio::io_context& ioService,
+                                                                          DBusWellKnownName wellKnownName);
     static std::shared_ptr<DBusConnection> Create(SyncDBusConnection & connection);
 
     // Receive messages on a specific object path

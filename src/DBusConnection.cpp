@@ -52,31 +52,33 @@ namespace cxxbus
     }
   }  // namespace
 
-  boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(
-      boost::asio::io_context& ioService, DBusWellKnownName wellKnownName, CreateConnectionDetached connectionMethod)
+  boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(boost::asio::io_context& ioService,
+                                                                                 DBusWellKnownName wellKnownName)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
-    if (connectionMethod == CreateConnectionDetached::YES)
-    {
-      boost::asio::co_spawn(ioService, conn->Connect(),
-                            [](std::exception_ptr e)
-                            {
-                              if (e)
-                              {
-                                std::rethrow_exception(e);
-                              }
-                            });
-    }
-    else
-    {
-      co_await conn->Connect();
-    }
+    co_await conn->Connect();
 
     co_return conn;
   }
 
-  std::shared_ptr<DBusConnection> DBusConnection::Create(SyncDBusConnection & connection)
+  std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(boost::asio::io_context& ioService,
+                                                                 DBusWellKnownName wellKnownName)
+  {
+    std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
+
+    boost::asio::co_spawn(ioService, conn->Connect(),
+                          [](std::exception_ptr e)
+                          {
+                            if (e)
+                            {
+                              std::rethrow_exception(e);
+                            }
+                          });
+    return conn;
+  }
+
+  std::shared_ptr<DBusConnection> DBusConnection::Create(SyncDBusConnection& connection)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection{connection}};
 
@@ -131,9 +133,11 @@ namespace cxxbus
                              std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
                   syncDBusConnection.m_state->socket->get_executor(), 10},
           .connectionReady = true,
-          .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{syncDBusConnection.m_state->socket->get_executor()},
+          .connectionCompleted =
+              boost::asio::experimental::channel<void(boost::system::error_code)>{
+                  syncDBusConnection.m_state->socket->get_executor()},
           .nrOfWaiters = 0,
-          .serial = syncDBusConnection.m_state->serial + 1000, // make sure we can't overlap serials
+          .serial = syncDBusConnection.m_state->serial + 1000,  // make sure we can't overlap serials
           .uniqueConnection = syncDBusConnection.m_state->uniqueConnection,
           .wellKnownName = syncDBusConnection.GetWellKnownName(),
           .subscriptionCounter = 0,
@@ -485,7 +489,8 @@ namespace cxxbus
             throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
           }
 
-          co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
+          co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message),
+                                                                 boost::asio::use_awaitable);
         }
         // Simply an incoming message
         else
@@ -554,8 +559,8 @@ namespace cxxbus
   boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{m_state->socket->get_executor(),
-                                                                                                          1};
+    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{
+        m_state->socket->get_executor(), 1};
 
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
 
@@ -565,9 +570,10 @@ namespace cxxbus
     }
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> messageSentChannel =
-        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(m_state->socket->get_executor(), 1);
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(
+            m_state->socket->get_executor(), 1);
 
-        LOGGER.LogTrace("Sending message to ::SendLoop");
+    LOGGER.LogTrace("Sending message to ::SendLoop");
     // 2nd, send our message to the SendLoop() coroutine to actually send the message
     co_await m_state->sendLoop.async_send(boost::system::error_code{},
                                           std::make_tuple(std::move(message), m_state->serial++, messageSentChannel),

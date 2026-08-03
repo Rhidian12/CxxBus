@@ -61,8 +61,7 @@ TEST_F(DBusConnectionTestSuite, TestConnectingToDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
     EXPECT_TRUE(conn != nullptr);
   };
 }
@@ -71,8 +70,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
@@ -233,8 +231,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
     auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
@@ -251,8 +248,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
 
     bool extensiveMatchRuleTriggered{};
     bool simpleMatchRuleTriggered{};
@@ -295,8 +291,7 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
     DBusMessage message{DBusMessage::Method("RequestName")
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                             .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -322,11 +317,9 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     LOGGER.LogInfo("Making first connection");
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
     LOGGER.LogInfo("Making second connection");
-    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"},
-                                                 CreateConnectionDetached::NO);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
 
     conn2->ReceiveIncomingMessages(
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
@@ -375,10 +368,8 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
-    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"},
-                                                 CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
@@ -416,8 +407,7 @@ TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn =
-        co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO);
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
 
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -427,9 +417,9 @@ TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
     std::shared_ptr<SyncDBusConnection> syncConn = SyncDBusConnection::Create(*conn);
 
     auto syncReply = syncConn->SendMessage(DBusMessage::Method("Introspect")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                                .Destination("org.freedesktop.DBus"));
+                                               .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                               .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
+                                               .Destination("org.freedesktop.DBus"));
 
     EXPECT_EQ(reply.GetHeader().GetSender(), syncReply.GetHeader().GetSender());
     EXPECT_EQ(reply.GetHeader().GetSignature(), syncReply.GetHeader().GetSignature());
@@ -446,17 +436,18 @@ TEST_F(DBusConnectionTestSuite, TestSyncToAsync)
 
     LOGGER.LogDebug("Sending Sync Introspect");
     auto reply = conn2->SendMessage(DBusMessage::Method("Introspect")
-    .Path(ObjectPath{"/org/freedesktop/DBus"})
-    .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-    .Destination("org.freedesktop.DBus"));
-    
+                                        .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                        .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
+                                        .Destination("org.freedesktop.DBus"));
+
     conn = DBusConnection::Create(*conn2);
-    
+
     LOGGER.LogDebug("Sending Async Introspect");
-    auto asyncReply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
-                                                     .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                                     .Destination("org.freedesktop.DBus"));
+    auto asyncReply =
+        co_await conn->SendMessage(DBusMessage::Method("Introspect")
+                                       .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                       .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
+                                       .Destination("org.freedesktop.DBus"));
 
     EXPECT_EQ(reply.GetHeader().GetSender(), asyncReply.GetHeader().GetSender());
     EXPECT_EQ(reply.GetHeader().GetSignature(), asyncReply.GetHeader().GetSignature());
