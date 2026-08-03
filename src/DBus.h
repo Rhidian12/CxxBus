@@ -90,12 +90,20 @@ namespace cxxbus
       std::unique_ptr<void, CustomDeleter> data;
       std::function<void(void*, std::vector<byte>&)> marshalDataFunc;
       std::function<std::unique_ptr<void, CustomDeleter>(void*)> copyFunc;
+
+      bool operator==(VariantData const& other) const noexcept
+      {
+        return signature == other.signature && dataSize == other.dataSize && dataAlignment == other.dataAlignment &&
+               data == other.data;
+      }
     };
 
     struct DeserializedVariantData
     {
       Signature signature;
       std::vector<byte> data;
+
+      auto operator<=>(DeserializedVariantData const &) const noexcept = default;
     };
 
     std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
@@ -261,6 +269,11 @@ namespace cxxbus
       uint32_t arrPointer{};
 
       return UnmarshalDBusTypeImpl<T>(data.data, arrPointer);
+    }
+
+    bool operator==(Variant const & other) const noexcept
+    {
+      return m_variantData == other.m_variantData;
     }
   };
 

@@ -14,6 +14,8 @@ namespace cxxbus
     {
       HeaderFieldCode code;
       Variant data;
+
+      bool operator==(HeaderFieldReplyData const &) const noexcept = default;
     };
 
     struct ReplyData
@@ -31,6 +33,8 @@ namespace cxxbus
       uint32_t messageLength;
       uint32_t headerFieldLength;
       std::vector<HeaderFieldReplyData> headerFields;
+
+      bool operator==(ReplyData const &) const noexcept = default;
     };
 
    private:
@@ -56,6 +60,8 @@ namespace cxxbus
 
     void ParseHeaderFieldLength(std::vector<byte> data);
     void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
+
+    bool operator==(DBusMessageHeader const &) const noexcept = default;
   };
 
   class IncomingDBusMessage
@@ -82,5 +88,7 @@ namespace cxxbus
 
     // Only useful for debugging purposes
     std::vector<byte> const& GetRawData() const;
+
+    bool operator==(IncomingDBusMessage const &) const noexcept = default;
   };
 }  // namespace cxxbus

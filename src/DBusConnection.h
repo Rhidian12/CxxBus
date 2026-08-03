@@ -26,6 +26,8 @@
 
 namespace cxxbus
 {
+  class SyncDBusConnection;
+
   enum class CreateConnectionDetached : uint8_t
   {
     NO = 0,
@@ -35,6 +37,9 @@ namespace cxxbus
   class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   {
    private:
+    friend class SyncDBusConnection;
+
+   private:
     struct MatchRuleInfo
     {
       DBusMatchRule rule;
@@ -43,7 +48,7 @@ namespace cxxbus
 
     struct InternalState
     {
-      boost::asio::local::stream_protocol::socket socket;
+      std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
 
       // Store channels to make our 'SendMessage' be awaitable
       std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
@@ -70,11 +75,12 @@ namespace cxxbus
       uint32_t subscriptionCounter;
       std::unordered_map<uint32_t, MatchRuleInfo> matchRules;
 
-      DBusNameCache nameCache;
+      std::shared_ptr<DBusNameCache> nameCache;
+
+      bool closeConnectionOnDestruction;
     };
 
    private:
-    boost::asio::io_context& m_ioContext;
     std::shared_ptr<InternalState> m_state;
 
    private:
@@ -87,6 +93,7 @@ namespace cxxbus
 
    private:
     DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
+    DBusConnection(SyncDBusConnection & syncDBusConnection);
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
@@ -100,6 +107,7 @@ namespace cxxbus
     static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
                                                                           DBusWellKnownName wellKnownName,
                                                                           CreateConnectionDetached connectionMethod);
+    static std::shared_ptr<DBusConnection> Create(SyncDBusConnection & connection);
 
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path,

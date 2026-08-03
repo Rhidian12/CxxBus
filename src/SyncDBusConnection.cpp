@@ -9,6 +9,7 @@
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 #include "Log.h"
+#include "DBusConnection.h"
 #include "magic_enum.hpp"
 
 namespace cxxbus
@@ -103,7 +104,7 @@ namespace cxxbus
   }  // namespace
 
   SyncDBusConnection::SyncDBusConnection(boost::asio::io_context& ioContext, DBusWellKnownName wellKnownName)
-    : m_state(new InternalState{.socket = boost::asio::local::stream_protocol::socket{ioContext},
+    : m_state(new InternalState{.socket = std::make_shared<boost::asio::local::stream_protocol::socket>(ioContext),
                                 .objectPathHandlers = {},
                                 .onIncomingSignal = {},
                                 .serial = 1,
@@ -111,18 +112,38 @@ namespace cxxbus
                                 .wellKnownName = std::move(wellKnownName),
                                 .subscriptionCounter = 0,
                                 .matchRules = {},
-                                .nameCache = {*this},
+                                .nameCache = std::make_shared<DBusNameCache>(*this),
                                 .messagesToDispatch = {},
                                 .dispatchHandler = {},
                                 .pollHandler = {},
-                                .logger = {.logLevel = LogLevel::CXX_BUS_LOGLEVEL}})
+                                .logger = {.logLevel = LogLevel::CXX_BUS_LOGLEVEL},
+                                .closeConnectionOnDestruction = true})
   {
     Connect();
   }
 
+  SyncDBusConnection::SyncDBusConnection(DBusConnection& dbusConnection)
+    : m_state(new InternalState{.socket = dbusConnection.m_state->socket,
+                                .objectPathHandlers = {},
+                                .onIncomingSignal = {},
+                                .serial = dbusConnection.m_state->serial + 1000, // Make sure we can't overlap serials
+                                .uniqueConnection = dbusConnection.m_state->uniqueConnection,
+                                .wellKnownName = dbusConnection.GetWellKnownName(),
+                                .subscriptionCounter = 0,
+                                .matchRules = {},
+                                .nameCache = dbusConnection.m_state->nameCache,
+                                .messagesToDispatch = {},
+                                .dispatchHandler = {},
+                                .pollHandler = {},
+                                .logger = {.logLevel = LogLevel::CXX_BUS_LOGLEVEL},
+                                .closeConnectionOnDestruction = false})
+  {
+    // Don't connect here, we're coming from a 'DBusConnection' which should've already done all that stuff
+  }
+
   SyncDBusConnection::~SyncDBusConnection()
   {
-    if (m_state->socket.is_open())
+    if (m_state->socket->is_open())
     {
       Close();
     }
@@ -131,15 +152,21 @@ namespace cxxbus
   void SyncDBusConnection::CloseData()
   {
     m_state->logger.LogTrace("Closing sockets, channels and signals");
-    if (m_state->socket.is_open())
+    if (m_state->socket->is_open())
     {
       boost::system::error_code ec;
-      std::ignore = m_state->socket.close(ec);
+      std::ignore = m_state->socket->close(ec);
     }
   }
 
   void SyncDBusConnection::Close()
   {
+    if (!m_state->closeConnectionOnDestruction)
+    {
+      m_state->logger.LogDebug("Not closing DBusConnection as this connection is not the original owner of the socket and data");
+      return;
+    }
+
     m_state->logger.LogInfo("Closing DBus Connection");
 
     std::unordered_map<uint32_t, MatchRuleInfo> rules{m_state->matchRules};
@@ -183,13 +210,18 @@ namespace cxxbus
     return std::shared_ptr<SyncDBusConnection>{new SyncDBusConnection{ioContext, std::move(wellKnownName)}};
   }
 
+  std::shared_ptr<SyncDBusConnection> SyncDBusConnection::Create(DBusConnection& dbusConnection)
+  {
+    return std::shared_ptr<SyncDBusConnection>{new SyncDBusConnection{dbusConnection}};
+  }
+
   void SyncDBusConnection::Connect()
   {
     // Connect to DBus daemon
     boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-    m_state->socket.connect(endpoint);
+    m_state->socket->connect(endpoint);
 
-    AuthenticateDBusConnection(m_state->socket, m_state->logger);
+    AuthenticateDBusConnection(*m_state->socket, m_state->logger);
     m_state->logger.LogTrace("Connected to DBus-daemon.");
 
     m_state->logger.LogTrace("Starting connection handshake");
@@ -238,7 +270,7 @@ namespace cxxbus
     m_state->logger.LogTrace("Connection handshake completed.");
 
     m_state->logger.LogTrace("Subscribing to NameOwnerChanged signal");
-    m_state->nameCache.SubscribeToNameChangesSync();
+    m_state->nameCache->SubscribeToNameChangesSync();
   }
 
   void SyncDBusConnection::RegisterObjectPathHandler(ObjectPath path,
@@ -321,7 +353,7 @@ namespace cxxbus
 
   IncomingDBusMessage SyncDBusConnection::SendMessage(DBusMessage message)
   {
-    boost::asio::write(m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
+    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
     m_state->logger.LogTrace(std::format(
         "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
         message.GetMember().value_or(""), m_state->serial - 1,
@@ -330,7 +362,7 @@ namespace cxxbus
 
     while (true)
     {
-      IncomingDBusMessage const message{ReadMessageFromSocket(m_state->socket, m_state->logger)};
+      IncomingDBusMessage const message{ReadMessageFromSocket(*m_state->socket, m_state->logger)};
       if (HandleReadMessage(message))
       {
         return message;
@@ -346,7 +378,7 @@ namespace cxxbus
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
 
-    boost::asio::write(m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
+    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(m_state->serial++)));
     m_state->logger.LogTrace(std::format(
         "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
         message.GetMember().value_or(""), m_state->serial - 1,
@@ -389,7 +421,7 @@ namespace cxxbus
       for (MatchRuleInfo const& info : m_state->matchRules | std::views::values)
       {
         std::vector<std::string> wellKnownNames =
-            m_state->nameCache.GetWellKnownNames(message.GetHeader().GetSender().value_or(""));
+            m_state->nameCache->GetWellKnownNames(message.GetHeader().GetSender().value_or(""));
         if (info.rule.Matches(message, wellKnownNames))
         {
           m_state->logger.LogTrace(std::format("Rule '{}' matched incoming signal", info.rule.GetRule()));
@@ -418,13 +450,13 @@ namespace cxxbus
   {
     m_state->logger.LogTrace("Starting poll handler");
     m_state->pollHandler = std::move(callback);
-    m_state->pollHandler(m_state->socket);
+    m_state->pollHandler(*m_state->socket);
   }
 
   void SyncDBusConnection::Poll()
   {
     m_state->logger.LogTrace("Polling message from socket");
-    HandleReadMessage(ReadMessageFromSocket(m_state->socket, m_state->logger));
+    HandleReadMessage(ReadMessageFromSocket(*m_state->socket, m_state->logger));
   }
 
   DBusWellKnownName const& SyncDBusConnection::GetWellKnownName() const

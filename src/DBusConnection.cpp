@@ -21,9 +21,11 @@
 #include "DBusHelpers.h"
 #include "DBusMatchRule.h"
 #include "DBusMessage.h"
+#include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 #include "Log.h"
+#include "SyncDBusConnection.h"
 
 namespace cxxbus
 {
@@ -74,10 +76,22 @@ namespace cxxbus
     co_return conn;
   }
 
+  std::shared_ptr<DBusConnection> DBusConnection::Create(SyncDBusConnection & connection)
+  {
+    std::shared_ptr<DBusConnection> conn{new DBusConnection{connection}};
+
+    LOGGER.LogTrace("Starting Send loop");
+    boost::asio::co_spawn(conn->m_state->socket->get_executor(), conn->SendLoop(), boost::asio::detached);
+
+    LOGGER.LogTrace("Starting Read loop");
+    boost::asio::co_spawn(conn->m_state->socket->get_executor(), conn->ReadLoop(), boost::asio::detached);
+
+    return conn;
+  }
+
   DBusConnection::DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName)
-    : m_ioContext(ioService)
-    , m_state(new InternalState{
-          .socket = boost::asio::local::stream_protocol::socket{m_ioContext},
+    : m_state(new InternalState{
+          .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(ioService),
           .replyChannels =
               std::map<uint32_t,
                        boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
@@ -88,23 +102,51 @@ namespace cxxbus
                   boost::system::error_code,
                   std::tuple<DBusMessage, uint32_t,
                              std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
-                  m_ioContext, 10},
+                  ioService, 10},
           .connectionReady = false,
-          .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{m_ioContext},
+          .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{ioService},
           .nrOfWaiters = 0,
           .serial = 1,
           .uniqueConnection = "",
           .wellKnownName = std::move(wellKnownName),
           .subscriptionCounter = 0,
           .matchRules = {},
-          .nameCache = {*this}})
+          .nameCache = std::make_shared<DBusNameCache>(*this),
+          .closeConnectionOnDestruction = true})
+  {
+  }
+
+  DBusConnection::DBusConnection(SyncDBusConnection& syncDBusConnection)
+    : m_state(new InternalState{
+          .socket = syncDBusConnection.m_state->socket,
+          .replyChannels =
+              std::map<uint32_t,
+                       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
+          .objectPathHandlers = {},
+          .onIncomingSignal = {},
+          .sendLoop =
+              boost::asio::experimental::channel<void(
+                  boost::system::error_code,
+                  std::tuple<DBusMessage, uint32_t,
+                             std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
+                  syncDBusConnection.m_state->socket->get_executor(), 10},
+          .connectionReady = true,
+          .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{syncDBusConnection.m_state->socket->get_executor()},
+          .nrOfWaiters = 0,
+          .serial = syncDBusConnection.m_state->serial + 1000, // make sure we can't overlap serials
+          .uniqueConnection = syncDBusConnection.m_state->uniqueConnection,
+          .wellKnownName = syncDBusConnection.GetWellKnownName(),
+          .subscriptionCounter = 0,
+          .matchRules = {},
+          .nameCache = syncDBusConnection.m_state->nameCache,
+          .closeConnectionOnDestruction = false})
   {
   }
 
   DBusConnection::~DBusConnection()
   {
     // We do this check because preferably the user used `Close()` or `CloseAsync()` to already kill the connection
-    if (m_state->socket.is_open())
+    if (m_state->socket->is_open())
     {
       CloseData();
     }
@@ -112,20 +154,37 @@ namespace cxxbus
 
   void DBusConnection::CloseData()
   {
-    LOGGER.LogTrace("Closing sockets, channels and signals");
-    if (m_state->socket.is_open())
-    {
-      boost::system::error_code ec;
-      std::ignore = m_state->socket.close(ec);
-    }
-
+    // The 'sendLoop' channel and signal handlers belong solely to this DBusConnection instance (they are
+    // never shared with a SyncDBusConnection or another DBusConnection wrapping the same socket), so they must
+    // always be torn down here to let our own SendLoop()/ReadLoop() coroutines terminate, regardless of whether
+    // we own the underlying shared socket.
+    LOGGER.LogTrace("Closing channels and signals");
     m_state->sendLoop.close();
     m_state->onIncomingSignal.disconnect_all_slots();
     m_state->objectPathHandlers.clear();
+
+    if (!m_state->closeConnectionOnDestruction)
+    {
+      LOGGER.LogDebug("Not closing DBusConnection as this connection is not the original owner of the socket and data");
+      return;
+    }
+
+    LOGGER.LogTrace("Closing shared socket");
+    if (m_state->socket->is_open())
+    {
+      boost::system::error_code ec;
+      std::ignore = m_state->socket->close(ec);
+    }
   }
 
   boost::asio::awaitable<void> DBusConnection::Close()
   {
+    if (!m_state->closeConnectionOnDestruction)
+    {
+      CloseData();
+      co_return;
+    }
+
     LOGGER.LogInfo("Closing DBus Connection");
 
     auto rules{m_state->matchRules};
@@ -171,19 +230,19 @@ namespace cxxbus
     auto state = m_state;
 
     // First send a single '\0' byte
-    co_await state->socket.async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
+    co_await state->socket->async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Next we must authenticate ourselves, we use the EXTERNAL
     // authentication method
-    co_await state->socket.async_send(
+    co_await state->socket->async_send(
         boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))),
         boost::asio::use_awaitable);
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Now we expect to see OK <guid>
     std::string reply{};
-    co_await boost::asio::async_read_until(state->socket, boost::asio::dynamic_buffer(reply), "\r\n",
+    co_await boost::asio::async_read_until(*state->socket, boost::asio::dynamic_buffer(reply), "\r\n",
                                            boost::asio::use_awaitable);
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -194,7 +253,7 @@ namespace cxxbus
     }
 
     // Yippee! All worked, so now start our DBus Connection!
-    co_await state->socket.async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
+    co_await state->socket->async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
   }
 
   boost::asio::awaitable<void> DBusConnection::Connect()
@@ -206,7 +265,7 @@ namespace cxxbus
 
     // Connect to DBus daemon
     boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-    co_await state->socket.async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+    co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -215,10 +274,10 @@ namespace cxxbus
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     LOGGER.LogTrace("Connected to DBus-daemon. Starting Send loop");
-    boost::asio::co_spawn(m_ioContext, SendLoop(), boost::asio::detached);
+    boost::asio::co_spawn(m_state->socket->get_executor(), SendLoop(), boost::asio::detached);
 
     LOGGER.LogTrace("Send loop started. Starting Read loop");
-    boost::asio::co_spawn(m_ioContext, ReadLoop(), boost::asio::detached);
+    boost::asio::co_spawn(m_state->socket->get_executor(), ReadLoop(), boost::asio::detached);
 
     LOGGER.LogTrace("Read loop started. Starting connection handshake");
 
@@ -293,7 +352,7 @@ namespace cxxbus
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     LOGGER.LogTrace("Subscribing to NameOwnerChanged signal");
-    co_await m_state->nameCache.SubscribeToNameChanges();
+    co_await m_state->nameCache->SubscribeToNameChanges();
   }
 
   boost::asio::awaitable<void> DBusConnection::SendLoop()
@@ -312,7 +371,8 @@ namespace cxxbus
       {
         // Wait for an incoming message to send
         auto [message, serial, messageSentChannel] = co_await state->sendLoop.async_receive(boost::asio::use_awaitable);
-        co_await boost::asio::async_write(state->socket, boost::asio::buffer(message.Serialize(serial)),
+        LOGGER.LogTrace("Got message to send");
+        co_await boost::asio::async_write(*state->socket, boost::asio::buffer(message.Serialize(serial)),
                                           boost::asio::use_awaitable);
 
         LOGGER.LogTrace(std::format(
@@ -363,7 +423,7 @@ namespace cxxbus
 
         std::vector<byte> tempBuffer{};
         tempBuffer.resize(FIRST_HEADER_PART_SIZE);
-        co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
 #else
@@ -372,7 +432,7 @@ namespace cxxbus
         DBusMessageHeader messageHeader{std::move(tempBuffer)};
 
         tempBuffer.resize(sizeof(uint32_t));
-        co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
 #else
@@ -381,7 +441,7 @@ namespace cxxbus
         messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
 
         tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
-        co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(std::move(tempBuffer));
 #else
@@ -396,7 +456,7 @@ namespace cxxbus
         uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
 
         tempBuffer.resize(nrOfPaddingBytes + messageHeader.GetMessageLength());
-        co_await boost::asio::async_read(state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 
         // Skip over the padding, we don't care about it
 #if __cpp_lib_ranges_to_container
@@ -442,7 +502,7 @@ namespace cxxbus
             for (MatchRuleInfo const& info : state->matchRules | std::views::values)
             {
               if (info.rule.Matches(message,
-                                    state->nameCache.GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
+                                    state->nameCache->GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
               {
                 LOGGER.LogTrace(std::format("Rule '{}' matched incoming signal", info.rule.GetRule()));
                 co_await (*info.callback)(message);
@@ -494,7 +554,7 @@ namespace cxxbus
   boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{m_ioContext,
+    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{m_state->socket->get_executor(),
                                                                                                           1};
 
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
@@ -505,8 +565,9 @@ namespace cxxbus
     }
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> messageSentChannel =
-        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(m_ioContext, 1);
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(m_state->socket->get_executor(), 1);
 
+        LOGGER.LogTrace("Sending message to ::SendLoop");
     // 2nd, send our message to the SendLoop() coroutine to actually send the message
     co_await m_state->sendLoop.async_send(boost::system::error_code{},
                                           std::make_tuple(std::move(message), m_state->serial++, messageSentChannel),

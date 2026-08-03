@@ -22,6 +22,8 @@
 
 namespace cxxbus
 {
+  class DBusConnection;
+
   enum class DispatchStatus : uint8_t
   {
     DISPATCH_PENDING,
@@ -30,6 +32,9 @@ namespace cxxbus
 
   class SyncDBusConnection
   {
+   private:
+    friend class DBusConnection;
+
    public:
     struct SyncMessageToSendInfo
     {
@@ -48,7 +53,7 @@ namespace cxxbus
 
     struct InternalState
     {
-      boost::asio::local::stream_protocol::socket socket;
+      std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
 
       std::unordered_map<std::string, boost::signals2::signal<void(IncomingDBusMessage const&)>> objectPathHandlers;
       boost::signals2::signal<void(IncomingDBusMessage const&)> onIncomingSignal;
@@ -60,7 +65,7 @@ namespace cxxbus
       uint32_t subscriptionCounter;
       std::unordered_map<uint32_t, MatchRuleInfo> matchRules;
 
-      DBusNameCache nameCache;
+      std::shared_ptr<DBusNameCache> nameCache;
       std::queue<IncomingDBusMessage> messagesToDispatch;
 
       std::function<void(DispatchStatus)> dispatchHandler;
@@ -68,6 +73,8 @@ namespace cxxbus
       std::function<void(boost::asio::local::stream_protocol::socket&)> pollHandler;
 
       Logger logger;
+
+      bool closeConnectionOnDestruction;
     };
 
    private:
@@ -80,6 +87,7 @@ namespace cxxbus
 
    private:
     SyncDBusConnection(boost::asio::io_context& ioContext, DBusWellKnownName wellKnownName);
+    SyncDBusConnection(DBusConnection & dbusConnection);
 
    public:
     ~SyncDBusConnection();
@@ -87,6 +95,7 @@ namespace cxxbus
 
     static std::shared_ptr<SyncDBusConnection> Create(boost::asio::io_context& ioContext,
                                                       DBusWellKnownName wellKnownName);
+    static std::shared_ptr<SyncDBusConnection> Create(DBusConnection & dbusConnection);
 
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path, std::function<void(IncomingDBusMessage const&)> callback);
