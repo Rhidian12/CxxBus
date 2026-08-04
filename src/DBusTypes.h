@@ -122,7 +122,7 @@ namespace cxxbus
 
     bool Empty() const;
 
-    auto operator<=>(ObjectPath const&) const noexcept = default;
+    bool operator==(ObjectPath const & ) const noexcept = default;
     bool operator==(std::string const & str) const noexcept;
   };
 

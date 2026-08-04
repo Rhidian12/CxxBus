@@ -99,6 +99,6 @@ namespace cxxbus
     // That way, we can still check for well-known name instead of forcing the user to figure out the unique connection name of the sender.
     bool Matches(IncomingDBusMessage const& message, std::vector<std::string> const& wellKnownNames) const;
 
-    auto operator<=>(DBusMatchRule const&) const noexcept = default;
+    bool operator==(DBusMatchRule const&) const noexcept = default;
   };
 }  // namespace cxxbus
