@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <functional>
 #include <iterator>
@@ -20,6 +21,8 @@
 #include "ConstexprTypeName.h"
 #include "DBusHelpers.h"
 #include "DBusTypes.h"
+#include "DBusConcepts.h"
+#include "Log.h"
 
 namespace cxxbus
 {
@@ -325,7 +328,7 @@ namespace cxxbus
   }
 
   template <IsDBusType T>
-  void GetSizeOfDBusType(T const& value, uint32_t& size)
+  void GetSizeOfDBusType(T const & value, uint32_t& size)
   {
     if constexpr (IsDBusBasicFixedType<T>)
     {
@@ -334,7 +337,12 @@ namespace cxxbus
     }
     else if constexpr (IsDBusBasicStringlikeType<T>)
     {
-      if constexpr (std::is_same_v<T, Signature>)
+      if constexpr (IsRawStringLiteral<T>)
+      {
+        // Length of string as u32 + actual length of string + '\0'
+        size += sizeof(uint32_t) + static_cast<uint32_t>(std::strlen(value)) + 1;
+      }
+      else if constexpr (std::is_same_v<T, Signature>)
       {
         // Length of string as u8 + actual length of string + '\0'
         size += sizeof(uint8_t) + value.Size() + 1;
@@ -525,10 +533,10 @@ namespace cxxbus
 
     if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
     {
-      // Encode the length
+      // Encode the length as a uint32_t
       MarshalBasicFixedType(static_cast<uint32_t>(str.size()), dbusType);
     }
-    else
+    else // Signature
     {
       // Encode the length as a uint8_t
       MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
@@ -543,7 +551,7 @@ namespace cxxbus
   }
 
   template <IsDBusMultipleCompleteTypes T, size_t I, size_t MaxI>
-  void MarshalBasicMultipleCompleteTypes(T const& value, std::vector<byte>& dbusType)
+  void MarshalBasicMultipleCompleteTypes(T const & value, std::vector<byte>& dbusType)
   {
     using ElemType = typename std::tuple_element_t<I, typename T::type>;
 
@@ -583,7 +591,7 @@ namespace cxxbus
   }
 
   template <IsDBusArray T>
-  void MarshalDBusArray(T const& value, std::vector<byte>& dbusType)
+  void MarshalDBusArray(T const & value, std::vector<byte>& dbusType)
   {
     using ContainedType = typename T::value_type;
 
@@ -635,7 +643,7 @@ namespace cxxbus
   }
 
   template <IsDBusStruct T>
-  void MarshalDBusStruct(T const& value, std::vector<byte>& dbusType)
+  void MarshalDBusStruct(T const & value, std::vector<byte>& dbusType)
   {
     constexpr size_t structSize{std::tuple_size_v<T>};
 
@@ -716,7 +724,11 @@ namespace cxxbus
     }
     else
     {
-      std::unreachable();
+      Logger logger{.logLevel = LogLevel::Fatal};
+      logger.LogFatal(
+          std::format("Trying to marshal type '{}' which is not a known DBus container type", ConstexprTypeName<T>()));
+      throw InternalError{
+          std::format("Trying to marshal type '{}' which is not a known DBus container type", ConstexprTypeName<T>())};
     }
   }
 
@@ -733,7 +745,11 @@ namespace cxxbus
     }
     else
     {
-      std::unreachable();
+      Logger logger{.logLevel = LogLevel::Fatal};
+      logger.LogFatal(
+          std::format("Trying to marshal type '{}' which is not a known DBus basic or container type", ConstexprTypeName<T>()));
+      throw InternalError{
+          std::format("Trying to marshal type '{}' which is not a known DBus basic or container type", ConstexprTypeName<T>())};
     }
   }
 
@@ -745,7 +761,7 @@ namespace cxxbus
     GetSizeOfDBusType(value, size);
     dbusType.reserve(size);
 
-    MarshalDBusTypeImpl<std::remove_cvref_t<T>>(value, dbusType);
+    MarshalDBusTypeImpl(value, dbusType);
     return dbusType;
   }
 
@@ -1204,7 +1220,7 @@ namespace cxxbus
     return UnmarshalDBusTypeImpl<T>(dbusType, arrPointer);
   }
 
-  template <IsDBusType T>
+  template <IsDBusType T> requires (!IsRawStringLiteral<std::decay_t<T>>)
   T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
   {
     uint32_t arrPointer{};

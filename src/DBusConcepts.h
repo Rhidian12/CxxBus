@@ -35,19 +35,27 @@ namespace cxxbus
                          std::is_same<T, uint32_t>, std::is_same<T, int64_t>, std::is_same<T, uint64_t>, std::is_same<T, float>, std::is_same<T, double>>;
 
   template <typename T>
-  concept IsDBusBasicFixedType = IsDBusBasicFixedType_v<T>;
+  concept IsDBusBasicFixedType = IsDBusBasicFixedType_v<std::decay_t<T>>;
 
   template <typename T>
-  concept IsString = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
+  inline constexpr bool IsStringType_v =
+      std::disjunction_v<std::is_same<T, char const*>, std::is_same<T, char*>, std::is_same<T, char[]>,
+                         std::is_same<T, std::string>, std::is_same<T, std::string_view>>;
 
   template <typename T>
-  concept IsDBusBasicStringlikeType = IsString<T> || std::same_as<T, ObjectPath> || std::same_as<T, Signature> || std::same_as<T, DBusInterfaceName>;
+  concept IsRawStringLiteral = std::same_as<std::decay_t<T>, char const*> || std::same_as<std::decay_t<T>, char*> || std::same_as<std::decay_t<T>, char[]>;
+
+  template <typename T>
+  concept IsString = IsStringType_v<std::decay_t<T>>;
+
+  template <typename T>
+  concept IsDBusBasicStringlikeType = IsString<std::decay_t<T>> || std::same_as<std::decay_t<T>, ObjectPath> || std::same_as<std::decay_t<T>, Signature> || std::same_as<std::decay_t<T>, DBusInterfaceName>;
 
   template <typename T>
   concept IsDBusMultipleCompleteTypes = IsSpecialisation<T, MultipleCompleteTypes>;
 
   template <typename T>
-  concept IsDBusBasicType = IsDBusBasicFixedType<T> || IsDBusBasicStringlikeType<T> || IsDBusMultipleCompleteTypes<T>;
+  concept IsDBusBasicType = IsDBusBasicFixedType<std::decay_t<T>> || IsDBusBasicStringlikeType<std::decay_t<T>> || IsDBusMultipleCompleteTypes<std::decay_t<T>>;
 
   template <typename T>
   concept IsDBusArray = IsSpecialisation<T, std::vector>;
@@ -62,8 +70,8 @@ namespace cxxbus
   concept IsDBusMap = IsSpecialisation<T, std::map>;
 
   template <typename T>
-  concept IsDBusContainer = IsDBusArray<T> || IsDBusMap<T> || IsDBusStruct<T> || IsDBusVariant<T>;
+  concept IsDBusContainer = IsDBusArray<std::decay_t<T>> || IsDBusMap<std::decay_t<T>> || IsDBusStruct<std::decay_t<T>> || IsDBusVariant<std::decay_t<T>>;
 
   template <typename T>
-  concept IsDBusType = IsDBusBasicType<std::remove_cvref_t<T>> || IsDBusContainer<std::remove_cvref_t<T>>;
+  concept IsDBusType = IsDBusBasicType<std::decay_t<T>> || IsDBusContainer<std::decay_t<T>>;
 }  // namespace cxxbus

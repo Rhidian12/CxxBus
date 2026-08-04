@@ -134,6 +134,8 @@ TEST_F(MarshalTestSuite, MarshalString)
             (std::vector<byte>{0x03, 0x00, 0x00, 0x00,  // length = 3
                                 'H', 'i', '!',           // UTF-8 bytes
                                 0x00}));                 // NUL terminator
+
+  EXPECT_EQ(MarshalDBusType("Hi!"), (std::vector<byte>{0x03, 0x00, 0x00, 0x00, 'H', 'i', '!', 0x00}));
 }
  
 TEST_F(MarshalTestSuite, StringLengthExcludesNulTerminator)
