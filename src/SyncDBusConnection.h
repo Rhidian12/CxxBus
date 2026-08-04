@@ -49,7 +49,7 @@ namespace cxxbus
       // Gotten from DBusConnection
       std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
       std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
-      std::shared_ptr<DBusWellKnownName> wellKnownName;
+      std::shared_ptr<std::vector<DBusWellKnownName>> wellKnownNames;
       std::shared_ptr<uint32_t> serial;
       std::shared_ptr<uint32_t> subscriptionCounter;
       std::shared_ptr<std::unordered_map<uint32_t, DBusConnection::MatchRuleInfo>> matchRules;
@@ -76,6 +76,6 @@ namespace cxxbus
     IncomingDBusMessage SendMessage(DBusMessage message);
     void SendMessageNoReply(DBusMessage message);
 
-    DBusWellKnownName const& GetWellKnownName() const;
+    std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
   };
 }  // namespace cxxbus

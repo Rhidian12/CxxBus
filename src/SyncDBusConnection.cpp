@@ -84,7 +84,7 @@ namespace cxxbus
   SyncDBusConnection::SyncDBusConnection(DBusConnection& dbusConnection)
     : m_state(new InternalState{.socket = dbusConnection.m_state->socket,
       .uniqueConnection = dbusConnection.m_state->uniqueConnection,
-      .wellKnownName = dbusConnection.m_state->wellKnownName,
+      .wellKnownNames = dbusConnection.m_state->wellKnownNames,
                                 .serial = dbusConnection.m_state->serial, // Make sure we can't overlap serials
                                 .subscriptionCounter = dbusConnection.m_state->subscriptionCounter,
                                 .matchRules = dbusConnection.m_state->matchRules,
@@ -209,8 +209,8 @@ namespace cxxbus
         message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
   }
 
-  DBusWellKnownName const& SyncDBusConnection::GetWellKnownName() const
+  std::vector<DBusWellKnownName> const& SyncDBusConnection::GetWellKnownNames() const
   {
-    return *m_state->wellKnownName;
+    return *m_state->wellKnownNames;
   }
 }  // namespace cxxbus

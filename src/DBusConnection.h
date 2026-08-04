@@ -64,7 +64,7 @@ namespace cxxbus
       // Shared with other connections
       std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
       std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
-      std::shared_ptr<DBusWellKnownName> wellKnownName;
+      std::shared_ptr<std::vector<DBusWellKnownName>> wellKnownNames;
       std::shared_ptr<uint32_t> serial;
       std::shared_ptr<uint32_t> subscriptionCounter;
       std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
@@ -93,7 +93,7 @@ namespace cxxbus
     void CloseData();
 
    private:
-    DBusConnection(boost::asio::io_context& ioService, DBusWellKnownName wellKnownName);
+    DBusConnection(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
@@ -105,10 +105,10 @@ namespace cxxbus
     boost::asio::awaitable<void> Close();
 
     static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
-                                                                          DBusWellKnownName wellKnownName,
+                                                                          std::optional<DBusWellKnownName> wellKnownName,
                                                                           BusType busType);
     static std::shared_ptr<DBusConnection> CreateDetached(boost::asio::io_context& ioService,
-                                                          DBusWellKnownName wellKnownName, BusType busType);
+                                                          std::optional<DBusWellKnownName> wellKnownName, BusType busType);
 
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path,
@@ -123,6 +123,9 @@ namespace cxxbus
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
 
-    DBusWellKnownName const& GetWellKnownName() const;
+    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name);
+    boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name);
+
+    std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
   };
 }  // namespace cxxbus
