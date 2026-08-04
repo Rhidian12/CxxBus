@@ -19,9 +19,9 @@
 #include <vector>
 
 #include "ConstexprTypeName.h"
+#include "DBusConcepts.h"
 #include "DBusHelpers.h"
 #include "DBusTypes.h"
-#include "DBusConcepts.h"
 #include "Log.h"
 
 namespace cxxbus
@@ -31,7 +31,7 @@ namespace cxxbus
     uint32_t const result{static_cast<uint32_t>(bytes.size()) % alignment};
     if (result == 0) return;
 
-#if  __cpp_lib_containers_ranges
+#if __cpp_lib_containers_ranges
     bytes.append_range(std::vector<byte>(static_cast<uint8_t>(alignment - result), '\0'));
 #else
     bytes.insert(bytes.end(), static_cast<uint8_t>(alignment - result), '\0');
@@ -73,6 +73,12 @@ namespace cxxbus
   };
   constexpr DeserializedVariantTag deserialized_variant_tag{};
 
+  class VariantUnmarshalError : public std::runtime_error
+  {
+   public:
+    using std::runtime_error::runtime_error;
+  };
+
   class Variant
   {
    private:
@@ -106,7 +112,7 @@ namespace cxxbus
       Signature signature;
       std::vector<byte> data;
 
-      auto operator<=>(DeserializedVariantData const &) const noexcept = default;
+      auto operator<=>(DeserializedVariantData const&) const noexcept = default;
     };
 
     std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
@@ -119,14 +125,17 @@ namespace cxxbus
             .signature = GetTypeSignature<std::remove_cvref_t<T>>(),
             .dataSize = 0,
             .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-            .data = std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{std::forward<T>(value)},
-                                                         CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
-            .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { MarshalDBusTypeImpl(*static_cast<std::remove_cvref_t<T>*>(data), dbusType); },
+            .data = std::unique_ptr<void, CustomDeleter>(
+                new std::remove_cvref_t<T>{std::forward<T>(value)},
+                CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
+            .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
+            { MarshalDBusTypeImpl(*static_cast<std::remove_cvref_t<T>*>(data), dbusType); },
             .copyFunc =
                 [](void* otherData)
             {
-              return std::unique_ptr<void, CustomDeleter>(new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
-                                                          CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
+              return std::unique_ptr<void, CustomDeleter>(
+                  new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
+                  CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
             }}}
     {
       GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
@@ -134,19 +143,22 @@ namespace cxxbus
 
     // Wraps a Variant inside a Variant (nested/boxed variant)
     Variant(InPlaceT, Variant variant)
-      : m_variantData{VariantData{.signature = GetTypeSignature<Variant>(),
-                                  .dataSize = 0,
-                                  .dataAlignment = GetAlignmentOfDBusType<Variant>(),
-                                  .data = std::unique_ptr<void, CustomDeleter>(
-                                      new Variant(std::move(variant)), CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
-                                  .marshalDataFunc = [](void* data, std::vector<byte>& dbusType) { static_cast<Variant*>(data)->MarshalData(dbusType); },
-                                  .copyFunc =
-                                      [](void* otherData)
-                                  {
-                                    return std::unique_ptr<void, CustomDeleter>(
-                                        new Variant(*static_cast<Variant*>(otherData)),
-                                        CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
-                                  }}}
+      : m_variantData{
+            VariantData{.signature = GetTypeSignature<Variant>(),
+                        .dataSize = 0,
+                        .dataAlignment = GetAlignmentOfDBusType<Variant>(),
+                        .data = std::unique_ptr<void, CustomDeleter>(
+                            new Variant(std::move(variant)),
+                            CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
+                        .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
+                        { static_cast<Variant*>(data)->MarshalData(dbusType); },
+                        .copyFunc =
+                            [](void* otherData)
+                        {
+                          return std::unique_ptr<void, CustomDeleter>(
+                              new Variant(*static_cast<Variant*>(otherData)),
+                              CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
+                        }}}
     {
       GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
       std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
@@ -258,15 +270,17 @@ namespace cxxbus
     {
       if (!std::holds_alternative<DeserializedVariantData>(m_variantData))
       {
-        throw std::runtime_error{"Cannot unmarshal a non-deserialized variant"};
+        throw VariantUnmarshalError{"Cannot unmarshal a non-deserialized variant"};
       }
 
       DeserializedVariantData const& data = std::get<DeserializedVariantData>(m_variantData);
 
       if (GetTypeSignature<T>() != data.signature)
       {
-        throw std::runtime_error{std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to deserialize {}",
-                                             data.signature.GetSignature(), GetTypeSignature<T>())};
+        throw VariantUnmarshalError{
+            std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to "
+                        "deserialize {}",
+                        data.signature.GetSignature(), GetTypeSignature<T>())};
       }
 
       uint32_t arrPointer{};
@@ -274,7 +288,7 @@ namespace cxxbus
       return UnmarshalDBusTypeImpl<T>(data.data, arrPointer);
     }
 
-    bool operator==(Variant const & other) const noexcept
+    bool operator==(Variant const& other) const noexcept
     {
       return m_variantData == other.m_variantData;
     }
@@ -328,7 +342,7 @@ namespace cxxbus
   }
 
   template <IsDBusType T>
-  void GetSizeOfDBusType(T const & value, uint32_t& size)
+  void GetSizeOfDBusType(T const& value, uint32_t& size)
   {
     if constexpr (IsDBusBasicFixedType<T>)
     {
@@ -391,7 +405,8 @@ namespace cxxbus
     }
   }
 
-  inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const& signature, std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  inline uint32_t GetSizeOfDBusTypeBasedOnSignature(Signature const& signature, std::vector<byte> const& dbusType,
+                                                    uint32_t& arrPointer)
   {
     switch (static_cast<DBusTypeCodes>(signature.GetSignature()[0]))
     {
@@ -418,14 +433,16 @@ namespace cxxbus
       {
         // Length of string as u32 + actual length of string + '\0'
         uint32_t const length = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
-        arrPointer -= sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+        arrPointer -=
+            sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
         return sizeof(uint32_t) + length + 1;
       }
       case DBusTypeCodes::SIGNATURE:
       {
         // Length of string as u8 + actual length of string + '\0'
         uint8_t const length = UnmarshalDBusTypeImpl<uint8_t>(dbusType, arrPointer);
-        arrPointer -= sizeof(uint8_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+        arrPointer -=
+            sizeof(uint8_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
         return sizeof(uint8_t) + length + 1;
       }
       case DBusTypeCodes::ARRAY:
@@ -443,7 +460,8 @@ namespace cxxbus
           AddPaddingToSize(length, GetAlignmentOfSignature(Signature(std::string(1, signature.GetSignature().at(1)))));
         }
 
-        arrPointer -= sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+        arrPointer -=
+            sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
         return sizeof(uint32_t) + length;
       }
       case DBusTypeCodes::STRUCT_BEGIN:
@@ -455,7 +473,8 @@ namespace cxxbus
           length += GetSizeOfDBusTypeBasedOnSignature(memberSignature, dbusType, arrPointer);
           if (i < signature.GetSignature().size() - 2)
           {
-            AddPaddingToSize(length, GetAlignmentOfSignature(Signature(std::string(1, signature.GetSignature().at(i + 1)))));
+            AddPaddingToSize(length,
+                             GetAlignmentOfSignature(Signature(std::string(1, signature.GetSignature().at(i + 1)))));
           }
         }
         return length;
@@ -464,7 +483,8 @@ namespace cxxbus
       {
         // Variant = Signature + Padding + Size of data
         Signature variantSignature = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
-        arrPointer -= sizeof(uint8_t) + variantSignature.Size() + 1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
+        arrPointer -= sizeof(uint8_t) + variantSignature.Size() +
+                      1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
 
         uint32_t length = GetSizeOfDBusTypeBasedOnSignature(variantSignature, dbusType, arrPointer);
         AddPaddingToSize(length, GetAlignmentOfSignature(variantSignature));
@@ -476,26 +496,30 @@ namespace cxxbus
   }
 
   constexpr HeaderField HEADER_FIELDS[] = {
-      HeaderField{
-          .decimalCode = HeaderFieldCode::INVALID, .type = DBusTypeCodes::INVALID, .requiredMessageType = {DBusMessageType::NONE, DBusMessageType::NONE}},
+      HeaderField{.decimalCode = HeaderFieldCode::INVALID,
+                  .type = DBusTypeCodes::INVALID,
+                  .requiredMessageType = {DBusMessageType::NONE, DBusMessageType::NONE}},
       HeaderField{.decimalCode = HeaderFieldCode::PATH,
                   .type = DBusTypeCodes::OBJECT_PATH,
                   .requiredMessageType = {DBusMessageType::METHOD_CALL, DBusMessageType::SIGNAL}},
-      HeaderField{
-          .decimalCode = HeaderFieldCode::INTERFACE, .type = DBusTypeCodes::STRING, .requiredMessageType = {DBusMessageType::SIGNAL, DBusMessageType::NONE}},
+      HeaderField{.decimalCode = HeaderFieldCode::INTERFACE,
+                  .type = DBusTypeCodes::STRING,
+                  .requiredMessageType = {DBusMessageType::SIGNAL, DBusMessageType::NONE}},
       HeaderField{.decimalCode = HeaderFieldCode::MEMBER,
                   .type = DBusTypeCodes::STRING,
                   .requiredMessageType = {DBusMessageType::METHOD_CALL, DBusMessageType::SIGNAL}},
-      HeaderField{
-          .decimalCode = HeaderFieldCode::ERROR_NAME, .type = DBusTypeCodes::STRING, .requiredMessageType = {DBusMessageType::ERROR, DBusMessageType::NONE}},
+      HeaderField{.decimalCode = HeaderFieldCode::ERROR_NAME,
+                  .type = DBusTypeCodes::STRING,
+                  .requiredMessageType = {DBusMessageType::ERROR, DBusMessageType::NONE}},
       HeaderField{.decimalCode = HeaderFieldCode::REPLY_SERIAL,
                   .type = DBusTypeCodes::UINT32,
                   .requiredMessageType = {DBusMessageType::ERROR, DBusMessageType::METHOD_RETURN}},
       HeaderField{.decimalCode = HeaderFieldCode::DESTINATION,
                   .type = DBusTypeCodes::STRING,
                   .requiredMessageType = {DBusMessageType::OPTIONAL, DBusMessageType::OPTIONAL}},
-      HeaderField{
-          .decimalCode = HeaderFieldCode::SENDER, .type = DBusTypeCodes::STRING, .requiredMessageType = {DBusMessageType::OPTIONAL, DBusMessageType::OPTIONAL}},
+      HeaderField{.decimalCode = HeaderFieldCode::SENDER,
+                  .type = DBusTypeCodes::STRING,
+                  .requiredMessageType = {DBusMessageType::OPTIONAL, DBusMessageType::OPTIONAL}},
       HeaderField{.decimalCode = HeaderFieldCode::SIGNATURE,
                   .type = DBusTypeCodes::SIGNATURE,
                   .requiredMessageType = {DBusMessageType::OPTIONAL, DBusMessageType::OPTIONAL}},
@@ -536,7 +560,7 @@ namespace cxxbus
       // Encode the length as a uint32_t
       MarshalBasicFixedType(static_cast<uint32_t>(str.size()), dbusType);
     }
-    else // Signature
+    else  // Signature
     {
       // Encode the length as a uint8_t
       MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
@@ -551,7 +575,7 @@ namespace cxxbus
   }
 
   template <IsDBusMultipleCompleteTypes T, size_t I, size_t MaxI>
-  void MarshalBasicMultipleCompleteTypes(T const & value, std::vector<byte>& dbusType)
+  void MarshalBasicMultipleCompleteTypes(T const& value, std::vector<byte>& dbusType)
   {
     using ElemType = typename std::tuple_element_t<I, typename T::type>;
 
@@ -591,7 +615,7 @@ namespace cxxbus
   }
 
   template <IsDBusArray T>
-  void MarshalDBusArray(T const & value, std::vector<byte>& dbusType)
+  void MarshalDBusArray(T const& value, std::vector<byte>& dbusType)
   {
     using ContainedType = typename T::value_type;
 
@@ -602,7 +626,8 @@ namespace cxxbus
       throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
     }
 
-    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element type boundary
+    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
+    // type boundary
     MarshalBasicFixedType(size, dbusType);
 
     // Now we must find out the alignment of our DBus type.
@@ -643,7 +668,7 @@ namespace cxxbus
   }
 
   template <IsDBusStruct T>
-  void MarshalDBusStruct(T const & value, std::vector<byte>& dbusType)
+  void MarshalDBusStruct(T const& value, std::vector<byte>& dbusType)
   {
     constexpr size_t structSize{std::tuple_size_v<T>};
 
@@ -664,7 +689,8 @@ namespace cxxbus
     uint32_t size{};
     GetSizeOfDBusType(value, size);
 
-    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element type boundary
+    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
+    // type boundary
     MarshalBasicFixedType(size - alignment, dbusType);
 
     ApplyPadding(dbusType, alignment);
@@ -746,10 +772,10 @@ namespace cxxbus
     else
     {
       Logger logger{.logLevel = LogLevel::Fatal};
-      logger.LogFatal(
-          std::format("Trying to marshal type '{}' which is not a known DBus basic or container type", ConstexprTypeName<T>()));
-      throw InternalError{
-          std::format("Trying to marshal type '{}' which is not a known DBus basic or container type", ConstexprTypeName<T>())};
+      logger.LogFatal(std::format("Trying to marshal type '{}' which is not a known DBus basic or container type",
+                                  ConstexprTypeName<T>()));
+      throw InternalError{std::format("Trying to marshal type '{}' which is not a known DBus basic or container type",
+                                      ConstexprTypeName<T>())};
     }
   }
 
@@ -791,7 +817,8 @@ namespace cxxbus
     if (minSize > (dbusType.size() - arrPointer))
     {
       throw DBusMalformedInputError{
-          std::format("Trying to deserialize {} but the incoming buffer (total size: {}) has only {} bytes remaining while we need {} bytes",
+          std::format("Trying to deserialize {} but the incoming buffer (total size: {}) has only {} bytes remaining "
+                      "while we need {} bytes",
                       ConstexprTypeName<T>(), dbusType.size(), dbusType.size() - arrPointer, minSize)};
     }
 
@@ -799,15 +826,18 @@ namespace cxxbus
     if constexpr (std::is_same_v<T, bool>)
     {
       uint32_t boolValue{};
-      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(uint32_t)), reinterpret_cast<byte*>(&boolValue));
-      // uint32_t const boolValue{static_cast<uint32_t>((dbusType[0] << 24) | (dbusType[1] << 16) | (dbusType[2] << 8) | (dbusType[3]))};
+      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(uint32_t)),
+                reinterpret_cast<byte*>(&boolValue));
+      // uint32_t const boolValue{static_cast<uint32_t>((dbusType[0] << 24) | (dbusType[1] << 16) | (dbusType[2] << 8) |
+      // (dbusType[3]))};
       value = boolValue == 1;
 
       arrPointer += sizeof(uint32_t);
     }
     else
     {
-      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(T)), reinterpret_cast<byte*>(&value));
+      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(T)),
+                reinterpret_cast<byte*>(&value));
       // static_assert(CHAR_BIT == 8, "We only support 8 bits per byte");
       // [&value, &dbusType]<size_t... Is>(std::index_sequence<Is...>)
       // {
@@ -840,7 +870,8 @@ namespace cxxbus
     if (strLength >= (dbusType.size() - arrPointer))
     {
       throw DBusMalformedInputError{
-          std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remaining",
+          std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: "
+                      "{}) has only {} bytes remaining",
                       ConstexprTypeName<T>(), strLength, dbusType.size(), dbusType.size() - arrPointer)};
     }
 
@@ -886,7 +917,8 @@ namespace cxxbus
   {
     return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
     {
-      return T{UnmarshalDBusBasicMultipleCompleteTypes<T, Is, std::tuple_size_v<typename T::type>>(dbusType, arrPointer)...};
+      return T{
+          UnmarshalDBusBasicMultipleCompleteTypes<T, Is, std::tuple_size_v<typename T::type>>(dbusType, arrPointer)...};
     }(std::make_index_sequence<std::tuple_size_v<typename T::type>>{});
   }
 
@@ -922,8 +954,8 @@ namespace cxxbus
 
     T vec{};
 
-    // It's pretty hard to calculate exactly how many elements are in the array, so just reserve some arbitrary amount of space
-    // [TODO]: Improve this
+    // It's pretty hard to calculate exactly how many elements are in the array, so just reserve some arbitrary amount
+    // of space [TODO]: Improve this
     if constexpr (!detail::IsArray<T>::value)
     {
       vec.reserve(8);
@@ -931,14 +963,16 @@ namespace cxxbus
 
     uint32_t index{};
 
-    // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings until we reach the end of the array
+    // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings
+    // until we reach the end of the array
     uint32_t bytesRead{};
     while (bytesRead < arrLength)
     {
       if (arrPointer >= dbusType.size())
       {
         throw DBusMalformedInputError{
-            std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remaining",
+            std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: "
+                        "{}) has only {} bytes remaining",
                         ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
       }
 
@@ -1010,7 +1044,9 @@ namespace cxxbus
   T UnmarshalDBusStruct(std::vector<byte> const& dbusType, uint32_t& arrPointer)
   {
     return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
-    { return T{UnmarshalDBusStruct<T, Is, std::tuple_size_v<T>>(dbusType, arrPointer)...}; }(std::make_index_sequence<std::tuple_size_v<T>>{});
+    {
+      return T{UnmarshalDBusStruct<T, Is, std::tuple_size_v<T>>(dbusType, arrPointer)...};
+    }(std::make_index_sequence<std::tuple_size_v<T>>{});
   }
 
   template <IsDBusMap T>
@@ -1027,7 +1063,8 @@ namespace cxxbus
 
     T map{};
 
-    // It's hard to tell how many elements are in a map because of the padding requirements, so just read our map until we've read its full length
+    // It's hard to tell how many elements are in a map because of the padding requirements, so just read our map until
+    // we've read its full length
     if (mapLength == 0)
     {
       // When we have no elements in our map, we pad until the 8 byte boundary
@@ -1130,8 +1167,8 @@ namespace cxxbus
   //           node.typeCode = DBusTypeCodes::DICT;
 
   //           // Remove '{'
-  //           // We do this extra remove here because otherwise we'd get 2 TypeNode of type DICT, while we only have 1 DICT in the signature
-  //           signature.erase(signature.begin(), signature.begin() + 1);
+  //           // We do this extra remove here because otherwise we'd get 2 TypeNode of type DICT, while we only have 1
+  //           DICT in the signature signature.erase(signature.begin(), signature.begin() + 1);
   //         }
   //         else
   //         {
@@ -1153,13 +1190,15 @@ namespace cxxbus
   //       }
   //       else
   //       {
-  //         node.children.emplace_back(std::make_unique<TypeNode>(childNode->typeCode, std::move(childNode->children)));
+  //         node.children.emplace_back(std::make_unique<TypeNode>(childNode->typeCode,
+  //         std::move(childNode->children)));
   //       }
   //     }
 
   //     if (node.children.empty())
   //     {
-  //       throw DBusParserError{std::format("Error while parsing signature '{}': Container has no elements which is illegal.", originalSignature)};
+  //       throw DBusParserError{std::format("Error while parsing signature '{}': Container has no elements which is
+  //       illegal.", originalSignature)};
   //     }
   //   }
 
@@ -1177,12 +1216,14 @@ namespace cxxbus
 
 #if __cpp_lib_ranges_to_container
     T deserializedVariant{deserialized_variant_tag, signature,
-                          std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) |
-                                                       std::views::take(GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer)))};
+                          std::ranges::to<std::vector>(
+                              dbusType | std::views::drop(arrPointer) |
+                              std::views::take(GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer)))};
 #else
     T deserializedVariant{deserialized_variant_tag, signature,
                           std::vector<byte>(dbusType.begin() + arrPointer,
-                                            dbusType.begin() + arrPointer + GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer))};
+                                            dbusType.begin() + arrPointer +
+                                                GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer))};
 #endif
     arrPointer += GetSizeOfDBusTypeBasedOnSignature(signature, dbusType, arrPointer);
 
@@ -1233,19 +1274,21 @@ namespace cxxbus
 
     if (!AreDBusTypeCodeBracketsEven(signature))
     {
-      throw DBusInvalidSignatureError{std::format("Signature '{}' is incorrect and contains an uneven amount of brackets", signature)};
+      throw DBusInvalidSignatureError{
+          std::format("Signature '{}' is incorrect and contains an uneven amount of brackets", signature)};
     }
 
     if (signature != GetTypeSignature<T>())
     {
-      throw DBusInvalidSignatureError{
-          std::format("Type {} (signature: '{}') and Signature {} do not match.", ConstexprTypeName<T>(), GetTypeSignature<T>(), signature)};
+      throw DBusInvalidSignatureError{std::format("Type {} (signature: '{}') and Signature {} do not match.",
+                                                  ConstexprTypeName<T>(), GetTypeSignature<T>(), signature)};
     }
 
     return UnmarshalDBusTypeImpl<T>(dbusType, arrPointer);
   }
 
-  template <IsDBusType T> requires (!IsRawStringLiteral<std::decay_t<T>>)
+  template <IsDBusType T>
+    requires(!IsRawStringLiteral<std::decay_t<T>>)
   T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
   {
     uint32_t arrPointer{};
@@ -1253,8 +1296,9 @@ namespace cxxbus
 
     if (arrPointer != dbusType.size())
     {
-      throw DBusMalformedInputError{std::format("Deserialized {} but the incoming buffer (total size: {}) has {} bytes remaining", ConstexprTypeName<T>(),
-                                                dbusType.size(), dbusType.size() - arrPointer)};
+      throw DBusMalformedInputError{
+          std::format("Deserialized {} but the incoming buffer (total size: {}) has {} bytes remaining",
+                      ConstexprTypeName<T>(), dbusType.size(), dbusType.size() - arrPointer)};
     }
 
     return value;
