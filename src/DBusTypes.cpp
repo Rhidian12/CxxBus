@@ -61,6 +61,11 @@ namespace cxxbus
     return m_path;
   }
 
+  bool ObjectPath::operator==(std::string const & str) const noexcept
+  {
+    return m_path == str;
+  }
+
   Signature::Signature(std::string signature)
     : m_signature(std::move(signature))
   {

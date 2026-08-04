@@ -123,6 +123,7 @@ namespace cxxbus
     bool Empty() const;
 
     auto operator<=>(ObjectPath const&) const noexcept = default;
+    bool operator==(std::string const & str) const noexcept;
   };
 
   class Signature
@@ -150,7 +151,7 @@ namespace cxxbus
   {
   private:
     static_assert((IsDBusType<Ts> && ...), "All types must satisfy IsDBusType");
-    
+
    private:
     std::tuple<Ts...> m_types;
 
