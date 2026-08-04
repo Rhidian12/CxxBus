@@ -117,25 +117,30 @@ namespace cxxbus
     std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
 
    public:
+    Variant()
+      : m_variantData{std::monostate{}}
+    {
+    }
+
     template <IsDBusType T>
       requires(!std::is_same_v<std::remove_cvref_t<T>, Variant>)
     explicit Variant(T&& value)
-      : m_variantData{VariantData{
-            .signature = GetTypeSignature<std::remove_cvref_t<T>>(),
-            .dataSize = 0,
-            .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-            .data = std::unique_ptr<void, CustomDeleter>(
-                new std::decay_t<T>{std::forward<T>(value)},
-                CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }}),
-            .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
-            { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); },
-            .copyFunc =
-                [](void* otherData)
-            {
-              return std::unique_ptr<void, CustomDeleter>(
-                  new std::decay_t<T>{*static_cast<std::decay_t<T>*>(otherData)},
-                  CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
-            }}}
+      : m_variantData{
+            VariantData{.signature = GetTypeSignature<std::remove_cvref_t<T>>(),
+                        .dataSize = 0,
+                        .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
+                        .data = std::unique_ptr<void, CustomDeleter>(
+                            new std::decay_t<T>{std::forward<T>(value)},
+                            CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }}),
+                        .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
+                        { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); },
+                        .copyFunc =
+                            [](void* otherData)
+                        {
+                          return std::unique_ptr<void, CustomDeleter>(
+                              new std::decay_t<T>{*static_cast<std::decay_t<T>*>(otherData)},
+                              CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
+                        }}}
     {
       GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
     }
