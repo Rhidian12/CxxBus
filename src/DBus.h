@@ -125,16 +125,16 @@ namespace cxxbus
             .dataSize = 0,
             .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
             .data = std::unique_ptr<void, CustomDeleter>(
-                new std::remove_cvref_t<T>{std::forward<T>(value)},
-                CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }}),
+                new std::decay_t<T>{std::forward<T>(value)},
+                CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }}),
             .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
-            { MarshalDBusTypeImpl(*static_cast<std::remove_cvref_t<T>*>(data), dbusType); },
+            { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); },
             .copyFunc =
                 [](void* otherData)
             {
               return std::unique_ptr<void, CustomDeleter>(
-                  new std::remove_cvref_t<T>{*static_cast<std::remove_cvref_t<T>*>(otherData)},
-                  CustomDeleter{.deleter = [](void* data) { delete static_cast<std::remove_cvref_t<T>*>(data); }});
+                  new std::decay_t<T>{*static_cast<std::decay_t<T>*>(otherData)},
+                  CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
             }}}
     {
       GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);

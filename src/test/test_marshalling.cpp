@@ -517,6 +517,16 @@ TEST_F(MarshalTestSuite, MarshalVariantOfString)
                 'H', 'i', '!',                       // content
                 0x00,                                // NUL terminator
             }));
+
+  // Make sure that string-literals can also be used
+  EXPECT_EQ(MarshalDBusType(Variant("Hi!")),
+            (std::vector<byte>{
+                0x01, 's', 0x00,                    // signature "s"
+                0x00,                                // pad to 4-byte boundary
+                0x03, 0x00, 0x00, 0x00,              // string length = 3
+                'H', 'i', '!',                       // content
+                0x00,                                // NUL terminator
+            }));
 }
  
 TEST_F(MarshalTestSuite, MarshalVariantOfEmptyString)
