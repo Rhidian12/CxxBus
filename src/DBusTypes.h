@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2026 Rhidian De Wit
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #pragma once
 
 #include <array>
@@ -46,7 +68,7 @@ namespace cxxbus
     PATH = 1,  // The object to send a call to, or the object a signal is emitted from. Controlled by message sender
     INTERFACE = 2,  // The interface to invoke a method call on, or the interface a signal is emitted from. Optional for
                     // method calls, required for signals. Controlled by message sender.
-    MEMBER = 3,        // The member, either method name or signal name. Controlled by message sender
+    MEMBER = 3,     // The member, either method name or signal name. Controlled by message sender
     ERROR_NAME = 4,    // The name of the error that occurred.
     REPLY_SERIAL = 5,  // The serial number of the message this message is a reply to. Controlled by the message sender.
     DESTINATION = 6,   // Name of the connection message is intended for. Controlled by the message sender.
@@ -118,12 +140,12 @@ namespace cxxbus
       return m_path;
     }
 
-    std::string const & GetPath() const;
+    std::string const& GetPath() const;
 
     bool Empty() const;
 
-    bool operator==(ObjectPath const & ) const noexcept = default;
-    bool operator==(std::string const & str) const noexcept;
+    bool operator==(ObjectPath const&) const noexcept = default;
+    bool operator==(std::string const& str) const noexcept;
   };
 
   class Signature
@@ -146,10 +168,10 @@ namespace cxxbus
     bool operator==(std::string const& str) const;
   };
 
-  template <typename ... Ts>
+  template <typename... Ts>
   class MultipleCompleteTypes
   {
-  private:
+   private:
     static_assert((IsDBusType<Ts> && ...), "All types must satisfy IsDBusType");
 
    private:
@@ -234,7 +256,7 @@ namespace cxxbus
 
     auto operator<=>(DBusInterfaceName const&) const noexcept = default;
     bool operator==(DBusInterfaceName const&) const = default;
-    bool operator==(std::string const & str) const;
+    bool operator==(std::string const& str) const;
   };
 
   class DBusError : public std::runtime_error

@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2026 Rhidian De Wit
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #include "DBusMatchRule.h"
 
 #include <cstdint>
@@ -34,7 +56,8 @@ namespace cxxbus
       case DBusMessageType::NONE:
       case DBusMessageType::OPTIONAL:
         LOGGER.LogError("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on");
-        throw InvalidDBusMatchRule{std::format("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on")};
+        throw InvalidDBusMatchRule{
+            std::format("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on")};
       default:
         break;
     }
@@ -100,7 +123,8 @@ namespace cxxbus
   {
     if (index > 63)
     {
-      throw InvalidDBusMatchRule{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
+      throw InvalidDBusMatchRule{std::format(
+          "DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
     }
 
     m_args.emplace_back(member, index);
@@ -111,14 +135,16 @@ namespace cxxbus
   {
     if (index > 63)
     {
-      throw InvalidDBusMatchRule{std::format("DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
+      throw InvalidDBusMatchRule{std::format(
+          "DBus Match rules can only match on arguments with a maximum index of 63. Provided index: {}", index)};
     }
 
     m_argPaths.emplace_back(member, index);
     return *this;
   }
 
-  DBusMatchRule& DBusMatchRule::ArgumentNamespace(std::variant<DBusWellKnownName, DBusUniqueConnectionName, std::string> name)
+  DBusMatchRule& DBusMatchRule::ArgumentNamespace(
+      std::variant<DBusWellKnownName, DBusUniqueConnectionName, std::string> name)
   {
     m_argNamespace = std::visit([](auto&& arg) { return std::string{arg}; }, std::move(name));
 
@@ -149,7 +175,8 @@ namespace cxxbus
   std::string DBusMatchRule::GetRule() const
   {
     std::string rule;
-    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_messageType, "type", MESSAGE_TYPE_STRINGS[static_cast<uint8_t>(*m_messageType) - 1])
+    CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_messageType, "type",
+                                       MESSAGE_TYPE_STRINGS[static_cast<uint8_t>(*m_messageType) - 1])
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_sender, "sender", *m_sender)
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_interface, "interface", m_interface->GetName())
     CXX_BUS_ADD_TO_RULE_CHECK_OPTIONAL(rule, m_member, "member", *m_member)
@@ -204,7 +231,9 @@ namespace cxxbus
 
     CXX_BUS_CHECK_MATCH_OPTIONAL(matches, header.GetInterface(), m_interface)
     CXX_BUS_CHECK_MATCH_OPTIONAL(matches, header.GetObjectPath(), m_path)
-    CXX_BUS_CHECK_MATCH_OPTIONAL(matches, header.GetDestination(), m_destination.transform([](DBusUniqueConnectionName const& name) { return name.GetName(); }))
+    CXX_BUS_CHECK_MATCH_OPTIONAL(
+        matches, header.GetDestination(),
+        m_destination.transform([](DBusUniqueConnectionName const& name) { return name.GetName(); }))
 
     // [TODO]: Add argument & path namespace & argument paths & arg namespace & eavesdrop matching
 

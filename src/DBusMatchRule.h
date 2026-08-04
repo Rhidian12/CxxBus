@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2026 Rhidian De Wit
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #pragma once
 
 #include <cstdint>
@@ -68,8 +90,8 @@ namespace cxxbus
     // The ObjectPath of the message to match on
     DBusMatchRule& Path(ObjectPath path);
 
-    // Matches messages for which the given ObjectPath is either the exact value. or that value followed by one or more path components.
-    // See
+    // Matches messages for which the given ObjectPath is either the exact value. or that value followed by one or more
+    // path components. See
     // https://dbus.freedesktop.org/doc/dbus-specification.html#:~:text=Matches%20messages%20which%20are%20sent%20from%20or%20to%20an%20object%20for%20which%20the%20object%20path%20is%20either%20the%20given%20value%2C%20or%20that%20value%20followed%20by%20one%20or%20more%20path%20components.
     // for more info
     DBusMatchRule& PathNamespace(ObjectPath path);
@@ -95,8 +117,9 @@ namespace cxxbus
     std::string GetRule() const;
 
     // Check if the incoming message matches any of our defined rules
-    // We also pass a list of well-known names here in case the SENDER header field in the incoming message is a unique connection name.
-    // That way, we can still check for well-known name instead of forcing the user to figure out the unique connection name of the sender.
+    // We also pass a list of well-known names here in case the SENDER header field in the incoming message is a unique
+    // connection name. That way, we can still check for well-known name instead of forcing the user to figure out the
+    // unique connection name of the sender.
     bool Matches(IncomingDBusMessage const& message, std::vector<std::string> const& wellKnownNames) const;
 
     bool operator==(DBusMatchRule const&) const noexcept = default;
