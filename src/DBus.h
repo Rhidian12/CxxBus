@@ -607,31 +607,29 @@ namespace cxxbus
   {
     using ContainedType = typename T::value_type;
 
-    uint32_t size{};
-    GetSizeOfDBusType(value, size);
-    if (size >= 2 << 26)
+    std::vector<byte> tempBuffer;
+    uint8_t const alignment = GetAlignmentOfDBusType<ContainedType>();
+
+    for (auto const& [index, elem] : std::views::enumerate(value))
+    {
+      MarshalDBusTypeImpl(elem, tempBuffer);
+      if (index < static_cast<int32_t>(value.size()) - 1)
+      {
+        // Not last element, so add padding if required
+        ApplyPadding(tempBuffer, alignment);
+      }
+    }
+
+    if (tempBuffer.size() >= 2 << 26)
     {
       throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
     }
 
     // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
     // type boundary
-    MarshalBasicFixedType(size, dbusType);
-
-    // Now we must find out the alignment of our DBus type.
-    uint8_t const alignment = GetAlignmentOfDBusType<ContainedType>();
-
+    MarshalBasicFixedType(static_cast<uint32_t>(tempBuffer.size()), dbusType);
     ApplyPadding(dbusType, alignment);
-
-    for (auto const& [index, elem] : std::views::enumerate(value))
-    {
-      MarshalDBusTypeImpl(elem, dbusType);
-      if (index < static_cast<int32_t>(value.size()) - 1)
-      {
-        // Not last element, so add padding if required
-        ApplyPadding(dbusType, alignment);
-      }
-    }
+    dbusType.append_range(std::move(tempBuffer));
   }
 
   template <IsDBusStruct T, size_t I, size_t MaxI>

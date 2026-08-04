@@ -71,7 +71,22 @@ static void BM_NestedStructSerialisation(benchmark::State& state)
   }
 }
 
-BENCHMARK(BM_NestedMapSerialisation);
+static void BM_ArraySerialisation(benchmark::State& state)
+{
+  std::vector<uint64_t> vec;
+  for (uint32_t i{}; i < 100'000; ++i)
+  {
+    vec.push_back(i);
+  }
+
+  for (auto _ : state)
+  {
+    MarshalDBusType(vec);
+  }
+}
+
+// BENCHMARK(BM_NestedMapSerialisation);
 // BENCHMARK(BM_NestedStructSerialisation);
+BENCHMARK(BM_ArraySerialisation);
 
 BENCHMARK_MAIN();
