@@ -214,6 +214,25 @@ TEST_F(MarshalTestSuite, MarshalArrayOfUint32)
                                 0x02, 0x00, 0x00, 0x00,
                                 0x03, 0x00, 0x00, 0x00}));
 }
+
+TEST_F(MarshalTestSuite, MarshalArrayOfUint64)
+{
+  EXPECT_EQ(MarshalDBusType(std::vector<uint64_t>{1, 2, 3}),
+            (std::vector<byte>{0x18, 0x00, 0x00, 0x00,  // byte length = 24 (3 * 8)
+                                0x00, 0x00, 0x00, 0x00, // Pad to 8 byte boundary
+                                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+}
+
+TEST_F(MarshalTestSuite, MarshalFixedArrayOfUint32)
+{
+  EXPECT_EQ(MarshalDBusType(std::array<uint32_t, 3>{1, 2, 3}),
+            (std::vector<byte>{0x0C, 0x00, 0x00, 0x00,  // byte length = 12 (3 * 4)
+                                0x01, 0x00, 0x00, 0x00,
+                                0x02, 0x00, 0x00, 0x00,
+                                0x03, 0x00, 0x00, 0x00}));
+}
  
 TEST_F(MarshalTestSuite, MarshalArrayOfStrings)
 {
@@ -223,6 +242,17 @@ TEST_F(MarshalTestSuite, MarshalArrayOfStrings)
   // before "bc" -- and those padding bytes count toward the array's
   // byte length.
   EXPECT_EQ(MarshalDBusType(std::vector<std::string>{"a", "bc"}),
+            (std::vector<byte>{
+                0x0F, 0x00, 0x00, 0x00,                    // byte length = 15
+                0x01, 0x00, 0x00, 0x00, 'a', 0x00,          // "a"  (6 bytes)
+                0x00, 0x00,                                 // padding (2 bytes)
+                0x02, 0x00, 0x00, 0x00, 'b', 'c', 0x00,     // "bc" (7 bytes)
+            }));
+}
+
+TEST_F(MarshalTestSuite, MarshalFixedArrayOfStrings)
+{
+  EXPECT_EQ(MarshalDBusType(std::array<std::string, 2>{"a", "bc"}),
             (std::vector<byte>{
                 0x0F, 0x00, 0x00, 0x00,                    // byte length = 15
                 0x01, 0x00, 0x00, 0x00, 'a', 0x00,          // "a"  (6 bytes)

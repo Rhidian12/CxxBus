@@ -152,6 +152,11 @@ TEST_F(UnmarshalTestSuite, UnmarshalEmptyArrayOfUint32)
   EXPECT_EQ(UnmarshalDBusType<std::vector<uint32_t>>({0x00, 0x00, 0x00, 0x00}, "au"), (std::vector<uint32_t>{}));
 }
 
+TEST_F(UnmarshalTestSuite, UnmarshalEmptyFixedArrayOfUint32)
+{
+  EXPECT_EQ((UnmarshalDBusType<std::array<uint32_t, 0>>({0x00, 0x00, 0x00, 0x00}, "au")), (std::array<uint32_t, 0>{}));
+}
+
 TEST_F(UnmarshalTestSuite, UnmarshalArrayOfUint32)
 {
   std::vector<byte> bytes{
@@ -159,6 +164,42 @@ TEST_F(UnmarshalTestSuite, UnmarshalArrayOfUint32)
       0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
   };
   EXPECT_EQ(UnmarshalDBusType<std::vector<uint32_t>>(bytes, "au"), (std::vector<uint32_t>{1, 2, 3}));
+}
+
+TEST_F(UnmarshalTestSuite, UnmarshalFixedArrayOfUint32)
+{
+  std::vector<byte> bytes{
+      0x0C, 0x00, 0x00, 0x00,  // array byte length = 12
+      0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+  };
+  EXPECT_EQ((UnmarshalDBusType<std::array<uint32_t, 3>>(bytes, "au")), (std::array<uint32_t, 3>{1, 2, 3}));
+}
+
+TEST_F(UnmarshalTestSuite, UnmarshalFixedArrayWithWrongAmountOfElements)
+{
+  std::vector<byte> bytes{
+      0x0C, 0x00, 0x00, 0x00,  // array byte length = 12
+      0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+  };
+  EXPECT_THROW((UnmarshalDBusType<std::array<uint32_t, 1>>(bytes, "au")), DBusDeserializationError);
+  try
+  {
+    UnmarshalDBusType<std::array<uint32_t, 1>>(bytes, "au");
+  }
+  catch (DBusDeserializationError const & ex)
+  {
+    EXPECT_EQ(std::string{ex.what()}, "Trying to deserialize array with fixed length '1' but received array has '8' bytes too many. Is your array the correct length?");
+  }
+  
+  EXPECT_THROW((UnmarshalDBusType<std::array<uint32_t, 6>>(bytes, "au")), DBusDeserializationError);
+  try
+  {
+    UnmarshalDBusType<std::array<uint32_t, 6>>(bytes, "au");
+  }
+  catch (DBusDeserializationError const & ex)
+  {
+    EXPECT_EQ(std::string{ex.what()}, "Fully deserialized received array with '3' elements, but the provided fixed array expects '6' elements. Is your array the correct length?");
+  }
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalArrayOfStringsWithInterElementPadding)

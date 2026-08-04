@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <concepts>
 #include <cstdint>
 #include <map>
@@ -24,6 +25,12 @@ namespace cxxbus
 
     template <template <typename...> typename Template, typename... Args>
     constexpr bool IS_SPECIALISATION<Template<Args...>, Template> = true;
+
+    template<typename T>
+    struct IsArray : public std::false_type {};
+
+    template<typename T, size_t N>
+    struct IsArray<std::array<T, N>> : public std::true_type {};
   }  // namespace detail
 
   template <typename T, template <typename...> typename Template>
@@ -58,7 +65,7 @@ namespace cxxbus
   concept IsDBusBasicType = IsDBusBasicFixedType<std::decay_t<T>> || IsDBusBasicStringlikeType<std::decay_t<T>> || IsDBusMultipleCompleteTypes<std::decay_t<T>>;
 
   template <typename T>
-  concept IsDBusArray = IsSpecialisation<T, std::vector>;
+  concept IsDBusArray = IsSpecialisation<T, std::vector> || detail::IsArray<T>::value;
 
   template <typename T>
   concept IsDBusStruct = IsSpecialisation<T, std::tuple>;

@@ -924,7 +924,12 @@ namespace cxxbus
 
     // It's pretty hard to calculate exactly how many elements are in the array, so just reserve some arbitrary amount of space
     // [TODO]: Improve this
-    vec.reserve(8);
+    if constexpr (!detail::IsArray<T>::value)
+    {
+      vec.reserve(8);
+    }
+
+    uint32_t index{};
 
     // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings until we reach the end of the array
     uint32_t bytesRead{};
@@ -933,25 +938,45 @@ namespace cxxbus
       if (arrPointer >= dbusType.size())
       {
         throw DBusMalformedInputError{
-            std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remainings",
+            std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: {}) has only {} bytes remaining",
                         ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
       }
 
-      vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
+      if constexpr (detail::IsArray<T>::value)
+      {
+        // First check if the user was correct about the fixed array's length
+        if (index >= vec.size())
+        {
+          throw DBusDeserializationError{
+              std::format("Trying to deserialize array with fixed length '{}' but received array has '{}' bytes too "
+                          "many. Is your array the correct length?",
+                          vec.size(), arrLength - bytesRead)};
+        }
+
+        vec[index++] = UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer);
+      }
+      else
+      {
+        vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
+      }
       GetSizeOfDBusType(vec.back(), bytesRead);
-      // if constexpr (IsDBusBasicStringlikeType<T>)
-      // {
-      //   bytesRead += sizeof(uint32_t) + vec.back().size() + 1;
-      // }
-      // else
-      // {
-      // }
 
       if (bytesRead < arrLength)
       {
         size_t const oldPointer{arrPointer};
         SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
         bytesRead += arrPointer - oldPointer;  // Remove any potential padding
+      }
+    }
+
+    if constexpr (detail::IsArray<T>::value)
+    {
+      if (index < vec.size())
+      {
+        throw DBusDeserializationError{
+            std::format("Fully deserialized received array with '{}' elements, but the provided fixed array expects "
+                        "'{}' elements. Is your array the correct length?",
+                        index, vec.size())};
       }
     }
 
