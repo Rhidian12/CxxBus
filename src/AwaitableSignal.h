@@ -29,7 +29,7 @@
 
 namespace cxxbus
 {
-  // Combiner for boost::signals2::signal to combine returned Deferreds into one that can be awaited
+  // Combiner for boost::signals2::signal to combine returned awaitables into one that can be awaited
   template <typename T>
   struct AwaitableCombiner
   {
