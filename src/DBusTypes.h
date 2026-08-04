@@ -7,6 +7,8 @@
 #include <string>
 #include <utility>
 
+#include "DBusConcepts.h"
+
 namespace cxxbus
 {
   using byte = uint8_t;
@@ -143,9 +145,12 @@ namespace cxxbus
     bool operator==(std::string const& str) const;
   };
 
-  template <typename... Ts>
+  template <typename ... Ts>
   class MultipleCompleteTypes
   {
+  private:
+    static_assert((IsDBusType<Ts> && ...), "All types must satisfy IsDBusType");
+    
    private:
     std::tuple<Ts...> m_types;
 
