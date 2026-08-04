@@ -51,21 +51,22 @@ namespace cxxbus
   }  // namespace
 
   boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(boost::asio::io_context& ioService,
-                                                                                 DBusWellKnownName wellKnownName)
+                                                                                 DBusWellKnownName wellKnownName,
+                                                                                 BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
-    co_await conn->Connect();
+    co_await conn->Connect(busType);
 
     co_return conn;
   }
 
   std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(boost::asio::io_context& ioService,
-                                                                 DBusWellKnownName wellKnownName)
+                                                                 DBusWellKnownName wellKnownName, BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
-    boost::asio::co_spawn(ioService, conn->Connect(),
+    boost::asio::co_spawn(ioService, conn->Connect(busType),
                           [](std::exception_ptr e)
                           {
                             if (e)
@@ -205,7 +206,7 @@ namespace cxxbus
     co_await state->socket->async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
   }
 
-  boost::asio::awaitable<void> DBusConnection::Connect()
+  boost::asio::awaitable<void> DBusConnection::Connect(BusType busType)
   {
     std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
@@ -213,8 +214,21 @@ namespace cxxbus
     auto state = m_state;
 
     // Connect to DBus daemon
-    boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress()};
-    co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+    if (busType == BusType::SESSION)
+    {
+      boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress(busType)};
+      co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+    }
+    else
+    {
+      std::string address = ParseDBusAddress(busType);
+      if (address.empty())
+      {
+        address = "/var/run/dbus/system_bus_socket";
+      }
+      boost::asio::local::stream_protocol::endpoint endpoint{address};
+      co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
+    }
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -534,13 +548,13 @@ namespace cxxbus
           co_await state->timer.async_wait(boost::asio::use_awaitable);
           continue;
         }
-        
+
         IncomingDBusMessage message{state->unhandledIncomingMessages->front()};
         state->unhandledIncomingMessages->pop();
 
         co_await HandleReadMessage(std::move(message));
       }
-      catch (boost::system::system_error const & ex)
+      catch (boost::system::system_error const& ex)
       {
         if (ex.code().category().name() == std::string{"system"} && ex.code().value() == 125)
         {

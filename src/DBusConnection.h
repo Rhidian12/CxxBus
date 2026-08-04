@@ -84,7 +84,7 @@ namespace cxxbus
 
    private:
     boost::asio::awaitable<void> AuthenticateDBusConnection();
-    boost::asio::awaitable<void> Connect();
+    boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
     boost::asio::awaitable<void> HandleUnhandledIncomingMessages();
@@ -105,9 +105,10 @@ namespace cxxbus
     boost::asio::awaitable<void> Close();
 
     static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(boost::asio::io_context& ioService,
-                                                                          DBusWellKnownName wellKnownName);
+                                                                          DBusWellKnownName wellKnownName,
+                                                                          BusType busType);
     static std::shared_ptr<DBusConnection> CreateDetached(boost::asio::io_context& ioService,
-                                                          DBusWellKnownName wellKnownName);
+                                                          DBusWellKnownName wellKnownName, BusType busType);
 
     // Receive messages on a specific object path
     void RegisterObjectPathHandler(ObjectPath path,

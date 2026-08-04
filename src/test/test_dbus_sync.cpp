@@ -38,7 +38,7 @@ struct SyncDBusConnectionTestSuite : ::testing::Test
         ioService,
         [this]() -> boost::asio::awaitable<void>
         {
-          asyncConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+          asyncConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
 
           co_await coroutineToRun();
           LOGGER.LogTrace("Finished running coroutine");
@@ -332,7 +332,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     auto conn = SyncDBusConnection::Create(*asyncConn);
-    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     std::shared_ptr<bool> signalEmitted{std::make_shared<bool>()};
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{

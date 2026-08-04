@@ -61,7 +61,7 @@ TEST_F(DBusConnectionTestSuite, TestConnectingToDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     EXPECT_TRUE(conn != nullptr);
   };
 }
@@ -70,7 +70,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
@@ -231,7 +231,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
@@ -248,7 +248,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
 
     bool extensiveMatchRuleTriggered{};
     bool simpleMatchRuleTriggered{};
@@ -291,7 +291,7 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     DBusMessage message{DBusMessage::Method("RequestName")
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                             .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -317,9 +317,9 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     LOGGER.LogInfo("Making first connection");
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     LOGGER.LogInfo("Making second connection");
-    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     conn2->ReceiveIncomingMessages(
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
@@ -368,8 +368,8 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
-    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
@@ -407,7 +407,7 @@ TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"});
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
 
     auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -425,5 +425,38 @@ TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
     EXPECT_EQ(reply.GetHeader().GetSignature(), syncReply.GetHeader().GetSignature());
     EXPECT_EQ(reply.GetHeader().GetDestination(), syncReply.GetHeader().GetDestination());
     EXPECT_EQ(reply.Get<std::string>(), syncReply.Get<std::string>());
+  };
+}
+
+// This test is expected to fail if the system bus is not available or if the user does not have permission to access it
+TEST_F(DBusConnectionTestSuite, TestSystemBus)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    try{
+      conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SYSTEM);
+      auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
+      .Path(ObjectPath{"/org/freedesktop/DBus"})
+      .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+      .Destination("org.freedesktop.DBus")
+      .Parameter(std::string{"com.dbus.CxxTest"}));
+      EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
+      EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
+      EXPECT_TRUE(reply.HasArguments());
+      EXPECT_EQ(reply.Get<bool>(), true);
+    }
+    catch (DBusError const& ex)
+    {
+      if (ex.GetErrorName() == "org.freedesktop.DBus.Error.AccessDenied")
+      {
+        LOGGER.LogInfo("Access denied to system bus. Test skipped.");
+        co_return;
+      }
+      else
+      {
+        LOGGER.LogError(std::format("DBusError: {} - {}", ex.GetErrorName(), ex.GetErrorReason()));
+        throw;
+      }
+    }
   };
 }

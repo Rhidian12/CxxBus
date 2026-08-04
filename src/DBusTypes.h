@@ -261,6 +261,12 @@ namespace cxxbus
     using std::runtime_error::runtime_error;
   };
 
+  enum class BusType
+  {
+    SESSION,
+    SYSTEM
+  };
+
   // Signature of a DBus Header is yyyyuua(yv)
   // y = byte
   // u = uint32_t

@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "DBusConcepts.h"
+#include "DBusTypes.h"
 
 namespace cxxbus
 {
@@ -22,7 +23,7 @@ namespace cxxbus
   bool IsDBusTypeCode(std::string const& str);
   bool AreDBusTypeCodeBracketsEven(std::string const& str);
   uint8_t GetAlignmentOfSignature(Signature const& signature);
-  std::string ParseDBusAddress();
+  std::string ParseDBusAddress(BusType busType);
   std::string HexEncodeString(std::string const& str);
 
   boost::asio::awaitable<void> InvokeAsyncCallback(

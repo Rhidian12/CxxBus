@@ -135,10 +135,16 @@ namespace cxxbus
     }
   }
 
-  std::string ParseDBusAddress()
+  std::string ParseDBusAddress(BusType type)
   {
-    // Looks something like: unix:path=/run/user/1000/bus
-    std::string_view const dbusAddress{getenv("DBUS_SESSION_BUS_ADDRESS")};
+    const char* rawAddress = getenv(type == BusType::SESSION ? "DBUS_SESSION_BUS_ADDRESS" : "DBUS_SYSTEM_BUS_ADDRESS");
+    if (!rawAddress)
+    {
+      return "";
+    }
+
+    // Looks something like: unix:path=/run/user/1000/bus or unix:path=/var/run/dbus/system_bus_socket
+    std::string_view const dbusAddress{rawAddress};
 
     if (!dbusAddress.starts_with("unix:"))
     {
