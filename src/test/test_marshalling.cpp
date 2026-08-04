@@ -116,6 +116,25 @@ TEST_F(MarshalTestSuite, MarshalDoubleNegative)
   EXPECT_EQ(MarshalDBusType(-2.5),
             (std::vector<byte>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xC0}));
 }
+
+TEST_F(MarshalTestSuite, MarshalDoubleInfinity)
+{
+  // IEEE-754 double for positive infinity is 0x7FF0000000000000.
+  EXPECT_EQ(MarshalDBusType(std::numeric_limits<double>::infinity()),
+            (std::vector<byte>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x7F}));
+
+  // IEEE-754 double for negative infinity is 0xFFF0000000000000.
+  EXPECT_EQ(MarshalDBusType(-std::numeric_limits<double>::infinity()),
+            (std::vector<byte>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0xFF}));
+}
+
+TEST_F(MarshalTestSuite, MarshalDoubleNaN)
+{
+  // IEEE-754 double for NaN is 0x7FF8000000000000
+  // The sign bit can be either 0 or 1 and the fraction can be anything except all 0s, so we just check one possibility here
+  EXPECT_EQ(MarshalDBusType(std::numeric_limits<double>::quiet_NaN()),
+            (std::vector<byte>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x7F}));
+}
  
 // ---------------------------------------------------------------------
 // STRING / OBJECT_PATH: UINT32 length + UTF-8 bytes + NUL terminator
