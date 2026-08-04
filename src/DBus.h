@@ -337,36 +337,6 @@ namespace cxxbus
     return (GetStructMemberSize<T, Is, std::tuple_size_v<T>>(value, size), ...);
   }
 
-  template <IsDBusMap T>
-  void GetMapSize(T const& value, uint32_t& size)
-  {
-    size += sizeof(uint32_t);  // uint32_t for arr length
-    AddPaddingToSize(size, GetAlignmentOfDBusType<T>());
-
-    for (auto it{value.cbegin()}; it != value.cend(); ++it)
-    {
-      if (it != value.cbegin())
-      {
-        uint8_t const alignment{GetAlignmentOfDBusType<T>()};
-        AddPaddingToSize(size, alignment);
-      }
-
-      GetSizeOfDBusType(it->first, size);
-
-      if constexpr (IsDBusMap<typename T::mapped_type>)
-      {
-        // uint32_t because a map is an array
-        AddPaddingToSize(size, GetAlignmentOfDBusType<uint32_t>());
-      }
-      else
-      {
-        AddPaddingToSize(size, GetAlignmentOfDBusType<typename T::mapped_type>());
-      }
-
-      GetSizeOfDBusType(it->second, size);
-    }
-  }
-
   template <IsDBusType T>
   void GetSizeOfDBusType(T const& value, uint32_t& size)
   {
@@ -412,10 +382,6 @@ namespace cxxbus
       else if constexpr (IsDBusStruct<T>)
       {
         GetStructSize(value, size, std::make_index_sequence<std::tuple_size_v<T>>{});
-      }
-      else if constexpr (IsDBusMap<T>)
-      {
-        GetMapSize(value, size);
       }
       else if constexpr (IsDBusVariant<T>)
       {
@@ -708,36 +674,38 @@ namespace cxxbus
     static_assert(IsDBusBasicType<typename T::key_type>, "DBus Maps can only have DBus Basic Types as keys");
 
     uint8_t const alignment{GetAlignmentOfDBusType<T>()};
-    uint32_t size{};
-    GetSizeOfDBusType(value, size);
 
-    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
-    // type boundary
-    MarshalBasicFixedType(size - alignment, dbusType);
-
-    ApplyPadding(dbusType, alignment);
+    std::vector<byte> tempBuffer;
 
     for (auto it{value.cbegin()}; it != value.cend(); ++it)
     {
       if (it != value.cbegin())
       {
-        ApplyPadding(dbusType, alignment);
+        ApplyPadding(tempBuffer, alignment);
       }
 
-      MarshalDBusTypeImpl(it->first, dbusType);
+      MarshalDBusTypeImpl(it->first, tempBuffer);
 
       if constexpr (IsDBusMap<typename T::mapped_type>)
       {
         // uint32_t because maps are arrays so pad to the array.
-        ApplyPadding(dbusType, GetAlignmentOfDBusType<uint32_t>());
+        ApplyPadding(tempBuffer, GetAlignmentOfDBusType<uint32_t>());
       }
       else
       {
-        ApplyPadding(dbusType, GetAlignmentOfDBusType<typename T::mapped_type>());
+        ApplyPadding(tempBuffer, GetAlignmentOfDBusType<typename T::mapped_type>());
       }
 
-      MarshalDBusTypeImpl(it->second, dbusType);
+      MarshalDBusTypeImpl(it->second, tempBuffer);
     }
+
+    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
+    // type boundary
+    MarshalBasicFixedType(static_cast<uint32_t>(tempBuffer.size()), dbusType);
+
+    ApplyPadding(dbusType, alignment);
+
+    dbusType.append_range(std::move(tempBuffer));
 
     // Make sure we pad even if our map is empty
     if (value.empty())
@@ -806,10 +774,6 @@ namespace cxxbus
   std::vector<byte> MarshalDBusType(T const& value)
   {
     std::vector<byte> dbusType{};
-    uint32_t size{};
-    GetSizeOfDBusType(value, size);
-    dbusType.reserve(size);
-
     MarshalDBusTypeImpl(value, dbusType);
     return dbusType;
   }
@@ -1233,9 +1197,6 @@ namespace cxxbus
   {
     Signature const signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
     SkipPadding(arrPointer, signature.GetAlignmentOfSignature());
-
-    uint32_t amountOfData{};
-    GetSizeOfDBusType(signature, amountOfData);
 
 #if __cpp_lib_ranges_to_container
     T deserializedVariant{deserialized_variant_tag, signature,
