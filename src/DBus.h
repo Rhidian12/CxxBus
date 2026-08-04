@@ -340,7 +340,7 @@ namespace cxxbus
   template <IsDBusMap T>
   void GetMapSize(T const& value, uint32_t& size)
   {
-    GetSizeOfDBusType(uint32_t{}, size);
+    size += sizeof(uint32_t);  // uint32_t for arr length
     AddPaddingToSize(size, GetAlignmentOfDBusType<T>());
 
     for (auto it{value.cbegin()}; it != value.cend(); ++it)

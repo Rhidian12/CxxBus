@@ -72,6 +72,6 @@ static void BM_NestedStructSerialisation(benchmark::State& state)
 }
 
 BENCHMARK(BM_NestedMapSerialisation);
-BENCHMARK(BM_NestedStructSerialisation);
+// BENCHMARK(BM_NestedStructSerialisation);
 
 BENCHMARK_MAIN();
