@@ -6,10 +6,10 @@
 #include <memory>
 #include <vector>
 
+#include "DBusConnection.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 #include "Log.h"
-#include "DBusConnection.h"
 #include "magic_enum.hpp"
 
 namespace cxxbus
@@ -28,7 +28,7 @@ namespace cxxbus
       std::vector<byte> tempBuffer{};
       tempBuffer.resize(FIRST_HEADER_PART_SIZE);
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if  __cpp_lib_containers_ranges
+#if __cpp_lib_containers_ranges
       rawFullReply.append_range(tempBuffer);
 #else
       rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
@@ -37,7 +37,7 @@ namespace cxxbus
 
       tempBuffer.resize(sizeof(uint32_t));
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if  __cpp_lib_containers_ranges
+#if __cpp_lib_containers_ranges
       rawFullReply.append_range(tempBuffer);
 #else
       rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
@@ -46,7 +46,7 @@ namespace cxxbus
 
       tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
       boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if  __cpp_lib_containers_ranges
+#if __cpp_lib_containers_ranges
       rawFullReply.append_range(std::move(tempBuffer));
 #else
       rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
@@ -83,9 +83,9 @@ namespace cxxbus
 
   SyncDBusConnection::SyncDBusConnection(DBusConnection& dbusConnection)
     : m_state(new InternalState{.socket = dbusConnection.m_state->socket,
-      .uniqueConnection = dbusConnection.m_state->uniqueConnection,
-      .wellKnownNames = dbusConnection.m_state->wellKnownNames,
-                                .serial = dbusConnection.m_state->serial, // Make sure we can't overlap serials
+                                .uniqueConnection = dbusConnection.m_state->uniqueConnection,
+                                .wellKnownNames = dbusConnection.m_state->wellKnownNames,
+                                .serial = dbusConnection.m_state->serial,  // Make sure we can't overlap serials
                                 .subscriptionCounter = dbusConnection.m_state->subscriptionCounter,
                                 .matchRules = dbusConnection.m_state->matchRules,
                                 .nameCache = dbusConnection.m_state->nameCache,
@@ -99,7 +99,8 @@ namespace cxxbus
     return std::shared_ptr<SyncDBusConnection>{new SyncDBusConnection{dbusConnection}};
   }
 
-  void SyncDBusConnection::AddMatchRule(DBusMatchRule rule,  std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
+  void SyncDBusConnection::AddMatchRule(DBusMatchRule rule,
+                                        std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
     LOGGER.LogTrace(std::format("Adding match rule '{}'", rule.GetRule()));
 
@@ -121,7 +122,7 @@ namespace cxxbus
         });
 
     m_state->matchRules->emplace((*m_state->subscriptionCounter)++,
-                                DBusConnection::MatchRuleInfo{.rule = std::move(rule), .callback = std::move(signal)});
+                                 DBusConnection::MatchRuleInfo{.rule = std::move(rule), .callback = std::move(signal)});
   }
 
   void SyncDBusConnection::RemoveMatchRule(DBusMatchRule rule)
@@ -132,7 +133,8 @@ namespace cxxbus
                     .Destination("org.freedesktop.DBus")
                     .Parameter(rule.GetRule()));
 
-    auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, DBusConnection::MatchRuleInfo> const& elem)
+    auto const it = std::ranges::find_if(*m_state->matchRules,
+                                         [&rule](std::pair<uint32_t, DBusConnection::MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     m_state->matchRules->erase(it);
   }
@@ -142,8 +144,7 @@ namespace cxxbus
     if (message.GetHeader().GetReplySerial().has_value() &&
         message.GetHeader().GetReplySerial().value() == expectedReplySerial)
     {
-      LOGGER.LogTrace(
-          std::format("Message is a reply to serial '{}'", message.GetHeader().GetReplySerial().value()));
+      LOGGER.LogTrace(std::format("Message is a reply to serial '{}'", message.GetHeader().GetReplySerial().value()));
 
       if (message.GetHeader().GetMessageType() == DBusMessageType::ERROR)
       {
@@ -207,6 +208,80 @@ namespace cxxbus
         message.GetMember().value_or(""), *m_state->serial,
         message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
         message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
+  }
+
+  void SyncDBusConnection::RequestWellKnownName(DBusWellKnownName name)
+  {
+    if (std::ranges::contains(*m_state->wellKnownNames, name))
+    {
+      throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
+    }
+
+    auto reply = SendMessage(
+        DBusMessage::Method("RequestName")
+            .Path(ObjectPath{"/org/freedesktop/DBus"})
+            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+            .Destination("org.freedesktop.DBus")
+            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}));
+
+    switch (reply.Get<uint32_t>())
+    {
+      case 1:
+        LOGGER.LogDebug(std::format("Successfully acquired well-known name '{}'", name.GetName()));
+        break;
+      // [TODO]: Allow user passing flags for the Well-known name.
+      case 2:
+        LOGGER.LogError(
+            std::format("Well-known name '{}' is already owned by another connection and we did "
+                        "not ask to replace the name",
+                        name.GetName()));
+        break;
+      case 3:
+        LOGGER.LogError(std::format("The well-known name '{}' already has an owner", name.GetName()));
+        break;
+      case 4:
+        LOGGER.LogDebug("We're already owner of our well-known name");
+        break;
+      default:
+        LOGGER.LogError(std::format("Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>()));
+        break;
+    }
+
+    m_state->wellKnownNames->push_back(name);
+  }
+
+  void SyncDBusConnection::ReleaseWellKnownName(DBusWellKnownName name)
+  {
+    if (!std::ranges::contains(*m_state->wellKnownNames, name))
+    {
+      throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
+    }
+
+    LOGGER.LogTrace(std::format("Releasing our well-known name '{}'", name.GetName()));
+    IncomingDBusMessage const ret = SendMessage(DBusMessage::Method("ReleaseName")
+                                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                    .Destination("org.freedesktop.DBus")
+                                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                    .Parameter(name.GetName()));
+
+    switch (ret.Get<uint32_t>())
+    {
+      case 1:
+        LOGGER.LogDebug(std::format("Successfully released well-known name '{}'", name.GetName()));
+        break;
+      case 2:
+        LOGGER.LogError(std::format("Well-known name '{}' is not owned by the dbus-daemon", name.GetName()));
+        break;
+      case 3:
+        LOGGER.LogError(std::format("Well-known name '{}' is not owned by this connection", name.GetName()));
+        break;
+      default:
+        LOGGER.LogError(std::format("Unknown return value from 'ReleaseName()': {}", ret.Get<uint32_t>()));
+        break;
+    }
+
+    auto it = std::ranges::remove(*m_state->wellKnownNames, name);
+    m_state->wellKnownNames->erase(it.begin(), it.end());
   }
 
   std::vector<DBusWellKnownName> const& SyncDBusConnection::GetWellKnownNames() const

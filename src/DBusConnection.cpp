@@ -50,9 +50,8 @@ namespace cxxbus
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
   }  // namespace
 
-  boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(boost::asio::io_context& ioService,
-                                                                                 std::optional<DBusWellKnownName> wellKnownName,
-                                                                                 BusType busType)
+  boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(
+      boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName, BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
@@ -62,7 +61,8 @@ namespace cxxbus
   }
 
   std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(boost::asio::io_context& ioService,
-                                                                 std::optional<DBusWellKnownName> wellKnownName, BusType busType)
+                                                                 std::optional<DBusWellKnownName> wellKnownName,
+                                                                 BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
@@ -147,34 +147,12 @@ namespace cxxbus
       co_await RemoveMatchRule(ruleInfo.rule);
     }
 
+    auto names{*m_state->wellKnownNames};
     // Release our well-known name from the dbus-daemon
     LOGGER.LogTrace("Releasing our well-known name");
     for (DBusWellKnownName name : *m_state->wellKnownNames)
     {
-      IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
-                                                               .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                               .Destination("org.freedesktop.DBus")
-                                                               .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                               .Parameter(name.GetName()));
-
-      switch (ret.Get<uint32_t>())
-      {
-        case 1:
-          LOGGER.LogDebug(
-              std::format("Successfully released well-known name '{}'", name.GetName()));
-          break;
-        case 2:
-          LOGGER.LogError(
-              std::format("Well-known name '{}' is not owned by the dbus-daemon", name.GetName()));
-          break;
-        case 3:
-          LOGGER.LogError(
-              std::format("Well-known name '{}' is not owned by this connection", name.GetName()));
-          break;
-        default:
-          LOGGER.LogError(std::format("Unknown return value from 'ReleaseName()': {}", ret.Get<uint32_t>()));
-          break;
-      }
+      co_await ReleaseWellKnownName(name);
     }
 
     CloseData();
@@ -274,12 +252,12 @@ namespace cxxbus
     auto wellKnownNames{*m_state->wellKnownNames};
     for (DBusWellKnownName name : wellKnownNames)
     {
-      reply = co_await SendMessageInternal(DBusMessage::Method("RequestName")
-                                               .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                               .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                               .Destination("org.freedesktop.DBus")
-                                               .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
-                                                   name.GetName(), static_cast<uint32_t>(0x1)}));
+      reply = co_await SendMessageInternal(
+          DBusMessage::Method("RequestName")
+              .Path(ObjectPath{"/org/freedesktop/DBus"})
+              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+              .Destination("org.freedesktop.DBus")
+              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}));
 
       if (!reply.has_value())
       {
@@ -294,8 +272,7 @@ namespace cxxbus
       switch (reply->Get<uint32_t>())
       {
         case 1:
-          LOGGER.LogDebug(
-              std::format("Successfully acquired well-known name '{}'", name.GetName()));
+          LOGGER.LogDebug(std::format("Successfully acquired well-known name '{}'", name.GetName()));
           break;
         // [TODO]: Allow user passing flags for the Well-known name.
         case 2:
@@ -305,8 +282,7 @@ namespace cxxbus
                           name.GetName()));
           break;
         case 3:
-          LOGGER.LogError(
-              std::format("The well-known name '{}' already has an owner", name.GetName()));
+          LOGGER.LogError(std::format("The well-known name '{}' already has an owner", name.GetName()));
           break;
         case 4:
           LOGGER.LogDebug("We're already owner of our well-known name");
@@ -750,17 +726,73 @@ namespace cxxbus
       throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
     }
 
-    co_await SendMessage(
+    auto reply = co_await SendMessage(
         DBusMessage::Method("RequestName")
             .Path(ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Destination("org.freedesktop.DBus")
             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}));
+
+    switch (reply.Get<uint32_t>())
+    {
+      case 1:
+        LOGGER.LogDebug(std::format("Successfully acquired well-known name '{}'", name.GetName()));
+        break;
+      // [TODO]: Allow user passing flags for the Well-known name.
+      case 2:
+        LOGGER.LogError(
+            std::format("Well-known name '{}' is already owned by another connection and we did "
+                        "not ask to replace the name",
+                        name.GetName()));
+        break;
+      case 3:
+        LOGGER.LogError(std::format("The well-known name '{}' already has an owner", name.GetName()));
+        break;
+      case 4:
+        LOGGER.LogDebug("We're already owner of our well-known name");
+        break;
+      default:
+        LOGGER.LogError(std::format("Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>()));
+        break;
+    }
+
+    m_state->wellKnownNames->push_back(name);
+    co_return;
   }
-  
+
   boost::asio::awaitable<void> DBusConnection::ReleaseWellKnownName(DBusWellKnownName name)
   {
+    if (!std::ranges::contains(*m_state->wellKnownNames, name))
+    {
+      throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
+    }
 
+    LOGGER.LogTrace(std::format("Releasing our well-known name '{}'", name.GetName()));
+    IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
+                                                             .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                             .Destination("org.freedesktop.DBus")
+                                                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                             .Parameter(name.GetName()));
+
+    switch (ret.Get<uint32_t>())
+    {
+      case 1:
+        LOGGER.LogDebug(std::format("Successfully released well-known name '{}'", name.GetName()));
+        break;
+      case 2:
+        LOGGER.LogError(std::format("Well-known name '{}' is not owned by the dbus-daemon", name.GetName()));
+        break;
+      case 3:
+        LOGGER.LogError(std::format("Well-known name '{}' is not owned by this connection", name.GetName()));
+        break;
+      default:
+        LOGGER.LogError(std::format("Unknown return value from 'ReleaseName()': {}", ret.Get<uint32_t>()));
+        break;
+    }
+
+    auto it = std::ranges::remove(*m_state->wellKnownNames, name);
+    m_state->wellKnownNames->erase(it.begin(), it.end());
+    co_return;
   }
 
   void DBusConnection::ReceiveIncomingMessages(

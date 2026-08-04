@@ -13,12 +13,12 @@
 #include <queue>
 #include <unordered_map>
 
+#include "DBusConnection.h"
 #include "DBusMatchRule.h"
 #include "DBusMessage.h"
 #include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
-#include "DBusConnection.h"
 
 namespace cxxbus
 {
@@ -63,18 +63,21 @@ namespace cxxbus
     std::shared_ptr<InternalState> m_state;
 
    private:
-    SyncDBusConnection(DBusConnection & dbusConnection);
+    SyncDBusConnection(DBusConnection& dbusConnection);
 
     bool HandleReadMessage(IncomingDBusMessage message, uint32_t expectedReplySerial);
 
    public:
-    static std::shared_ptr<SyncDBusConnection> Create(DBusConnection & dbusConnection);
+    static std::shared_ptr<SyncDBusConnection> Create(DBusConnection& dbusConnection);
 
-    void AddMatchRule(DBusMatchRule rule,  std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    void AddMatchRule(DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void RemoveMatchRule(DBusMatchRule rule);
 
     IncomingDBusMessage SendMessage(DBusMessage message);
     void SendMessageNoReply(DBusMessage message);
+
+    void RequestWellKnownName(DBusWellKnownName name);
+    void ReleaseWellKnownName(DBusWellKnownName name);
 
     std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
   };
