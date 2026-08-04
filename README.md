@@ -4,10 +4,8 @@ Low-level DBus implementation in C++
 
 ## Usage
 
-There are 2 ways of using `CxxBus`:
-
-- Via `boost::asio` and using its eventloop (recommended), or
-- integrating your own eventloop (currently not recommended).
+`CxxBus` is an async-first framework and requires an eventloop to work.
+Currently, only `boost::asio` is supported.
 
 The base of `CxxBus` are the `DBusConnection` and `SyncDBusConnection` and are the core parts of `CxxBus` you will be interacting with.
 Both of these provide the same functionality:
@@ -70,10 +68,15 @@ cmake -DTSAN=1 -S . -B build
 # Note that ASAN and TSAN cannot be combined
 ```
 
+## Requirements
+
+- C++23 compiler, C++20 is partially supported, but prefer C++23.
+- `boost::asio`, `boost::signals2` and `boost::system` are the required Boost libraries
+- `GTest` and `GoogleBenchmark` for the unit tests and benchmarks
+
 ## Future work
 
 - Support Unix Filedescriptors
 - Add better support for integrating an external eventloop (better coroutine support, not only `boost::asio::awaitable`)
-- Support the system bus instead of only the message bus
 - More support for server addresses. Currently only `unix:path=` is supported
 - Windows support
