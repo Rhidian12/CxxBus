@@ -7,7 +7,6 @@
 #include <cstring>
 #include <format>
 #include <functional>
-#include <iterator>
 #include <memory>
 #include <ranges>
 #include <stdexcept>
@@ -319,6 +318,12 @@ namespace cxxbus
 
     for (auto it{value.cbegin()}; it != value.cend(); ++it)
     {
+      if (it != value.cbegin())
+      {
+        uint8_t const alignment{GetAlignmentOfDBusType<T>()};
+        AddPaddingToSize(size, alignment);
+      }
+
       GetSizeOfDBusType(it->first, size);
 
       if constexpr (IsDBusMap<typename T::mapped_type>)
@@ -332,12 +337,6 @@ namespace cxxbus
       }
 
       GetSizeOfDBusType(it->second, size);
-
-      if (std::distance(it, value.cend()) > 1)
-      {
-        uint8_t const alignment{GetAlignmentOfDBusType<T>()};
-        AddPaddingToSize(size, alignment);
-      }
     }
   }
 
@@ -535,18 +534,14 @@ namespace cxxbus
     if constexpr (std::is_same_v<T, bool>)
     {
       // Booleans are marshalled as uint32_t
-      for (uint8_t i{}; i < 4; ++i)
-      {
-        uint32_t boolConvertedVal{static_cast<uint32_t>(value ? 1 : 0)};
-        dbusType.push_back(*(static_cast<byte*>(static_cast<void*>(&boolConvertedVal)) + i));
-      }
+      uint32_t boolConvertedVal{static_cast<uint32_t>(value ? 1 : 0)};
+      dbusType.resize(dbusType.size() + sizeof(uint32_t), 0);
+      std::memcpy(dbusType.data() + dbusType.size() - sizeof(uint32_t), &boolConvertedVal, sizeof(uint32_t));
     }
     else
     {
-      for (uint8_t i{}; i < sizeof(T); ++i)
-      {
-        dbusType.push_back(*(static_cast<byte const*>(static_cast<void const*>(&value)) + i));
-      }
+      dbusType.resize(dbusType.size() + sizeof(T), 0);
+      std::memcpy(dbusType.data() + dbusType.size() - sizeof(T), &value, sizeof(T));
     }
   }
 
@@ -697,6 +692,11 @@ namespace cxxbus
 
     for (auto it{value.cbegin()}; it != value.cend(); ++it)
     {
+      if (it != value.cbegin())
+      {
+        ApplyPadding(dbusType, alignment);
+      }
+
       MarshalDBusTypeImpl(it->first, dbusType);
 
       if constexpr (IsDBusMap<typename T::mapped_type>)
@@ -708,12 +708,8 @@ namespace cxxbus
       {
         ApplyPadding(dbusType, GetAlignmentOfDBusType<typename T::mapped_type>());
       }
-      MarshalDBusTypeImpl(it->second, dbusType);
 
-      if (std::distance(it, value.cend()) > 1)
-      {
-        ApplyPadding(dbusType, alignment);
-      }
+      MarshalDBusTypeImpl(it->second, dbusType);
     }
 
     // Make sure we pad even if our map is empty
