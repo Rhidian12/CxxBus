@@ -48,6 +48,7 @@
 #include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
+#include "InvokeAsyncCallback.h"
 #include "Log.h"
 #include "SyncDBusConnection.h"
 
@@ -110,6 +111,8 @@ namespace cxxbus
               std::map<uint32_t,
                        boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
           .onIncomingSignal = {},
+          .messageFilter = {},
+          .messageFilterID = 0,
           .onDisconnected = {},
           .sendLoop =
               boost::asio::experimental::channel<void(
@@ -525,7 +528,8 @@ namespace cxxbus
     if (message.GetHeader().GetReplySerial().has_value())
     {
       uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
-      LOGGER.LogTrace(std::format("Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo()));
+      LOGGER.LogTrace(
+          std::format("Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo()));
 
       if (!state->replyChannels.contains(replySerial))
       {
@@ -558,24 +562,34 @@ namespace cxxbus
             co_await (*info.callback)(message);
           }
         }
+
+        co_return;
       }
-      else if (message.GetHeader().GetObjectPath().has_value() &&
-               state->objectPathHandlers->contains(
-                   message.GetHeader()
-                       .GetObjectPath()
-                       .transform([](ObjectPath const& path) { return std::string{path}; })
-                       .value()))
+
+      if (message.GetHeader().GetObjectPath().has_value() &&
+          state->objectPathHandlers->contains(message.GetHeader()
+                                                  .GetObjectPath()
+                                                  .transform([](ObjectPath const& path) { return path.GetPath(); })
+                                                  .value()))
       {
-        co_await (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()](
+        if (!state->messageFilter.empty())
+        {
+          for (auto const& filter : state->messageFilter | std::views::values)
+          {
+            if (co_await filter(message) == MessageHandled::YES)
+            {
+              co_return;
+            }
+          }
+        }
+
+        co_return co_await (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()](
             std::move(message));
       }
-      else
+
+      if (!state->onIncomingSignal.empty())
       {
-        // If it has no reply serial, then it means it's an incoming call
-        if (!state->onIncomingSignal.empty())
-        {
-          co_await state->onIncomingSignal(message);
-        }
+        co_await state->onIncomingSignal(message);
       }
     }
   }
@@ -865,6 +879,27 @@ namespace cxxbus
     auto it = std::ranges::remove(*m_state->wellKnownNames, name);
     m_state->wellKnownNames->erase(it.begin(), it.end());
     co_return;
+  }
+
+  uint32_t DBusConnection::RegisterMessageFilter(
+      std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback)
+  {
+    uint32_t filterID = m_state->messageFilterID++;
+    m_state->messageFilter[filterID].connect(
+        [cb = std::move(callback)](
+            IncomingDBusMessage message) -> std::function<boost::asio::awaitable<MessageHandled>()>
+        {
+          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<MessageHandled>
+          // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
+          // out-of-scope
+          { return InvokeAsyncCallback(cb, std::move(message)); };
+        });
+    return filterID;
+  }
+
+  void DBusConnection::UnregisterMessageFilter(uint32_t filterID)
+  {
+    m_state->messageFilter.erase(filterID);
   }
 
   void DBusConnection::ReceiveIncomingMessages(

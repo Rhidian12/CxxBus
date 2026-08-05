@@ -32,6 +32,7 @@
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 #include "Log.h"
+#include "InvokeAsyncCallback.h"
 #include "magic_enum.hpp"
 
 namespace cxxbus

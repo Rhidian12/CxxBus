@@ -23,7 +23,6 @@
 #pragma once
 
 #include <boost/asio/awaitable.hpp>
-#include <functional>
 
 #include "DBusConcepts.h"
 #include "DBusTypes.h"
@@ -47,9 +46,6 @@ namespace cxxbus
   uint8_t GetAlignmentOfSignature(Signature const& signature);
   std::string ParseDBusAddress(BusType busType);
   std::string HexEncodeString(std::string const& str);
-
-  boost::asio::awaitable<void> InvokeAsyncCallback(
-      std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback, IncomingDBusMessage message);
 
   template <IsDBusType T>
   constexpr std::string GetTypeSignature()

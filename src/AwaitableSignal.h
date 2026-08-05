@@ -25,6 +25,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/signals2/signal.hpp>
 #include <functional>
+#include <type_traits>
 #include <vector>
 
 namespace cxxbus
@@ -46,11 +47,12 @@ namespace cxxbus
         awaitables.emplace_back((*it)());
       }
 
-      return awaitAll(std::move(awaitables));
+      return AwaitAll(std::move(awaitables));
     }
 
    private:
-    static result_type awaitAll(std::vector<result_type> awaitables)
+    template<typename Res = result_type> requires (std::is_void_v<typename Res::value_type>)
+    static Res AwaitAll(std::vector<Res> awaitables)
     {
       for (auto& a : awaitables)
       {
@@ -58,6 +60,18 @@ namespace cxxbus
       }
 
       co_return;
+    }
+
+    template<typename Res = result_type> requires (!std::is_void_v<typename Res::value_type>)
+    static Res AwaitAll(std::vector<Res> awaitables)
+    {
+      typename Res::value_type result;
+      for (auto& a : awaitables)
+      {
+        result = co_await std::move(a);
+      }
+
+      co_return result;
     }
   };
 

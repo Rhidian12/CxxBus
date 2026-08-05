@@ -51,6 +51,12 @@ namespace cxxbus
 {
   class SyncDBusConnection;
 
+  enum class MessageHandled
+  {
+    YES,
+    NO
+  };
+
   class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   {
    private:
@@ -71,6 +77,8 @@ namespace cxxbus
           replyChannels;
 
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
+      std::unordered_map<uint32_t, AwaitableSignal<MessageHandled, IncomingDBusMessage>> messageFilter;
+      uint32_t messageFilterID;
 
       boost::signals2::signal<void()> onDisconnected;
 
@@ -141,6 +149,10 @@ namespace cxxbus
     void RegisterObjectPathHandler(ObjectPath path,
                                    std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void UnregisterObjectPathHandler(ObjectPath path);
+    // Register a filter that will filter incoming messages before dispatching them to object path handlers
+    uint32_t RegisterMessageFilter(std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback);
+    void UnregisterMessageFilter(uint32_t filterID);
+    
     void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(

@@ -460,13 +460,14 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    try{
+    try
+    {
       conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SYSTEM);
       auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
-      .Path(ObjectPath{"/org/freedesktop/DBus"})
-      .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-      .Destination("org.freedesktop.DBus")
-      .Parameter(std::string{"com.dbus.CxxTest"}));
+                                                  .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                  .Destination("org.freedesktop.DBus")
+                                                  .Parameter(std::string{"com.dbus.CxxTest"}));
       EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
       EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("b"));
       EXPECT_TRUE(reply.HasArguments());
@@ -485,5 +486,68 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
         throw;
       }
     }
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMessageFilter)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+
+    int nrOfCalls{};
+    uint32_t const id = conn2->RegisterMessageFilter(
+        [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
+        {
+          LOGGER.LogInfo(std::format("Message filter called for message with member '{}'",
+                                     msg.GetHeader().GetMember().value_or("")));
+          ++nrOfCalls;
+
+          if (msg.GetHeader().GetMember() == "Handle")
+          {
+            co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+            co_return MessageHandled::YES;
+          }
+
+          co_return MessageHandled::NO;
+        });
+
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 2)};
+
+    bool objectPathHandlerCalled{};
+    conn2->RegisterObjectPathHandler(
+        ObjectPath{"/com/dbus/CxxTest2/Foo"},
+        [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        {
+          LOGGER.LogInfo("Object path handler called");
+          objectPathHandlerCalled = !objectPathHandlerCalled;
+          co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+          co_return co_await chann->async_send(boost::system::error_code{});
+        });
+
+    co_await conn->SendMessage(
+        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+    co_await conn->SendMessage(
+        DBusMessage::Method("DoNotHandle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+
+    co_await chann->async_receive(boost::asio::use_awaitable);
+
+    // If 'RegisterObjectPathHandler' gets called not exactly 1 time, then 'objectPathHandlerCalled' will be false
+    EXPECT_TRUE(objectPathHandlerCalled);
+    EXPECT_EQ(nrOfCalls, 2);
+
+    conn2->UnregisterMessageFilter(id);
+    co_await conn->SendMessage(
+        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+
+    co_await chann->async_receive(boost::asio::use_awaitable);
+
+    // It got called a 3rd time, making it false again
+    EXPECT_FALSE(objectPathHandlerCalled);
+    EXPECT_EQ(nrOfCalls, 2);  // should not have been called
+
+    co_await conn2->Close();
   };
 }
