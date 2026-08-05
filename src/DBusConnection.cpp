@@ -82,10 +82,9 @@ namespace cxxbus
     co_return conn;
   }
 
-  std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(boost::asio::io_context& ioService,
-                                                                 std::optional<DBusWellKnownName> wellKnownName,
-                                                                 std::function<boost::asio::awaitable<void>()> onConnectedCallback,
-                                                                 BusType busType)
+  std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(
+      boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName,
+      std::function<boost::asio::awaitable<void>()> onConnectedCallback, BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
@@ -382,11 +381,7 @@ namespace cxxbus
         co_await boost::asio::async_write(*state->socket, boost::asio::buffer(message.Serialize(serial)),
                                           boost::asio::use_awaitable);
 
-        LOGGER.LogTrace(std::format(
-            "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-            message.GetMember().value_or(""), serial,
-            message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
-            message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
+        LOGGER.LogTrace(std::format("Sent message '{}'", message.GetInfo()));
         co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
       }
       catch (boost::system::system_error const& ex)
@@ -407,8 +402,8 @@ namespace cxxbus
           break;
         }
 
-        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
-        // Report it and handle the connection loss.
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
+        // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Send loop lost connection to dbus-daemon: {}", ex.what()));
         HandleConnectionLost();
         break;
@@ -503,8 +498,8 @@ namespace cxxbus
           break;
         }
 
-        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
-        // Report it and handle the connection loss.
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
+        // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Read loop lost connection to dbus-daemon: {}", ex.what()));
         HandleConnectionLost();
         break;
@@ -530,8 +525,7 @@ namespace cxxbus
     if (message.GetHeader().GetReplySerial().has_value())
     {
       uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
-      LOGGER.LogTrace(std::format("Received reply to message with serial '{}'. Signature of reply: '{}'", replySerial,
-                                  std::string{message.GetHeader().GetSignature().value_or(Signature{""})}));
+      LOGGER.LogTrace(std::format("Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo()));
 
       if (!state->replyChannels.contains(replySerial))
       {
@@ -549,10 +543,7 @@ namespace cxxbus
     // Simply an incoming message
     else
     {
-      LOGGER.LogTrace(std::format("Received incoming message with serial '{}' and signature '{}' and member '{}'",
-                                  message.GetHeader().GetSerial(),
-                                  std::string{message.GetHeader().GetSignature().value_or(Signature{""})},
-                                  message.GetHeader().GetMember().value_or("")));
+      LOGGER.LogTrace(std::format("Received incoming message '{}'", message.GetInfo()));
 
       if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
       {
@@ -628,8 +619,8 @@ namespace cxxbus
           break;
         }
 
-        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
-        // Report it and handle the connection loss.
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
+        // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Unhandled message loop lost connection to dbus-daemon: {}", ex.what()));
         HandleConnectionLost();
         break;

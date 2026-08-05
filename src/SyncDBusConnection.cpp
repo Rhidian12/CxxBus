@@ -163,6 +163,8 @@ namespace cxxbus
 
   bool SyncDBusConnection::HandleReadMessage(IncomingDBusMessage message, uint32_t expectedReplySerial)
   {
+      LOGGER.LogTrace(std::format("Received sync incoming message '{}'", message.GetInfo()));
+
     if (message.GetHeader().GetReplySerial().has_value() &&
         message.GetHeader().GetReplySerial().value() == expectedReplySerial)
     {
@@ -200,11 +202,7 @@ namespace cxxbus
     uint32_t const serial{(*m_state->serial)++};
 
     boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(serial)));
-    LOGGER.LogTrace(std::format(
-        "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-        message.GetMember().value_or(""), serial,
-        message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
-        message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
+    LOGGER.LogTrace(std::format("Sent sync message '{}'", message.GetInfo()));
 
     while (true)
     {
