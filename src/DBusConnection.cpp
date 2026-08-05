@@ -391,7 +391,7 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
-        if (m_state->shouldQuit)
+        if (state->shouldQuit)
         {
           break;
         }
@@ -487,7 +487,7 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
-        if (m_state->shouldQuit)
+        if (state->shouldQuit)
         {
           break;
         }
@@ -617,7 +617,7 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
-        if (m_state->shouldQuit)
+        if (state->shouldQuit)
         {
           break;
         }

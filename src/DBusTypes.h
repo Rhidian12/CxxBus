@@ -125,10 +125,7 @@ namespace cxxbus
 
    public:
     ObjectPath() = default;
-    ObjectPath(std::string path)
-      : m_path(std::move(path))
-    {
-    }
+    ObjectPath(std::string path);
 
     uint32_t size() const
     {
@@ -202,6 +199,12 @@ namespace cxxbus
   };
 
   class InvalidDBusName : public std::runtime_error
+  {
+   public:
+    using std::runtime_error::runtime_error;
+  };
+
+  class InvalidDBusObjectPath : public std::runtime_error
   {
    public:
     using std::runtime_error::runtime_error;

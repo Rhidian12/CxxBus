@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <format>
 #include <optional>
+#include <ranges>
 
 #include "DBusHelpers.h"
 
@@ -76,7 +77,70 @@ namespace cxxbus
 
       return std::nullopt;
     }
+
+    // Returns std::nullopt if the provided path is valid
+    // Returns a filled std::optional containing an error reason if the path is invalid
+    std::optional<std::string> ValidateDBusObjectPath(std::string const& path)
+    {
+      // An Object Path must be:
+      //  - Non-empty
+      //  - Start with '/'
+      //  - Each element must only contain the ASCII characters '[A-Z][a-z][0-9]_'
+      //  - No element can be empty
+      //  - Multiple '/' cannot appear in sequence
+      //  - A trailing '/' is not allowed unless the path is the root path ('/')
+
+      if (path.empty()) return "Object Path cannot be empty";
+      if (path[0] != '/') return "Object Path must start with '/'";
+
+      // First element is empty if first character is '/'
+      auto range = path | std::views::split('/') | std::views::drop(1);
+      std::vector<std::string_view> const elements(range.begin(), range.end());
+
+      if (path.size() > 1 && std::ranges::any_of(elements, [](std::string_view elem) { return elem.empty(); }))
+      {
+        return "Object Path cannot contain empty elements in between '/'";
+      }
+
+      if (std::ranges::any_of(elements,
+                              [](std::string_view elem)
+                              {
+                                return std::ranges::any_of(elem,
+                                                           [](unsigned char c)
+                                                           {
+                                                             return !((c >= 'A' && c <= 'Z') ||
+                                                                      (c >= 'a' && c <= 'z') ||
+                                                                      (c >= '0' && c <= '9') || c == '_');
+                                                           });
+                              }))
+      {
+        return "Object Path elements can only contain characters in the following range: '[A-Z][a-z][0-9]_'";
+      }
+
+      if (path.contains("//"))
+      {
+        return "Object Path cannot contain consecutive '/'";
+      }
+
+      if (path.back() == '/' && (path.size() > 1 || (path.size() == 1 && path[0] != '/')))
+      {
+        return "Object Path cannot end with '/' unless it is the root path ('/')";
+      }
+
+      return std::nullopt;
+    }
   }  // namespace
+
+  ObjectPath::ObjectPath(std::string path)
+    : m_path()
+  {
+    if (auto ret{ValidateDBusObjectPath(path)}; ret.has_value())
+    {
+      throw InvalidDBusObjectPath{ret.value()};
+    }
+
+    m_path = std::move(path);
+  }
 
   std::string const& ObjectPath::GetPath() const
   {
