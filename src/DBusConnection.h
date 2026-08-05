@@ -72,6 +72,8 @@ namespace cxxbus
 
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
 
+      boost::signals2::signal<void()> onDisconnected;
+
       // Send messages to the SendLoop() coroutine
       boost::asio::experimental::channel<void(boost::system::error_code,
                                               std::tuple<DBusMessage /* message */, uint32_t /* serial */,
@@ -114,6 +116,8 @@ namespace cxxbus
 
     void CloseData();
 
+    void HandleConnectionLost();
+
    private:
     DBusConnection(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);
 
@@ -152,5 +156,10 @@ namespace cxxbus
     std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
 
     bool IsConnected() const;
+
+    boost::signals2::connection OnDisconnected(std::function<void()> callback);
+
+    // This is a hack to simulate a connection loss for testing purposes
+    void SimulateConnectionLoss();
   };
 }  // namespace cxxbus

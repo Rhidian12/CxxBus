@@ -111,6 +111,7 @@ namespace cxxbus
               std::map<uint32_t,
                        boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
           .onIncomingSignal = {},
+          .onDisconnected = {},
           .sendLoop =
               boost::asio::experimental::channel<void(
                   boost::system::error_code,
@@ -164,6 +165,30 @@ namespace cxxbus
       boost::system::error_code ec;
       std::ignore = m_state->socket->close(ec);
     }
+    LOGGER.LogTrace("Closed socket");
+  }
+
+  void DBusConnection::HandleConnectionLost()
+  {
+    if (m_state->shouldQuit)
+    {
+      return;
+    }
+
+    LOGGER.LogError("Connection to the dbus-daemon was lost unexpectedly");
+
+    m_state->connectionReady = false;
+    m_state->shouldQuit = true;
+    m_state->timer.cancel();
+    m_state->sendLoop.close();
+
+    if (m_state->socket->is_open())
+    {
+      boost::system::error_code ec;
+      std::ignore = m_state->socket->close(ec);
+    }
+
+    m_state->onDisconnected();
   }
 
   boost::asio::awaitable<void> DBusConnection::Close()
@@ -366,6 +391,11 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
+        if (m_state->shouldQuit)
+        {
+          break;
+        }
+
         if (ex.code().category().name() == std::string{"asio.channel"} && ex.code().value() == 1)
         {
           // Channel closed, exit the loop
@@ -377,7 +407,11 @@ namespace cxxbus
           break;
         }
 
-        throw;  // rethrow the exception if it's not one of the expected ones
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
+        // Report it and handle the connection loss.
+        LOGGER.LogError(std::format("Send loop lost connection to dbus-daemon: {}", ex.what()));
+        HandleConnectionLost();
+        break;
       }
       catch (std::exception const& ex)
       {
@@ -453,6 +487,11 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
+        if (m_state->shouldQuit)
+        {
+          break;
+        }
+
         if (ex.code().category().name() == std::string{"asio.channel"} && ex.code().value() == 1)
         {
           // Channel closed, exit the loop
@@ -464,7 +503,11 @@ namespace cxxbus
           break;
         }
 
-        throw;  // rethrow the exception if it's not one of the expected ones
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
+        // Report it and handle the connection loss.
+        LOGGER.LogError(std::format("Read loop lost connection to dbus-daemon: {}", ex.what()));
+        HandleConnectionLost();
+        break;
       }
       catch (std::exception const& ex)
       {
@@ -574,13 +617,22 @@ namespace cxxbus
       }
       catch (boost::system::system_error const& ex)
       {
+        if (m_state->shouldQuit)
+        {
+          break;
+        }
+
         if (ex.code().category().name() == std::string{"system"} && ex.code().value() == 125)
         {
           // Operation cancelled. Exit the loop
           break;
         }
 
-        throw;  // rethrow the exception if it's not one of the expected ones
+        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was lost unexpectedly.
+        // Report it and handle the connection loss.
+        LOGGER.LogError(std::format("Unhandled message loop lost connection to dbus-daemon: {}", ex.what()));
+        HandleConnectionLost();
+        break;
       }
       catch (std::exception const& ex)
       {
@@ -845,5 +897,22 @@ namespace cxxbus
   bool DBusConnection::IsConnected() const
   {
     return m_state->connectionReady;
+  }
+
+  boost::signals2::connection DBusConnection::OnDisconnected(std::function<void()> callback)
+  {
+    return m_state->onDisconnected.connect(std::move(callback));
+  }
+
+  void DBusConnection::SimulateConnectionLoss()
+  {
+    LOGGER.LogTrace("Simulating loss of the connection to the dbus-daemon");
+
+    if (m_state->socket->is_open())
+    {
+      // Hard shutdown the socket, this should cause the HandleConnectionLoss() function to get called
+      boost::system::error_code ec;
+      std::ignore = m_state->socket->shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
+    }
   }
 }  // namespace cxxbus

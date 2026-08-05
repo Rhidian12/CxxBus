@@ -66,6 +66,33 @@ TEST_F(DBusConnectionTestSuite, TestConnectingToDBusDaemon)
   };
 }
 
+TEST_F(DBusConnectionTestSuite, TestDetectingLostConnectionToDBusDaemon)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    EXPECT_TRUE(conn->IsConnected());
+
+    bool disconnected{false};
+    conn->OnDisconnected([&disconnected]() { disconnected = true; });
+
+    // Simulate the dbus-daemon dying/killing our connection, without needing to spawn and kill a
+    // real dbus-daemon process.
+    conn->SimulateConnectionLoss();
+
+    // Give the read loop a chance to notice the socket failure and report it.
+    boost::asio::system_timer timer{ioService};
+    timer.expires_after(std::chrono::milliseconds(100));
+    co_await timer.async_wait(boost::asio::use_awaitable);
+
+    EXPECT_TRUE(disconnected);
+    EXPECT_FALSE(conn->IsConnected());
+
+    // The connection is already torn down at this point, so don't let TearDown() call Close() on it.
+    conn = nullptr;
+  };
+}
+
 TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
