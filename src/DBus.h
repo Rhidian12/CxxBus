@@ -337,6 +337,36 @@ namespace cxxbus
     return (GetStructMemberSize<T, Is, std::tuple_size_v<T>>(value, size), ...);
   }
 
+ template <IsDBusMap T>
+  void GetMapSize(T const& value, uint32_t& size)
+  {
+    size += sizeof(uint32_t);  // uint32_t for arr length
+    AddPaddingToSize(size, GetAlignmentOfDBusType<T>());
+
+    for (auto it{value.cbegin()}; it != value.cend(); ++it)
+    {
+      if (it != value.cbegin())
+      {
+        uint8_t const alignment{GetAlignmentOfDBusType<T>()};
+        AddPaddingToSize(size, alignment);
+      }
+
+      GetSizeOfDBusType(it->first, size);
+
+      if constexpr (IsDBusMap<typename T::mapped_type>)
+      {
+        // uint32_t because a map is an array
+        AddPaddingToSize(size, GetAlignmentOfDBusType<uint32_t>());
+      }
+      else
+      {
+        AddPaddingToSize(size, GetAlignmentOfDBusType<typename T::mapped_type>());
+      }
+
+      GetSizeOfDBusType(it->second, size);
+    }
+  }
+
   template <IsDBusType T>
   void GetSizeOfDBusType(T const& value, uint32_t& size)
   {
@@ -382,6 +412,10 @@ namespace cxxbus
       else if constexpr (IsDBusStruct<T>)
       {
         GetStructSize(value, size, std::make_index_sequence<std::tuple_size_v<T>>{});
+      }
+      else if constexpr (IsDBusMap<T>)
+      {
+        GetMapSize(value, size);
       }
       else if constexpr (IsDBusVariant<T>)
       {
