@@ -149,5 +149,7 @@ namespace cxxbus
     boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name);
 
     std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
+
+    bool IsConnected() const;
   };
 }  // namespace cxxbus

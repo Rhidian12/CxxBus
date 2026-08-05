@@ -150,6 +150,7 @@ namespace cxxbus
     m_state->objectPathHandlers->clear();
     m_state->shouldQuit = true;
     m_state->timer.cancel();
+    m_state->connectionReady = false;
 
     LOGGER.LogTrace("Closing shared socket");
     if (m_state->socket->is_open())
@@ -833,5 +834,10 @@ namespace cxxbus
   std::vector<DBusWellKnownName> const& DBusConnection::GetWellKnownNames() const
   {
     return *m_state->wellKnownNames;
+  }
+
+  bool DBusConnection::IsConnected() const
+  {
+    return m_state->connectionReady;
   }
 }  // namespace cxxbus
