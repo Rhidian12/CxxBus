@@ -130,6 +130,7 @@ namespace cxxbus
         boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName, BusType busType);
     static std::shared_ptr<DBusConnection> CreateDetached(boost::asio::io_context& ioService,
                                                           std::optional<DBusWellKnownName> wellKnownName,
+                                                          std::function<boost::asio::awaitable<void>()> onConnectedCallback,
                                                           BusType busType);
 
     // Receive messages on a specific object path

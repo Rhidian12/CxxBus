@@ -84,16 +84,22 @@ namespace cxxbus
 
   std::shared_ptr<DBusConnection> DBusConnection::CreateDetached(boost::asio::io_context& ioService,
                                                                  std::optional<DBusWellKnownName> wellKnownName,
+                                                                 std::function<boost::asio::awaitable<void>()> onConnectedCallback,
                                                                  BusType busType)
   {
     std::shared_ptr<DBusConnection> conn{new DBusConnection(ioService, std::move(wellKnownName))};
 
     boost::asio::co_spawn(ioService, conn->Connect(busType),
-                          [](std::exception_ptr e)
+                          [&ioService, cb = std::move(onConnectedCallback)](std::exception_ptr e)
                           {
                             if (e)
                             {
                               std::rethrow_exception(e);
+                            }
+
+                            if (cb)
+                            {
+                              boost::asio::co_spawn(ioService, cb(), boost::asio::detached);
                             }
                           });
     return conn;
