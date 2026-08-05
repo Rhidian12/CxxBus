@@ -629,7 +629,11 @@ namespace cxxbus
     // type boundary
     MarshalBasicFixedType(static_cast<uint32_t>(tempBuffer.size()), dbusType);
     ApplyPadding(dbusType, alignment);
+#if __cpp_lib_containers_ranges
     dbusType.append_range(std::move(tempBuffer));
+#else
+    dbusType.insert(dbusType.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
   }
 
   template <IsDBusStruct T, size_t I, size_t MaxI>
@@ -703,7 +707,11 @@ namespace cxxbus
 
     ApplyPadding(dbusType, alignment);
 
+#if __cpp_lib_containers_ranges
     dbusType.append_range(std::move(tempBuffer));
+#else
+    dbusType.insert(dbusType.end(), tempBuffer.begin(), tempBuffer.end());
+#endif
 
     // Make sure we pad even if our map is empty
     if (value.empty())
