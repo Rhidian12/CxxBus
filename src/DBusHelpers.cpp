@@ -166,14 +166,25 @@ namespace cxxbus
     }
 
     // Looks something like: unix:path=/run/user/1000/bus or unix:path=/var/run/dbus/system_bus_socket
-    std::string_view const dbusAddress{rawAddress};
+    // after the 'unix:' prefix, we have multiple key=value pairs, separated by commas. We only care about the 'path' key
+    std::string_view dbusAddress{rawAddress};
 
     if (!dbusAddress.starts_with("unix:"))
     {
       throw std::runtime_error{"Only support unix sockets for DBus-daemon connections"};
     }
 
-    return std::string{dbusAddress.substr(dbusAddress.find("=") + 1)};
+    dbusAddress.remove_prefix(5);  // remove "unix:"
+
+    std::size_t const pos = dbusAddress.find("path=");
+    if (pos == std::string_view::npos)
+    {
+      throw std::runtime_error{"DBus-daemon address does not contain a 'path' key"};
+    }
+
+    std::size_t const endPos = dbusAddress.find(",", pos);
+
+    return std::string{dbusAddress.substr(pos + 5, endPos - (pos + 5))};
   }
 
   std::string HexEncodeString(std::string const& str)
