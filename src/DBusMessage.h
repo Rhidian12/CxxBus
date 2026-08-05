@@ -101,5 +101,7 @@ namespace cxxbus
 
     // Only useful for debugging purposes
     std::vector<byte> const& GetRawData() const;
+
+    std::string GetInfo() const;
   };
 }  // namespace cxxbus

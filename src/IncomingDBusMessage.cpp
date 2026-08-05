@@ -34,6 +34,7 @@
 
 #include "DBus.h"
 #include "DBusTypes.h"
+#include "magic_enum.hpp"
 
 namespace cxxbus
 {
@@ -329,5 +330,21 @@ namespace cxxbus
   std::vector<byte> const& IncomingDBusMessage::GetRawData() const
   {
     return m_messageBody;
+  }
+
+  std::string IncomingDBusMessage::GetInfo() const
+  {
+    std::string info{std::format(
+        "IncomingDBusMessage Info: Message Type: {}, Method: {}, Path: {}, Interface: {}, Destination: {}, Signature: "
+        "{}, Error Name: {}, Reply Serial: {}",
+        magic_enum::enum_name(m_header.GetMessageType()), m_header.GetMember().value_or("N/A"),
+        m_header.GetObjectPath().has_value() ? m_header.GetObjectPath()->GetPath() : "N/A",
+        m_header.GetInterface().has_value() ? m_header.GetInterface()->GetName() : "N/A",
+        m_header.GetDestination().value_or("N/A"),
+        m_header.GetSignature().has_value() ? m_header.GetSignature()->GetSignature() : "N/A",
+        m_header.GetErrorName().value_or("N/A"),
+        m_header.GetReplySerial().has_value() ? std::to_string(*m_header.GetReplySerial()) : "N/A")};
+
+    return info;
   }
 }  // namespace cxxbus

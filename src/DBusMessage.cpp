@@ -313,4 +313,17 @@ namespace cxxbus
   {
     return m_messageBody;
   }
+
+  std::string DBusMessage::GetInfo() const
+  {
+    std::string info{std::format("DBusMessage Info: Message Type: {}, Method: {}, Path: {}, Interface: {}, Destination: {}, Signature: "
+                                 "{}, Error Name: {}, Reply Serial: {}",
+                                 magic_enum::enum_name(m_messageType), m_method.value_or("N/A"),
+                                 m_path.has_value() ? m_path->GetPath() : "N/A",
+                                 m_interface.has_value() ? m_interface->GetName() : "N/A",
+                                 m_destination.value_or("N/A"), m_signature.has_value() ? m_signature->GetSignature() : "N/A",
+                                 m_errorName.value_or("N/A"), m_replySerial.has_value() ? std::to_string(*m_replySerial) : "N/A")};
+
+    return info;
+  }
 }  // namespace cxxbus
