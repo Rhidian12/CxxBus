@@ -25,15 +25,15 @@
 #include <boost/asio.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
+#include <boost/system/system_error.hpp>
 #include <memory>
 #include <vector>
 
 #include "DBusConnection.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
-#include "Log.h"
 #include "InvokeAsyncCallback.h"
-#include "magic_enum.hpp"
+#include "Log.h"
 
 namespace cxxbus
 {
@@ -45,74 +45,19 @@ namespace cxxbus
 
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
 
-    IncomingDBusMessage ReadMessageFromSocket(boost::asio::local::stream_protocol::socket& socket)
+    template <typename Predicate>
+    void RunUntil(boost::asio::io_context& ioContext, Predicate&& done)
     {
-      std::vector<byte> rawFullReply{};
-      std::vector<byte> tempBuffer{};
-      tempBuffer.resize(FIRST_HEADER_PART_SIZE);
-      boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if __cpp_lib_containers_ranges
-      rawFullReply.append_range(tempBuffer);
-#else
-      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
-      DBusMessageHeader messageHeader{std::move(tempBuffer)};
-
-      tempBuffer.resize(sizeof(uint32_t));
-      boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if __cpp_lib_containers_ranges
-      rawFullReply.append_range(tempBuffer);
-#else
-      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
-      messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
-
-      tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
-      boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-#if __cpp_lib_containers_ranges
-      rawFullReply.append_range(std::move(tempBuffer));
-#else
-      rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
-
-      uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
-      messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
-
-      uint32_t const oldArrPointer{arrPointer};
-      AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
-      uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
-
-      tempBuffer.resize(nrOfPaddingBytes + messageHeader.GetMessageLength());
-      boost::asio::read(socket, boost::asio::buffer(tempBuffer));
-
-#if __cpp_lib_ranges_to_container
-      // Skip over the padding, we don't care about it
-      IncomingDBusMessage message{std::move(messageHeader),
-                                  std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
-#else
-      // Skip over the padding, we don't care about it
-      IncomingDBusMessage message{std::move(messageHeader),
-                                  std::vector<byte>(tempBuffer.begin() + nrOfPaddingBytes, tempBuffer.end())};
-#endif
-
-      LOGGER.LogTrace(std::format(
-          "Received incoming message with serial '{}' and signature '{}' and member '{}' and type '{}'",
-          message.GetHeader().GetSerial(), std::string{message.GetHeader().GetSignature().value_or(Signature{""})},
-          message.GetHeader().GetMember().value_or(""), magic_enum::enum_name(message.GetHeader().GetMessageType())));
-
-      return message;
+      while (!done())
+      {
+        ioContext.run_one();
+      }
     }
   }  // namespace
 
   SyncDBusConnection::SyncDBusConnection(DBusConnection& dbusConnection)
-    : m_state(new InternalState{.socket = dbusConnection.m_state->socket,
-                                .uniqueConnection = dbusConnection.m_state->uniqueConnection,
-                                .wellKnownNames = dbusConnection.m_state->wellKnownNames,
-                                .serial = dbusConnection.m_state->serial,  // Make sure we can't overlap serials
-                                .subscriptionCounter = dbusConnection.m_state->subscriptionCounter,
-                                .matchRules = dbusConnection.m_state->matchRules,
-                                .nameCache = dbusConnection.m_state->nameCache,
-                                .unhandledIncomingMessages = dbusConnection.m_state->unhandledIncomingMessages})
+    : m_state(dbusConnection.m_state)
+    , m_ioContext(dbusConnection.m_ioContext)
   {
     // Don't connect here, we're coming from a 'DBusConnection' which should've already done all that stuff
   }
@@ -162,57 +107,90 @@ namespace cxxbus
     m_state->matchRules->erase(it);
   }
 
-  bool SyncDBusConnection::HandleReadMessage(IncomingDBusMessage message, uint32_t expectedReplySerial)
+  void SyncDBusConnection::DispatchMessage(DBusMessage message, uint32_t serial)
   {
-      LOGGER.LogTrace(std::format("Received sync incoming message '{}'", message.GetInfo()));
+    auto messageSentChannel = std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(
+        m_ioContext.get_executor(), 1);
 
-    if (message.GetHeader().GetReplySerial().has_value() &&
-        message.GetHeader().GetReplySerial().value() == expectedReplySerial)
+    bool sendQueued{false};
+    boost::system::error_code sendQueuedEc{};
+    m_state->sendLoop.async_send(boost::system::error_code{},
+                                 std::make_tuple(std::move(message), serial, messageSentChannel),
+                                 [&sendQueued, &sendQueuedEc](boost::system::error_code ec)
+                                 {
+                                   sendQueuedEc = ec;
+                                   sendQueued = true;
+                                 });
+    RunUntil(m_ioContext, [&sendQueued] { return sendQueued; });
+    if (sendQueuedEc)
     {
-      LOGGER.LogTrace(std::format("Message is a reply to serial '{}'", message.GetHeader().GetReplySerial().value()));
+      throw boost::system::system_error{sendQueuedEc};
+    }
 
-      if (message.GetHeader().GetMessageType() == DBusMessageType::ERROR)
-      {
-        // We got an error, so throw an error here
-        if (!message.GetHeader().GetErrorName().has_value())
+    bool sent{false};
+    boost::system::error_code sentEc{};
+    messageSentChannel->async_receive(
+        [&sent, &sentEc](boost::system::error_code ec)
         {
-          LOGGER.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
-        }
+          sentEc = ec;
+          sent = true;
+        });
 
-        throw DBusError{
-            message.GetHeader().GetErrorName().has_value() ? message.GetHeader().GetErrorName().value() : "Missing",
-            message.HasArguments() && message.GetHeader().GetSignature().value_or(Signature{""}) == "s"
-                ? message.Get<std::string>()
-                : "No error message was provided by the remote"};
-      }
-
-      return true;
-    }
-    else
+    RunUntil(m_ioContext, [&sent] { return sent; });
+    if (sentEc)
     {
-      LOGGER.LogTrace("Got incoming message that is not a reply. Adding it to queue");
-
-      m_state->unhandledIncomingMessages->push(std::move(message));
+      throw boost::system::system_error{sentEc};
     }
-
-    return false;
   }
 
   IncomingDBusMessage SyncDBusConnection::SendMessage(DBusMessage message)
   {
+    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{m_ioContext,
+                                                                                                          1};
+
     uint32_t const serial{(*m_state->serial)++};
+    m_state->replyChannels[serial] = &replyChannel;
 
-    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize(serial)));
-    LOGGER.LogTrace(std::format("Sent sync message '{}'", message.GetInfo()));
+    LOGGER.LogTrace(std::format("Sending sync message '{}' with serial '{}'", message.GetInfo(), serial));
+    DispatchMessage(std::move(message), serial);
 
-    while (true)
+    bool replyReceived{false};
+    boost::system::error_code replyEc{};
+    IncomingDBusMessage reply{};
+    replyChannel.async_receive(
+        [&replyReceived, &replyEc, &reply](boost::system::error_code ec, IncomingDBusMessage msg)
+        {
+          replyEc = ec;
+          reply = std::move(msg);
+          replyReceived = true;
+        });
+    RunUntil(m_ioContext, [&replyReceived] { return replyReceived; });
+
+    m_state->replyChannels.erase(serial);
+
+    if (replyEc)
     {
-      IncomingDBusMessage const message{ReadMessageFromSocket(*m_state->socket)};
-      if (HandleReadMessage(message, serial))
-      {
-        return message;
-      }
+      throw boost::system::system_error{replyEc};
     }
+
+    LOGGER.LogTrace(std::format("Received sync reply '{}'", reply.GetInfo()));
+
+    if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
+    {
+      // We got an error, so throw an error here
+      if (!reply.GetHeader().GetErrorName().has_value())
+      {
+        LOGGER.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
+      }
+
+      throw DBusError{
+          reply.GetHeader().GetErrorName().has_value() ? reply.GetHeader().GetErrorName().value() : "Missing",
+          reply.HasArguments() && reply.GetHeader().GetSignature().value_or(Signature{""}) == "s"
+              ? reply.Get<std::string>()
+              : "No error message was provided by the remote"};
+    }
+
+    return reply;
   }
 
   void SyncDBusConnection::SendMessageNoReply(DBusMessage message)
@@ -223,12 +201,14 @@ namespace cxxbus
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
 
-    boost::asio::write(*m_state->socket, boost::asio::buffer(message.Serialize((*m_state->serial)++)));
+    uint32_t const serial{(*m_state->serial)++};
     LOGGER.LogTrace(std::format(
-        "Sent message with method '{}' and serial '{}' to path '{}' with interface '{}'",
-        message.GetMember().value_or(""), *m_state->serial,
+        "Sending sync message with method '{}' and serial '{}' to path '{}' with interface '{}'",
+        message.GetMember().value_or(""), serial,
         message.GetPath().transform([](ObjectPath const& p) { return p.GetPath(); }).value_or(""),
         message.GetInterface().transform([](DBusInterfaceName const& i) { return i.GetName(); }).value_or("")));
+
+    DispatchMessage(std::move(message), serial);
   }
 
   void SyncDBusConnection::RequestWellKnownName(DBusWellKnownName name)

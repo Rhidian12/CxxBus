@@ -113,6 +113,7 @@ namespace cxxbus
 
    private:
     std::shared_ptr<InternalState> m_state;
+    boost::asio::io_context & m_ioContext;
 
    private:
     boost::asio::awaitable<void> AuthenticateDBusConnection();
