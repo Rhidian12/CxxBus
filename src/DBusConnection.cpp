@@ -25,7 +25,9 @@
 #include <algorithm>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/detached.hpp>
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/experimental/channel.hpp>
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
@@ -71,6 +73,15 @@ namespace cxxbus
 #endif  // CXX_BUS_EXIT_IF_EXPIRED
 
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+
+    void IOThread(
+        boost::asio::io_context& ioContext,
+        std::shared_ptr<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>>& workGuard)
+    {
+      workGuard = std::make_shared<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>>(
+          boost::asio::make_work_guard(ioContext));
+      ioContext.run();
+    }
   }  // namespace
 
   boost::asio::awaitable<std::shared_ptr<DBusConnection>> DBusConnection::Create(
@@ -123,6 +134,7 @@ namespace cxxbus
           .connectionReady = false,
           .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{ioService},
           .nrOfWaiters = 0,
+          .strand = std::make_shared<boost::asio::strand<typename boost::asio::io_context::executor_type>>(),
           .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(ioService),
           .uniqueConnection = nullptr,
           .wellKnownNames = std::make_shared<std::vector<DBusWellKnownName>>(),
@@ -131,7 +143,10 @@ namespace cxxbus
           .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
           .nameCache = std::make_shared<DBusNameCache>(*this),
           .objectPathHandlers =
-              std::make_shared<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>>(),
+          std::make_shared<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>>(),
+          .mutex = std::make_shared<std::mutex>(),
+          .workGuard = nullptr,
+          .ioThread = nullptr,
           .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
           .timer = boost::asio::system_timer{ioService},
           .shouldQuit = false})
@@ -140,6 +155,8 @@ namespace cxxbus
     {
       m_state->wellKnownNames->push_back(*wellKnownName);
     }
+
+    m_state->ioThread = std::make_shared<std::thread>(&IOThread, std::ref(ioService), std::ref(m_state->workGuard));
   }
 
   DBusConnection::~DBusConnection()
@@ -149,6 +166,8 @@ namespace cxxbus
     {
       CloseData();
     }
+
+    m_state->ioThread->join();
   }
 
   void DBusConnection::CloseData()
@@ -168,6 +187,10 @@ namespace cxxbus
       std::ignore = m_state->socket->close(ec);
     }
     LOGGER.LogTrace("Closed socket");
+
+    LOGGER.LogTrace("Joining thread");
+    m_state->workGuard->reset();
+    m_state->ioThread->join();
   }
 
   void DBusConnection::HandleConnectionLost()

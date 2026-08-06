@@ -30,12 +30,14 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/strand.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/signals2.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <unordered_map>
@@ -94,6 +96,7 @@ namespace cxxbus
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
       // Shared with other connections
+      std::shared_ptr<boost::asio::strand<typename boost::asio::io_context::executor_type>> strand;
       std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
       std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
       std::shared_ptr<std::vector<DBusWellKnownName>> wellKnownNames;
@@ -102,6 +105,11 @@ namespace cxxbus
       std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
       std::shared_ptr<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>> objectPathHandlers;
+      
+      // Thread Info
+      std::shared_ptr<std::mutex> mutex;
+      std::shared_ptr<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>> workGuard;
+      std::shared_ptr<std::thread> ioThread;
 
       // Information gotten from other connections
       std::shared_ptr<std::queue<IncomingDBusMessage>> unhandledIncomingMessages;
