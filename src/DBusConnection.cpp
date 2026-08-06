@@ -135,7 +135,6 @@ namespace cxxbus
           .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
           .timer = boost::asio::system_timer{ioService},
           .shouldQuit = false})
-    , m_ioContext(ioService)
   {
     if (wellKnownName.has_value())
     {
