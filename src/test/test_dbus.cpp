@@ -551,3 +551,16 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     co_await conn2->Close();
   };
 }
+
+TEST_F(DBusConnectionTestSuite, TestCallingUnknownMethod)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+
+    EXPECT_THROW(
+        co_await conn->SendMessage(
+            DBusMessage::Method("UnknownMethod").Destination("com.dbus.CxxTest").Path(ObjectPath{"/com/dbus/CxxTest"})),
+        DBusError);
+  };
+}

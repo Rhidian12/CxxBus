@@ -589,8 +589,12 @@ namespace cxxbus
 
       if (!state->onIncomingSignal.empty())
       {
-        co_await state->onIncomingSignal(message);
+        co_return co_await state->onIncomingSignal(message);
       }
+
+      // If nothing handles our message then we return an error to the sender
+      co_await SendMessageNoReply(DBusMessage::Error(message, "org.freedesktop.DBus.Error.UnknownMethod",
+                                                     "The method called is not implemented by this connection"));
     }
   }
 
