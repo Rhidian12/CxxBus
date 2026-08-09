@@ -24,6 +24,7 @@
 
 #include <format>
 #include <iostream>
+#include <utility>
 
 namespace cxxbus
 {
@@ -53,6 +54,8 @@ namespace cxxbus
         case LogLevel::Fatal:
           return RED_BOLD_UNDERLINED;
       }
+
+      std::unreachable();
     }
   }  // namespace
 
