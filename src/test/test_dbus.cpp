@@ -3,6 +3,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
@@ -15,7 +16,6 @@
 #include "src/DBusTypes.h"
 #include "src/IncomingDBusMessage.h"
 #include "src/Log.h"
-#include "src/SyncDBusConnection.h"
 
 using namespace cxxbus;
 
@@ -87,9 +87,6 @@ TEST_F(DBusConnectionTestSuite, TestDetectingLostConnectionToDBusDaemon)
 
     EXPECT_TRUE(disconnected);
     EXPECT_FALSE(conn->IsConnected());
-
-    // The connection is already torn down at this point, so don't let TearDown() call Close() on it.
-    conn = nullptr;
   };
 }
 
@@ -430,31 +427,6 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
   };
 }
 
-TEST_F(DBusConnectionTestSuite, TestAsyncToSync)
-{
-  coroutineToRun = [this]() -> boost::asio::awaitable<void>
-  {
-    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-
-    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                                .Destination("org.freedesktop.DBus"));
-
-    std::shared_ptr<SyncDBusConnection> syncConn = SyncDBusConnection::Create(*conn);
-
-    auto syncReply = syncConn->SendMessage(DBusMessage::Method("Introspect")
-                                               .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                               .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
-                                               .Destination("org.freedesktop.DBus"));
-
-    EXPECT_EQ(reply.GetHeader().GetSender(), syncReply.GetHeader().GetSender());
-    EXPECT_EQ(reply.GetHeader().GetSignature(), syncReply.GetHeader().GetSignature());
-    EXPECT_EQ(reply.GetHeader().GetDestination(), syncReply.GetHeader().GetDestination());
-    EXPECT_EQ(reply.Get<std::string>(), syncReply.Get<std::string>());
-  };
-}
-
 // This test is expected to fail if the system bus is not available or if the user does not have permission to access it
 TEST_F(DBusConnectionTestSuite, TestSystemBus)
 {
@@ -562,5 +534,29 @@ TEST_F(DBusConnectionTestSuite, TestCallingUnknownMethod)
         co_await conn->SendMessage(
             DBusMessage::Method("UnknownMethod").Destination("com.dbus.CxxTest").Path(ObjectPath{"/com/dbus/CxxTest"})),
         DBusError);
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+    conn = DBusConnection::CreateDetached(
+        ioService, DBusWellKnownName{"com.dbus.CxxTest"},
+        [this, chann]() -> boost::asio::awaitable<void>
+        {
+          boost::asio::co_spawn(
+              ioService, [chann]() -> boost::asio::awaitable<void>
+              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+          co_return;
+        },
+        BusType::SESSION);
+
+    co_await chann->async_receive(boost::asio::use_awaitable);
+
+    conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
+    co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
   };
 }

@@ -15,8 +15,7 @@ add_library(cxxbus-lib  DBusConnection.cpp
                         DBusTypes.cpp
                         Log.cpp
                         DBusMatchRule.cpp
-                        DBusNameCache.cpp
-                        SyncDBusConnection.cpp)
+                        DBusNameCache.cpp)
 
 target_include_directories(cxxbus-lib PUBLIC ${thirdparty-include-dir})
 

@@ -30,7 +30,6 @@
 #include "DBusMatchRule.h"
 #include "DBusTypes.h"
 #include "Log.h"
-#include "SyncDBusConnection.h"
 
 namespace cxxbus
 {
@@ -49,18 +48,20 @@ namespace cxxbus
   {
   }
 
-  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
+  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges(boost::asio::io_context& ioContext)
   {
-    co_await m_conn.AddMatchRule(DBusMatchRule::Create()
-                                     .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
-                                     .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                     .Member("NameOwnerChanged"),
-                                 [this](IncomingDBusMessage message) -> boost::asio::awaitable<void>
-                                 {
-                                   OnNameOwnerChanged(std::move(message));
-                                   co_return;
-                                 });
+    co_await m_conn.AddMatchRule(
+        DBusMatchRule::Create()
+            .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
+            .Path(ObjectPath{"/org/freedesktop/DBus"})
+            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+            .Member("NameOwnerChanged"),
+        [this](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        {
+          OnNameOwnerChanged(std::move(message));
+          co_return;
+        },
+        ioContext);
   }
 
   void DBusNameCache::OnNameOwnerChanged(IncomingDBusMessage message)
