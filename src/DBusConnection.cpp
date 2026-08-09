@@ -226,30 +226,51 @@ namespace cxxbus
 
   DBusConnection::~DBusConnection()
   {
-    // We do this check because preferably the user used `Close()` to already kill the connection
-    if (m_state->socket->is_open())
-    {
-      CloseData();
-    }
+    CloseDataSync();
   }
 
-  void DBusConnection::CloseData()
+  boost::asio::awaitable<void> DBusConnection::CloseData()
   {
-    LOGGER.LogTrace("Closing channels and signals");
-    m_state->sendLoop.close();
-    m_state->onIncomingSignal.disconnect_all_slots();
-    m_state->objectPathHandlers->clear();
-    m_state->shouldQuit = true;
-    m_state->timer.cancel();
-    m_state->connectionReady = false;
+    LOGGER.LogTrace("Closing data");
+    co_await boost::asio::co_spawn(
+        *m_state->strand,
+        [this]() -> boost::asio::awaitable<void>
+        {
+          LOGGER.LogTrace("Closing channels and signals");
+          m_state->sendLoop.close();
+          m_state->onIncomingSignal.disconnect_all_slots();
+          m_state->objectPathHandlers->clear();
+          m_state->shouldQuit = true;
+          m_state->timer.cancel();
+          m_state->connectionReady.store(false);
 
-    LOGGER.LogTrace("Closing socket");
-    if (m_state->socket->is_open())
+          LOGGER.LogTrace("Closing socket");
+          if (m_state->socket->is_open())
+          {
+            boost::system::error_code ec;
+            std::ignore = m_state->socket->close(ec);
+          }
+          LOGGER.LogTrace("Closed socket");
+          co_return;
+        },
+        boost::asio::use_awaitable);
+  }
+
+  void DBusConnection::CloseDataSync()
+  {
+    if (m_state->strand->running_in_this_thread())
     {
-      boost::system::error_code ec;
-      std::ignore = m_state->socket->close(ec);
+      boost::asio::co_spawn(*m_state->strand, CloseData(), boost::asio::detached);
+      LOGGER.LogTrace("Detaching thread");
+      m_state->workGuard.reset();
+      m_state->ioThread->detach();
+      LOGGER.LogTrace("Detached thread");
+
+      return;
     }
-    LOGGER.LogTrace("Closed socket");
+
+    LOGGER.LogTrace("Closing data sync");
+    WaitOnAsyncWork<void>(m_state->strand, [this]() { return CloseData(); });
 
     LOGGER.LogTrace("Joining thread");
     m_state->workGuard.reset();
@@ -257,16 +278,16 @@ namespace cxxbus
     LOGGER.LogTrace("Joined thread");
   }
 
-  void DBusConnection::HandleConnectionLost()
+  boost::asio::awaitable<void> DBusConnection::HandleConnectionLost()
   {
     if (m_state->shouldQuit)
     {
-      return;
+      co_return;
     }
 
     LOGGER.LogError("Connection to the dbus-daemon was lost unexpectedly");
 
-    m_state->connectionReady = false;
+    m_state->connectionReady.store(false);
     m_state->shouldQuit = true;
     m_state->timer.cancel();
     m_state->sendLoop.close();
@@ -277,14 +298,21 @@ namespace cxxbus
       std::ignore = m_state->socket->close(ec);
     }
 
-    m_state->onDisconnected();
+    boost::asio::co_spawn(
+        m_userIOContext,
+        [this]() -> boost::asio::awaitable<void>
+        {
+          m_state->onDisconnected();
+          co_return;
+        },
+        boost::asio::detached);
   }
 
   boost::asio::awaitable<void> DBusConnection::Close(boost::asio::io_context& ioContext)
   {
     LOGGER.LogInfo("Closing DBus Connection");
 
-    if (m_state->connectionReady)
+    if (m_state->connectionReady.load())
     {
       auto rules{*m_state->matchRules};
       for (auto const& [id, ruleInfo] : rules)
@@ -301,7 +329,7 @@ namespace cxxbus
       }
     }
 
-    CloseData();
+    co_await CloseData();
   }
 
   boost::asio::awaitable<void> DBusConnection::Close()
@@ -324,7 +352,6 @@ namespace cxxbus
     // First send a single '\0' byte
     co_await state->socket->async_send(boost::asio::buffer("\0", 1),
                                        boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
-    // co_await state->socket->async_send(boost::asio::buffer("\0", 1), boost::asio::use_awaitable);
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Next we must authenticate ourselves, we use the EXTERNAL
@@ -332,9 +359,6 @@ namespace cxxbus
     co_await state->socket->async_send(
         boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))),
         boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
-    // co_await state->socket->async_send(
-    //     boost::asio::buffer(std::format("AUTH EXTERNAL {}\r\n", HexEncodeString(std::to_string(::getuid())))),
-    //     boost::asio::use_awaitable);
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
     // Now we expect to see OK <guid>
@@ -354,7 +378,6 @@ namespace cxxbus
     // Yippee! All worked, so now start our DBus Connection!
     co_await state->socket->async_send(boost::asio::buffer("BEGIN\r\n", 7),
                                        boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
-    // co_await state->socket->async_send(boost::asio::buffer("BEGIN\r\n", 7), boost::asio::use_awaitable);
   }
 
   boost::asio::awaitable<void> DBusConnection::Connect(BusType busType, boost::asio::io_context& ioContext)
@@ -468,10 +491,11 @@ namespace cxxbus
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
-    m_state->connectionReady = true;
+    m_state->connectionReady.store(true);
     if (m_state->nrOfWaiters > 0)
     {
-      co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+      co_await m_state->connectionCompleted.async_send(
+          boost::system::error_code{}, boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
     }
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
@@ -495,12 +519,14 @@ namespace cxxbus
       try
       {
         // Wait for an incoming message to send
-        auto [message, serial, messageSentChannel] = co_await state->sendLoop.async_receive(boost::asio::use_awaitable);
+        auto [message, serial, messageSentChannel] = co_await state->sendLoop.async_receive(
+            boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_write(*state->socket, boost::asio::buffer(message.Serialize(serial)),
                                           boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
 
         LOGGER.LogTrace(std::format("Sent message '{}' with serial '{}'", message.GetInfo(), serial));
-        co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+        co_await messageSentChannel->async_send(
+            boost::system::error_code{}, boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
       }
       catch (boost::system::system_error const& ex)
       {
@@ -523,7 +549,7 @@ namespace cxxbus
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Send loop lost connection to dbus-daemon: {}", ex.what()));
-        HandleConnectionLost();
+        boost::asio::co_spawn(*m_state->ioContext, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
@@ -631,7 +657,7 @@ namespace cxxbus
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Read loop lost connection to dbus-daemon: {}", ex.what()));
-        HandleConnectionLost();
+        boost::asio::co_spawn(*m_state->ioContext, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
@@ -668,8 +694,9 @@ namespace cxxbus
         throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
       }
 
-      co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message),
-                                                             boost::asio::use_awaitable);
+      co_await state->replyChannels[replySerial]->async_send(
+          boost::system::error_code{}, std::move(message),
+          boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
     }
     // Simply an incoming message
     else
@@ -774,7 +801,7 @@ namespace cxxbus
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
         LOGGER.LogError(std::format("Unhandled message loop lost connection to dbus-daemon: {}", ex.what()));
-        HandleConnectionLost();
+        boost::asio::co_spawn(*m_state->ioContext, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
@@ -805,10 +832,11 @@ namespace cxxbus
     // 2nd, send our message to the SendLoop() coroutine to actually send the message
     co_await m_state->sendLoop.async_send(boost::system::error_code{},
                                           std::make_tuple(std::move(message), (*m_state->serial)++, messageSentChannel),
-                                          boost::asio::use_awaitable);
+                                          boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
 
     // 3rd, wait for the message to be sent.
-    co_await messageSentChannel->async_receive(boost::asio::use_awaitable);
+    co_await messageSentChannel->async_receive(
+        boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
 
     // 4th, check if we're expecting a reply
     if (!expectsReply)
@@ -819,7 +847,8 @@ namespace cxxbus
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
-    IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
+    IncomingDBusMessage reply =
+        co_await replyChannel.async_receive(boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
     m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
@@ -846,11 +875,12 @@ namespace cxxbus
                                                                           boost::asio::io_context& ioContext)
   {
     // Wait until our Connnection is ready
-    if (!m_state->connectionReady)
+    if (!m_state->connectionReady.load())
     {
       LOGGER.LogTrace("Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
-      co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
+      co_await m_state->connectionCompleted.async_receive(
+          boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
     }
 
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message), ioContext);
@@ -876,11 +906,12 @@ namespace cxxbus
                                                                   boost::asio::io_context& ioContext)
   {
     // Wait until our Connnection is ready
-    if (!m_state->connectionReady)
+    if (!m_state->connectionReady.load())
     {
       LOGGER.LogTrace("Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
-      co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
+      co_await m_state->connectionCompleted.async_receive(
+          boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
     }
 
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
@@ -1252,7 +1283,7 @@ namespace cxxbus
 
   bool DBusConnection::IsConnected() const
   {
-    return m_state->connectionReady;
+    return m_state->connectionReady.load();
   }
 
   boost::signals2::connection DBusConnection::OnDisconnected(std::function<void()> callback)
@@ -1266,9 +1297,16 @@ namespace cxxbus
 
     if (m_state->socket->is_open())
     {
-      // Hard shutdown the socket, this should cause the HandleConnectionLoss() function to get called
-      boost::system::error_code ec;
-      std::ignore = m_state->socket->shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
+      boost::asio::co_spawn(
+          *m_state->ioContext,
+          [this]() -> boost::asio::awaitable<void>
+          {
+            // Hard shutdown the socket, this should cause the HandleConnectionLoss() function to get called
+            boost::system::error_code ec;
+            std::ignore = m_state->socket->shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
+            co_return;
+          },
+          boost::asio::detached);
     }
   }
 }  // namespace cxxbus

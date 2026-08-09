@@ -87,9 +87,6 @@ TEST_F(DBusConnectionTestSuite, TestDetectingLostConnectionToDBusDaemon)
 
     EXPECT_TRUE(disconnected);
     EXPECT_FALSE(conn->IsConnected());
-
-    // The connection is already torn down at this point, so don't let TearDown() call Close() on it.
-    // conn = nullptr;
   };
 }
 

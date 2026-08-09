@@ -24,6 +24,7 @@
 
 #include <unistd.h>
 
+#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
@@ -94,7 +95,7 @@ namespace cxxbus
                                                              boost::system::error_code)>> /* messageSentChannel */>)>
           sendLoop;
 
-      bool connectionReady;
+      std::atomic_bool connectionReady;
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
@@ -133,9 +134,10 @@ namespace cxxbus
     boost::asio::awaitable<void> HandleUnhandledIncomingMessages();
     boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
 
-    void CloseData();
+    boost::asio::awaitable<void> CloseData();
+    void CloseDataSync();
 
-    void HandleConnectionLost();
+    boost::asio::awaitable<void> HandleConnectionLost();
 
    private:
     DBusConnection(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);

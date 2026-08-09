@@ -30,7 +30,6 @@
 #include "DBusMatchRule.h"
 #include "DBusTypes.h"
 #include "Log.h"
-#include "SyncDBusConnection.h"
 
 namespace cxxbus
 {
