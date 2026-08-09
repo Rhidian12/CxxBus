@@ -323,7 +323,7 @@ namespace cxxbus
       auto names{*m_state->wellKnownNames};
       // Release our well-known name from the dbus-daemon
       LOGGER.LogTrace("Releasing our well-known name");
-      for (DBusWellKnownName name : *m_state->wellKnownNames)
+      for (DBusWellKnownName name : names)
       {
         co_await ReleaseWellKnownName(name, ioContext);
       }

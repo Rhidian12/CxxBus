@@ -556,7 +556,7 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
 
     co_await chann->async_receive(boost::asio::use_awaitable);
 
-    // conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
-    // co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
+    conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
+    co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
   };
 }
