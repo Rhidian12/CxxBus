@@ -70,7 +70,7 @@ jobs:
 
     - name: Get Compiler Path
       run: |
-          echo "CXX_PATH=$(["$(which g++-16)" == ""] && echo "$(which g++-16)" || echo "$(which clang++-22)" )
+          echo "CXX_PATH=$(["$(which g++-16)" == ""] && echo "$(which g++-16)" || echo "$(which clang++-22)" )" >> $GITHUB_OUTPUT
       id: cxx_path
 
     - name: Configure CMake (ASAN + USAN)
