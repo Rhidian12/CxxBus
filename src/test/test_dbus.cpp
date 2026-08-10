@@ -377,6 +377,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
       EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
     }
 
+    LOGGER.LogDebug("Sending a final message from connection1 to connection2");
     EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
                                                .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
                                                .Destination("com.dbus.CxxTest2")))
