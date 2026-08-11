@@ -410,7 +410,8 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 
           boost::asio::co_spawn(
               ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
+              boost::asio::detached);
           co_return;
         });
 
@@ -497,7 +498,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
           LOGGER.LogInfo("Object path handler called");
           objectPathHandlerCalled = !objectPathHandlerCalled;
           co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
-          co_return co_await chann->async_send(boost::system::error_code{});
+          co_return co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
         });
 
     co_await conn->SendMessage(
@@ -550,7 +551,8 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
         {
           boost::asio::co_spawn(
               ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
+              boost::asio::detached);
           co_return;
         },
         BusType::SESSION);
