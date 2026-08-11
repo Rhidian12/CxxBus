@@ -87,7 +87,7 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: dbus-run-session -- ctest --build-target run_all_tests
+      run: dbus-run-session -- ${{ steps.strings.outputs.build-output-dir }}/run_all_tests
 
     - name: Configure CMake (TSAN) 
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
@@ -110,7 +110,7 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: cdbus-run-session -- ctest --build-target run_all_tests
+      run: cdbus-run-session -- ${{ steps.strings.outputs.build-output-dir }}/run_all_tests
 
     - name: Configure CMake (Benchmark) 
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
@@ -129,4 +129,4 @@ jobs:
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --target run_all_benchmarks
 
     - name: Benchmark
-      run: ./${{ steps.strings.outputs.build-output-dir }}/run_all_benchmarks 
+      run: ${{ steps.strings.outputs.build-output-dir }}/run_all_benchmarks 
