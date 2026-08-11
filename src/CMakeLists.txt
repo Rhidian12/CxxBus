@@ -1,5 +1,4 @@
 # ./src CMakeLists.txt
-# test
 
 # Clear cache
 set(_ALL_TESTS_SOURCES   "" CACHE INTERNAL "")
