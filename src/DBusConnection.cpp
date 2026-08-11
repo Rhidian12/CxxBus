@@ -49,6 +49,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include "AwaitableSignal.h"
 #include "DBus.h"
 #include "DBusHelpers.h"
 #include "DBusMatchRule.h"
@@ -204,8 +205,8 @@ namespace cxxbus
             .subscriptionCounter = std::make_shared<uint32_t>(0),
             .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
             .nameCache = std::make_shared<DBusNameCache>(*this),
-            .objectPathHandlers =
-                std::make_shared<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>>(),
+            .objectPathHandlers = std::make_shared<
+                std::unordered_map<std::string, std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>>>>(),
             .mutex = std::make_shared<std::mutex>(),
             .workGuard = nullptr,
             .ioThread = nullptr,
@@ -733,6 +734,9 @@ namespace cxxbus
                                                   .transform([](ObjectPath const& path) { return path.GetPath(); })
                                                   .value()))
       {
+        LOGGER.LogTrace("Message's ObjectPath matches a handler");
+
+        auto handler = (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()];
         if (!state->messageFilter.empty())
         {
           for (auto const& filter : state->messageFilter | std::views::values)
@@ -744,8 +748,8 @@ namespace cxxbus
           }
         }
 
-        co_return co_await (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()](
-            std::move(message));
+        LOGGER.LogTrace("Invoking ObjectPath handler");
+        co_return co_await (*handler)(std::move(message));
       }
 
       if (!state->onIncomingSignal.empty())
@@ -984,10 +988,11 @@ namespace cxxbus
         signal->connect(
             [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
             {
-              return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+              auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+              return [state]() -> boost::asio::awaitable<void>
               // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
               // out-of-scope
-              { return InvokeAsyncCallback(cb, std::move(message)); };
+              { return InvokeAsyncCallback(state->first, state->second); };
             });
 
         it->second.callback = std::move(signal);
@@ -997,10 +1002,11 @@ namespace cxxbus
         it->second.callback->connect(
             [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
             {
-              return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+              auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+              return [state]() -> boost::asio::awaitable<void>
               // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
               // out-of-scope
-              { return InvokeAsyncCallback(cb, std::move(message)); };
+              { return InvokeAsyncCallback(state->first, state->second); };
             });
       }
     }
@@ -1011,10 +1017,11 @@ namespace cxxbus
       signal->connect(
           [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
           {
-            return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+            auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+            return [state]() -> boost::asio::awaitable<void>
             // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
             // out-of-scope
-            { return InvokeAsyncCallback(cb, std::move(message)); };
+            { return InvokeAsyncCallback(state->first, state->second); };
           });
 
       m_state->matchRules->emplace(
@@ -1123,14 +1130,25 @@ namespace cxxbus
   void DBusConnection::RegisterObjectPathHandler(
       ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    (*m_state->objectPathHandlers)[path.GetPath()].connect(
-        [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
-        {
-          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
-          // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
-          // out-of-scope
-          { return InvokeAsyncCallback(cb, std::move(message)); };
-        });
+    auto cb = [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
+    {
+      auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+      return [state]() -> boost::asio::awaitable<void>
+      // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
+      // out-of-scope
+      { return InvokeAsyncCallback(state->first, state->second); };
+    };
+    if (auto it = m_state->objectPathHandlers->find(path.GetPath()); it != m_state->objectPathHandlers->end())
+    {
+      it->second->connect(std::move(cb));
+    }
+    else
+    {
+      std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> signal =
+          std::make_shared<AwaitableSignal<void, IncomingDBusMessage>>();
+      signal->connect(std::move(cb));
+      (*m_state->objectPathHandlers)[path.GetPath()] = signal;
+    }
   }
 
   void DBusConnection::UnregisterObjectPathHandler(ObjectPath path)
@@ -1250,10 +1268,11 @@ namespace cxxbus
         [cb = std::move(callback)](
             IncomingDBusMessage message) -> std::function<boost::asio::awaitable<MessageHandled>()>
         {
-          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<MessageHandled>
+          auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+          return [state]() -> boost::asio::awaitable<MessageHandled>
           // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
           // out-of-scope
-          { return InvokeAsyncCallback(cb, std::move(message)); };
+          { return InvokeAsyncCallback(state->first, state->second); };
         });
     return filterID;
   }
@@ -1269,10 +1288,11 @@ namespace cxxbus
     m_state->onIncomingSignal.connect(
         [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
         {
-          return [cb, message = std::move(message)](this auto&&) -> boost::asio::awaitable<void>
+          auto state = std::make_shared<std::pair<decltype(cb), IncomingDBusMessage>>(cb, std::move(message));
+          return [state]() -> boost::asio::awaitable<void>
           // This cannot be a lambda because the lambda would get destroyed, causing `cb` and `message` to go
           // out-of-scope
-          { return InvokeAsyncCallback(cb, std::move(message)); };
+          { return InvokeAsyncCallback(state->first, state->second); };
         });
   }
 

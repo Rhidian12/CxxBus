@@ -85,8 +85,8 @@ static void BM_ArraySerialisation(benchmark::State& state)
   }
 }
 
-// BENCHMARK(BM_NestedMapSerialisation);
-// BENCHMARK(BM_NestedStructSerialisation);
+BENCHMARK(BM_NestedMapSerialisation);
+BENCHMARK(BM_NestedStructSerialisation);
 BENCHMARK(BM_ArraySerialisation);
 
 BENCHMARK_MAIN();

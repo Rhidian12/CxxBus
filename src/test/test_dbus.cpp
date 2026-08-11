@@ -103,6 +103,160 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
+
+#ifdef GITHUB_ACTIONS
+    EXPECT_EQ(reply.Get<std::string>(),
+              R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.freedesktop.DBus">
+    <method name="Hello">
+      <arg direction="out" type="s"/>
+    </method>
+    <method name="RequestName">
+      <arg direction="in" type="s"/>
+      <arg direction="in" type="u"/>
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="ReleaseName">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="StartServiceByName">
+      <arg direction="in" type="s"/>
+      <arg direction="in" type="u"/>
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="UpdateActivationEnvironment">
+      <arg direction="in" type="a{ss}"/>
+    </method>
+    <method name="NameHasOwner">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="b"/>
+    </method>
+    <method name="ListNames">
+      <arg direction="out" type="as"/>
+    </method>
+    <method name="ListActivatableNames">
+      <arg direction="out" type="as"/>
+    </method>
+    <method name="AddMatch">
+      <arg direction="in" type="s"/>
+    </method>
+    <method name="RemoveMatch">
+      <arg direction="in" type="s"/>
+    </method>
+    <method name="GetNameOwner">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="s"/>
+    </method>
+    <method name="ListQueuedOwners">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="as"/>
+    </method>
+    <method name="GetConnectionUnixUser">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="GetConnectionUnixProcessID">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="GetAdtAuditSessionData">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="ay"/>
+    </method>
+    <method name="GetConnectionSELinuxSecurityContext">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="ay"/>
+    </method>
+    <method name="GetConnectionAppArmorSecurityContext">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="s"/>
+    </method>
+    <method name="ReloadConfig">
+    </method>
+    <method name="GetId">
+      <arg direction="out" type="s"/>
+    </method>
+    <method name="GetConnectionCredentials">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="a{sv}"/>
+    </method>
+    <property name="Features" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <property name="Interfaces" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <signal name="NameOwnerChanged">
+      <arg type="s"/>
+      <arg type="s"/>
+      <arg type="s"/>
+    </signal>
+    <signal name="NameLost">
+      <arg type="s"/>
+    </signal>
+    <signal name="NameAcquired">
+      <arg type="s"/>
+    </signal>
+    <signal name="ActivatableServicesChanged">
+    </signal>
+  </interface>
+  <interface name="org.freedesktop.DBus.Properties">
+    <method name="Get">
+      <arg direction="in" type="s"/>
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="v"/>
+    </method>
+    <method name="GetAll">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="a{sv}"/>
+    </method>
+    <method name="Set">
+      <arg direction="in" type="s"/>
+      <arg direction="in" type="s"/>
+      <arg direction="in" type="v"/>
+    </method>
+    <signal name="PropertiesChanged">
+      <arg type="s" name="interface_name"/>
+      <arg type="a{sv}" name="changed_properties"/>
+      <arg type="as" name="invalidated_properties"/>
+    </signal>
+  </interface>
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect">
+      <arg direction="out" type="s"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Monitoring">
+    <method name="BecomeMonitor">
+      <arg direction="in" type="as"/>
+      <arg direction="in" type="u"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Debug.Stats">
+    <method name="GetStats">
+      <arg direction="out" type="a{sv}"/>
+    </method>
+    <method name="GetConnectionStats">
+      <arg direction="in" type="s"/>
+      <arg direction="out" type="a{sv}"/>
+    </method>
+    <method name="GetAllMatchRules">
+      <arg direction="out" type="a{sas}"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Peer">
+    <method name="GetMachineId">
+      <arg direction="out" type="s"/>
+    </method>
+    <method name="Ping">
+    </method>
+  </interface>
+</node>
+)");
+#else
     EXPECT_EQ(reply.Get<std::string>(),
               R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
@@ -248,6 +402,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   </interface>
 </node>
 )");
+#endif
   };
 }
 
@@ -331,7 +486,11 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
     catch (DBusError const& ex)
     {
       EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
+#ifdef GITHUB_ACTIONS
+      EXPECT_EQ(ex.GetErrorReason(), "Requested bus name \"boo\" is not valid");
+#else
       EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
+#endif
     }
   };
 }
@@ -377,6 +536,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
       EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
     }
 
+    LOGGER.LogDebug("Sending a final message from connection1 to connection2");
     EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
                                                .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
                                                .Destination("com.dbus.CxxTest2")))
@@ -409,7 +569,8 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 
           boost::asio::co_spawn(
               ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
+              boost::asio::detached);
           co_return;
         });
 
@@ -496,7 +657,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
           LOGGER.LogInfo("Object path handler called");
           objectPathHandlerCalled = !objectPathHandlerCalled;
           co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
-          co_return co_await chann->async_send(boost::system::error_code{});
+          co_return co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
         });
 
     co_await conn->SendMessage(
@@ -549,7 +710,8 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
         {
           boost::asio::co_spawn(
               ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}); }, boost::asio::detached);
+              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
+              boost::asio::detached);
           co_return;
         },
         BusType::SESSION);

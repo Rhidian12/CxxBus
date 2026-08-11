@@ -107,7 +107,8 @@ namespace cxxbus
       std::shared_ptr<uint32_t> subscriptionCounter;
       std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
-      std::shared_ptr<std::unordered_map<std::string, AwaitableSignal<void, IncomingDBusMessage>>> objectPathHandlers;
+      std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>>>>
+          objectPathHandlers;
 
       // Thread Info
       std::shared_ptr<std::mutex> mutex;
