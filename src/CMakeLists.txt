@@ -59,7 +59,6 @@ if(CXXBUS_ENABLE_BENCHMARKS)
                       SOURCES ${_ALL_BENCHMARKS_SOURCES}
                       LIBRARIES ${_ALL_BENCHMARKS_LIBRARIES}
                       INCLUDE_DIRS ${_ALL_BENCHMARKS_INCLUDES}
-                      DO_NOT_ADD_TO_CACHE
-                      UNIT_TEST)
+                      DO_NOT_ADD_TO_CACHE)
   endif()
 endif()
