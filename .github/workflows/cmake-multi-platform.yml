@@ -69,8 +69,8 @@ jobs:
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: >
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=$clangxx
-        -DCMAKE_C_COMPILER=$clang
+        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+        -DCMAKE_C_COMPILER=/usr/bin/clang
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DSANITIZERS=1
         -DCXXBUS_DEV=1
@@ -92,8 +92,8 @@ jobs:
       run: >
         rm -rf ${{ steps.strings.outputs.build-output-dir }} &&
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=$clangxx
-        -DCMAKE_C_COMPILER=$clang
+        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+        -DCMAKE_C_COMPILER=/usr/bin/clang
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DTSAN=1
         -DCXXBUS_DEV=1
@@ -115,8 +115,8 @@ jobs:
       run: >
         rm -rf ${{ steps.strings.outputs.build-output-dir }} &&
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=$clangxx
-        -DCMAKE_C_COMPILER=$clang
+        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+        -DCMAKE_C_COMPILER=/usr/bin/clang
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DCXXBUS_DEV=1
         -S ${{ github.workspace }}
