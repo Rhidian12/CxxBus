@@ -103,9 +103,6 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
-    LOGGER.LogInfo("OUTPUT BEGIN");
-    LOGGER.LogInfo(reply.Get<std::string>());
-    LOGGER.LogInfo("OUTPUT END");
 
 #ifdef GITHUB_ACTIONS
     EXPECT_EQ(reply.Get<std::string>(),
