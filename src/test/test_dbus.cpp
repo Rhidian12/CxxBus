@@ -331,7 +331,11 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
     catch (DBusError const& ex)
     {
       EXPECT_EQ(ex.GetErrorName(), "org.freedesktop.DBus.Error.InvalidArgs");
+#ifdef GITHUB_ACTIONS
+      EXPECT_EQ(ex.GetErrorReason(), "Requested bus name \"boo\" is not valid");
+#else
       EXPECT_EQ(ex.GetErrorReason(), "The name is not a valid well-known name");
+#endif
     }
   };
 }
