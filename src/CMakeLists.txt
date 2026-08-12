@@ -8,7 +8,8 @@ set(_ALL_BENCHMARKS_SOURCES   "" CACHE INTERNAL "")
 set(_ALL_BENCHMARKS_LIBRARIES "" CACHE INTERNAL "")
 set(_ALL_BENCHMARKS_INCLUDES  "" CACHE INTERNAL "")
 
-add_library(cxxbus-lib  DBusConnection.cpp
+add_library(cxxbus-lib  DBus.cpp
+                        DBusConnection.cpp
                         DBusHelpers.cpp
                         DBusMessage.cpp
                         IncomingDBusMessage.cpp

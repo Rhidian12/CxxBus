@@ -149,7 +149,8 @@ namespace cxxbus
     {
       return 4;
     }
-    else if constexpr (std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, double>)
+    else if constexpr (std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
+                       std::is_same_v<T, float>)
     {
       return 8;
     }
