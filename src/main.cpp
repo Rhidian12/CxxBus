@@ -17,7 +17,7 @@ using namespace cxxbus;
 
 namespace
 {
-  Logger const LOGGER{.logLevel = LogLevel::Info};
+  Logger const LOGGER{.logLevel = LogLevel::INFO};
 }
 
 boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
@@ -25,22 +25,22 @@ boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
   LOGGER.LogInfo("Sending first message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
-                                 .Interface("com.example.Echo")
+                                 .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
   LOGGER.LogInfo("Sending second message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
-                                 .Interface("com.example.Echo")
+                                 .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
   LOGGER.LogInfo("Sending third message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
-                                 .Interface("com.example.Echo")
+                                 .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
   LOGGER.LogInfo("Sending fourth message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
-                                 .Interface("com.example.Echo")
+                                 .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
 }
 
@@ -51,10 +51,11 @@ boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnect
       [](IncomingDBusMessage message) -> boost::asio::awaitable<void>
       {
         DBusMessageHeader const& header = message.GetHeader();
-        LOGGER.LogInfo(std::format(
+        LOGGER.LogInfo(
             "Message Received! Member: {}, Sender: {}, Destination: {}, Interface: {}, Message Type: {}",
             header.GetMember().value_or(""), header.GetSender().value_or(""), header.GetDestination().value_or(""),
-            header.GetInterface().value_or(""), static_cast<int>(header.GetMessageType())));
+            header.GetInterface().transform([](DBusInterfaceName const& name) { return name.GetName(); }).value_or(""),
+            static_cast<int>(header.GetMessageType()));
 
         co_return;
       });
@@ -73,31 +74,31 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
       DBusMatchRule::Create()
           .Type(DBusMessageType::SIGNAL)
           .Member("NameOwnerChanged")
-          .Interface("org.freedesktop.DBus")
+          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
           .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
-      [](IncomingDBusMessage message)
+      [](IncomingDBusMessage message) -> boost::asio::awaitable<void>
       {
-        LOGGER.LogInfo(
-            std::format("Received NameOwnerChanged signal. New Name: {}, Sender: {}",
-                        message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
-                        message.GetHeader().GetSender().value_or("")));
+        LOGGER.LogInfo("Received NameOwnerChanged signal. New Name: {}, Sender: {}",
+                       message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
+                       message.GetHeader().GetSender().value_or(""));
+        co_return;
       });
 
   IncomingDBusMessage reply =
       co_await conn->SendMessage(DBusMessage::Method("RequestName")
                                      .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                     .Interface("org.freedesktop.DBus")
+                                     .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                      .Destination("org.freedesktop.DBus")
                                      .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                          DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo(std::format("Reply to first name change: {}", reply.Get<uint32_t>()));
+  LOGGER.LogInfo("Reply to first name change: {}", reply.Get<uint32_t>());
   reply = co_await conn->SendMessage(
       DBusMessage::Method("RequestName")
           .Path(ObjectPath{"/org/freedesktop/DBus"})
-          .Interface("org.freedesktop.DBus")
+          .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
           .Destination("org.freedesktop.DBus")
           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"com.dbus.CxxTest3", static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo(std::format("Reply to second name change: {}", reply.Get<uint32_t>()));
+  LOGGER.LogInfo("Reply to second name change: {}", reply.Get<uint32_t>());
 
   boost::asio::system_timer timer{ioService};
   timer.expires_after(std::chrono::seconds(5));
@@ -110,7 +111,7 @@ boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> c
   try
   {
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
-                                   .Interface("org.freedesktop.DBus")
+                                   .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
                                    .Destination("org.freedesktop.DBus")
                                    .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01}));
@@ -124,7 +125,7 @@ boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> c
 boost::asio::awaitable<void> AsyncMain(boost::asio::io_context& ioService)
 {
   std::shared_ptr<DBusConnection> conn{
-      co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, CreateConnectionDetached::NO)};
+      co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
 
   // co_await DBusEchoTest(conn);
   // co_await DBusReceiveMessagesTest(conn, ioService);

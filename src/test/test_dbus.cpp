@@ -19,7 +19,7 @@
 
 using namespace cxxbus;
 
-Logger const LOGGER{.logLevel = LogLevel::Trace};
+Logger const LOGGER{.logLevel = LogLevel::TRACE};
 
 struct DBusConnectionTestSuite : ::testing::Test
 {
@@ -615,7 +615,7 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
       }
       else
       {
-        LOGGER.LogError(std::format("DBusError: {} - {}", ex.GetErrorName(), ex.GetErrorReason()));
+        LOGGER.LogError("DBusError: {} - {}", ex.GetErrorName(), ex.GetErrorReason());
         throw;
       }
     }
@@ -633,8 +633,8 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     uint32_t const id = conn2->RegisterMessageFilter(
         [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
         {
-          LOGGER.LogInfo(std::format("Message filter called for message with member '{}'",
-                                     msg.GetHeader().GetMember().value_or("")));
+          LOGGER.LogInfo("Message filter called for message with member '{}'",
+                         msg.GetHeader().GetMember().value_or(""));
           ++nrOfCalls;
 
           if (msg.GetHeader().GetMember() == "Handle")

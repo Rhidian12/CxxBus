@@ -781,9 +781,8 @@ namespace cxxbus
     }
     else
     {
-      Logger logger{.logLevel = LogLevel::Fatal};
-      logger.LogFatal(
-          std::format("Trying to marshal type '{}' which is not a known DBus container type", ConstexprTypeName<T>()));
+      Logger logger{.logLevel = LogLevel::FATAL};
+      logger.LogFatal("Trying to marshal type '{}' which is not a known DBus container type", ConstexprTypeName<T>());
       throw InternalError{
           std::format("Trying to marshal type '{}' which is not a known DBus container type", ConstexprTypeName<T>())};
     }
@@ -802,9 +801,9 @@ namespace cxxbus
     }
     else
     {
-      Logger logger{.logLevel = LogLevel::Fatal};
-      logger.LogFatal(std::format("Trying to marshal type '{}' which is not a known DBus basic or container type",
-                                  ConstexprTypeName<T>()));
+      Logger logger{.logLevel = LogLevel::FATAL};
+      logger.LogFatal("Trying to marshal type '{}' which is not a known DBus basic or container type",
+                      ConstexprTypeName<T>());
       throw InternalError{std::format("Trying to marshal type '{}' which is not a known DBus basic or container type",
                                       ConstexprTypeName<T>())};
     }

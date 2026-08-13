@@ -30,9 +30,7 @@
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
-#include <boost/asio/signal_set.hpp>
 #include <boost/asio/strand.hpp>
-#include <boost/asio/use_awaitable.hpp>
 #include <boost/signals2.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
@@ -52,8 +50,6 @@
 
 namespace cxxbus
 {
-  class SyncDBusConnection;
-
   enum class MessageHandled
   {
     YES,
