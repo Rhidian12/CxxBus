@@ -425,7 +425,6 @@ namespace cxxbus
     LOGGER.LogTrace("Send loop started. Starting Read loop");
     boost::asio::co_spawn(*m_state->strand, ReadLoop(), boost::asio::detached);
 
-    // boost::asio::co_spawn(*m_state->strand, HandleUnhandledIncomingMessages(), boost::asio::detached);
     LOGGER.LogTrace("Read loop started. Starting connection handshake");
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
@@ -601,58 +600,6 @@ namespace cxxbus
       // If nothing handles our message then we return an error to the sender
       co_await SendMessageNoReply(DBusMessage::Error(message, "org.freedesktop.DBus.Error.UnknownMethod",
                                                      "The method called is not implemented by this connection"));
-    }
-  }
-
-  boost::asio::awaitable<void> DBusConnection::HandleUnhandledIncomingMessages()
-  {
-    std::weak_ptr<DBusConnection> weakThis{shared_from_this()};
-    if (weakThis.expired())
-    {
-      co_return;
-    }
-
-    auto state = m_state;
-
-    while (!weakThis.expired() || !state->shouldQuit)
-    {
-      try
-      {
-        if (state->unhandledIncomingMessages->empty())
-        {
-          state->timer.expires_after(1s);
-          co_await state->timer.async_wait(boost::asio::use_awaitable);
-          continue;
-        }
-
-        IncomingDBusMessage message{state->unhandledIncomingMessages->front()};
-        state->unhandledIncomingMessages->pop();
-
-        co_await HandleReadMessage(std::move(message));
-      }
-      catch (boost::system::system_error const& ex)
-      {
-        if (state->shouldQuit)
-        {
-          break;
-        }
-
-        if (ex.code().category().name() == std::string{"system"} && ex.code().value() == 125)
-        {
-          // Operation cancelled. Exit the loop
-          break;
-        }
-
-        // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
-        // lost unexpectedly. Report it and handle the connection loss.
-        LOGGER.LogError("Unhandled message loop lost connection to dbus-daemon: {}", ex.what());
-        boost::asio::co_spawn(*m_state->ioContext, HandleConnectionLost(), boost::asio::detached);
-        break;
-      }
-      catch (std::exception const& ex)
-      {
-        LOGGER.LogError("Error occured in unhandled message loop: {}", ex.what());
-      }
     }
   }
 
