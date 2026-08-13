@@ -79,6 +79,7 @@ jobs:
         -DCXXBUS_DEV=1
         -DCMAKE_CXX_FLAGS="-DGITHUB_ACTIONS=1"
         -S ${{ github.workspace }}
+        -G Ninja
 
     - name: Build (ASAN + USAN)
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
@@ -103,6 +104,7 @@ jobs:
         -DCXXBUS_DEV=1
         -DCMAKE_CXX_FLAGS="-DGITHUB_ACTIONS=1"
         -S ${{ github.workspace }}
+        -G Ninja
 
     - name: Build (TSAN)
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
@@ -125,6 +127,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DCXXBUS_DEV=1
         -S ${{ github.workspace }}
+        -G Ninja
 
     - name: Build (Benchmark)
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).

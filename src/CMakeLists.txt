@@ -8,7 +8,15 @@ set(_ALL_BENCHMARKS_SOURCES   "" CACHE INTERNAL "")
 set(_ALL_BENCHMARKS_LIBRARIES "" CACHE INTERNAL "")
 set(_ALL_BENCHMARKS_INCLUDES  "" CACHE INTERNAL "")
 
-add_library(cxxbus-lib  DBusConnection.cpp
+add_library(pch-target STATIC Empty.cpp)
+
+target_precompile_headers(pch-target  PRIVATE <format>
+                                      PRIVATE <boost/asio/awaitable.hpp>
+                                      PRIVATE <vector>)
+
+add_library(cxxbus-lib  DBus.cpp
+                        DBusConnection.cpp
+                        DBusConnectionIO.cpp
                         DBusHelpers.cpp
                         DBusMessage.cpp
                         IncomingDBusMessage.cpp
@@ -18,6 +26,8 @@ add_library(cxxbus-lib  DBusConnection.cpp
                         DBusNameCache.cpp)
 
 target_include_directories(cxxbus-lib PUBLIC ${thirdparty-include-dir})
+target_link_libraries(cxxbus-lib PRIVATE pch-target)
+target_precompile_headers(cxxbus-lib REUSE_FROM pch-target)
 
 set(cxxbus-include-dir ${CMAKE_SOURCE_DIR})
 

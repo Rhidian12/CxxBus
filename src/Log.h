@@ -22,28 +22,55 @@
 
 #pragma once
 
+#include <format>
 #include <string_view>
 
 namespace cxxbus
 {
   enum class LogLevel
   {
-    Trace,
-    Debug,
-    Info,
-    Error,
-    Off,  // By design: Fatal should ALWAYS be logged because something is TRULY fucked up
-    Fatal,
+    TRACE,
+    DEBUG,
+    INFO,
+    ERROR,
+    OFF,  // By design: Fatal should ALWAYS be logged because something is TRULY fucked up
+    FATAL,
   };
 
   struct Logger
   {
-    LogLevel logLevel = LogLevel::Info;
+    LogLevel logLevel = LogLevel::INFO;
 
-    void LogTrace(std::string_view message) const;
-    void LogDebug(std::string_view message) const;
-    void LogInfo(std::string_view message) const;
-    void LogError(std::string_view message) const;
-    void LogFatal(std::string_view message) const;
+    void LogImpl(LogLevel wantedLogLevel, std::string_view message) const;
+
+    template <typename... Args>
+    void LogTrace(std::string_view format, Args&&... args) const
+    {
+      LogImpl(LogLevel::TRACE, std::vformat(format, std::make_format_args(args...)));
+    }
+
+    template <typename... Args>
+    void LogDebug(std::string_view format, Args&&... args) const
+    {
+      LogImpl(LogLevel::DEBUG, std::vformat(format, std::make_format_args(args...)));
+    }
+
+    template <typename... Args>
+    void LogInfo(std::string_view format, Args&&... args) const
+    {
+      LogImpl(LogLevel::INFO, std::vformat(format, std::make_format_args(args...)));
+    }
+
+    template <typename... Args>
+    void LogError(std::string_view format, Args&&... args) const
+    {
+      LogImpl(LogLevel::ERROR, std::vformat(format, std::make_format_args(args...)));
+    }
+
+    template <typename... Args>
+    void LogFatal(std::string_view format, Args&&... args) const
+    {
+      LogImpl(LogLevel::FATAL, std::vformat(format, std::make_format_args(args...)));
+    }
   };
 }  // namespace cxxbus

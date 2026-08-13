@@ -26,6 +26,8 @@
 #include <iostream>
 #include <utility>
 
+#include "magic_enum.hpp"
+
 namespace cxxbus
 {
   namespace
@@ -41,17 +43,17 @@ namespace cxxbus
     {
       switch (level)
       {
-        case LogLevel::Off:
+        case LogLevel::OFF:
           throw std::runtime_error{"Cannot be logging OFF loglevel"};
-        case LogLevel::Trace:
+        case LogLevel::TRACE:
           return CYAN;
-        case LogLevel::Debug:
+        case LogLevel::DEBUG:
           return BLUE;
-        case LogLevel::Info:
+        case LogLevel::INFO:
           return GREEN;
-        case LogLevel::Error:
+        case LogLevel::ERROR:
           return RED;
-        case LogLevel::Fatal:
+        case LogLevel::FATAL:
           return RED_BOLD_UNDERLINED;
       }
 
@@ -59,33 +61,41 @@ namespace cxxbus
     }
   }  // namespace
 
-  void Logger::LogInfo(std::string_view message) const
+  void Logger::LogImpl(LogLevel wantedLogLevel, std::string_view message) const
   {
-    if (logLevel > LogLevel::Info) return;
-    std::cout << std::format("{}[INFO] {}{}", GetLogColour(LogLevel::Info), RESET, message) << std::endl;
+    if (wantedLogLevel != LogLevel::FATAL && logLevel > wantedLogLevel) return;
+    std::cout << std::format("{}[{}]{} {}", GetLogColour(wantedLogLevel), magic_enum::enum_name(wantedLogLevel), RESET,
+                             message)
+              << std::endl;
   }
 
-  void Logger::LogTrace(std::string_view message) const
-  {
-    if (logLevel > LogLevel::Trace) return;
-    std::cout << std::format("{}[TRACE] {}{}", GetLogColour(LogLevel::Trace), RESET, message) << std::endl;
-  }
-
-  void Logger::LogDebug(std::string_view message) const
-  {
-    if (logLevel > LogLevel::Debug) return;
-    std::cout << std::format("{}[DEBUG] {}{}", GetLogColour(LogLevel::Debug), RESET, message) << std::endl;
-  }
-
-  void Logger::LogError(std::string_view message) const
-  {
-    if (logLevel > LogLevel::Error) return;
-    std::cout << std::format("{}[ERROR] {}{}", GetLogColour(LogLevel::Error), RESET, message) << std::endl;
-  }
-
-  void Logger::LogFatal(std::string_view message) const
-  {
-    // Always log Fatal errors
-    std::cout << std::format("{}[FATAL] {}{}", GetLogColour(LogLevel::Fatal), RESET, message) << std::endl;
-  }
+  // void Logger::LogInfo(std::string_view message) const
+  // {
+  //   if (logLevel > LogLevel::Info) return;
+  //   std::cout << std::format("{}[INFO] {}{}", GetLogColour(LogLevel::Info), RESET, message) << std::endl;
+  // }
+  //
+  // void Logger::LogTrace(std::string_view message) const
+  // {
+  //   if (logLevel > LogLevel::Trace) return;
+  //   std::cout << std::format("{}[TRACE] {}{}", GetLogColour(LogLevel::Trace), RESET, message) << std::endl;
+  // }
+  //
+  // void Logger::LogDebug(std::string_view message) const
+  // {
+  //   if (logLevel > LogLevel::Debug) return;
+  //   std::cout << std::format("{}[DEBUG] {}{}", GetLogColour(LogLevel::Debug), RESET, message) << std::endl;
+  // }
+  //
+  // void Logger::LogError(std::string_view message) const
+  // {
+  //   if (logLevel > LogLevel::Error) return;
+  //   std::cout << std::format("{}[ERROR] {}{}", GetLogColour(LogLevel::Error), RESET, message) << std::endl;
+  // }
+  //
+  // void Logger::LogFatal(std::string_view message) const
+  // {
+  //   // Always log Fatal errors
+  //   std::cout << std::format("{}[FATAL] {}{}", GetLogColour(LogLevel::Fatal), RESET, message) << std::endl;
+  // }
 }  // namespace cxxbus

@@ -22,7 +22,7 @@
 
 using namespace cxxbus;
 
-Logger const LOGGER{.logLevel = LogLevel::Trace};
+Logger const LOGGER{.logLevel = LogLevel::TRACE};
 
 struct SyncDBusConnectionTestSuite : ::testing::Test
 {

@@ -30,9 +30,7 @@
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
-#include <boost/asio/signal_set.hpp>
 #include <boost/asio/strand.hpp>
-#include <boost/asio/use_awaitable.hpp>
 #include <boost/signals2.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
@@ -52,8 +50,6 @@
 
 namespace cxxbus
 {
-  class SyncDBusConnection;
-
   enum class MessageHandled
   {
     YES,
@@ -132,7 +128,6 @@ namespace cxxbus
     boost::asio::awaitable<void> Connect(BusType busType, boost::asio::io_context& ioContext);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
-    boost::asio::awaitable<void> HandleUnhandledIncomingMessages();
     boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
 
     boost::asio::awaitable<void> CloseData();

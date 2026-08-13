@@ -36,7 +36,7 @@ namespace cxxbus
   namespace
   {
 #ifndef CXX_BUS_LOGLEVEL
-#define CXX_BUS_LOGLEVEL Error
+#define CXX_BUS_LOGLEVEL ERROR
 #endif  // CXX_BUS_LOGLEVEL
 
     Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
@@ -69,8 +69,8 @@ namespace cxxbus
     MultipleCompleteTypes<std::string, std::string, std::string> const parameters{
         message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>()};
 
-    LOGGER.LogTrace(std::format("NameOwnerChanged signal triggered: '{}', '{}', '{}'", parameters.GetType<0>(),
-                                parameters.GetType<1>(), parameters.GetType<2>()));
+    LOGGER.LogTrace("NameOwnerChanged signal triggered: '{}', '{}', '{}'", parameters.GetType<0>(),
+                    parameters.GetType<1>(), parameters.GetType<2>());
 
     std::string const wellKnownName{parameters.GetType<0>()};
     std::string const oldUniqueName{parameters.GetType<1>()};
