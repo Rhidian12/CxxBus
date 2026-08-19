@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
-#include <iostream>
 
 #include "src/DBus.h"
 
@@ -744,7 +743,63 @@ TEST_F(MarshalTestSuite, MarshalVeryNestedStructs)
                 0x44, 0x33, 0x22, 0x11,                       // uint32_t value
             }));
 }
+
+TEST_F(MarshalTestSuite, MarshalVeryNestedArrayStructs)
+{
+  std::vector<std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>> vec{
+
+    std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>{
+
+          std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>{
+
+         std::tuple<std::vector<std::tuple<int, int, int>>>{
+
+               std::vector<std::tuple<int, int, int>>{
+                std::tuple<int, int, int>{1,2,3},
+                std::tuple<int, int, int>{42,43,44}
+          } // std::vector<std::tuple<int, int, int>>
+
+        } // std::tuple<std::vector<std::tuple<int, int, int>>>
+
+      } // std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>
+
+    } // std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>
+
+  }; // vec
+
+  std::vector<byte> bytes = {
+    // First Vector
+    0x2C, 0x00, 0x00, 0x00, // Length of vector (44 bytes)
+
+    // First Struct
+    0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary (tuple)
+
+    // Second Vector
+    0x24, 0x00, 0x00, 0x00, // Length of vector (36 bytes)
+
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Second Struct and Third (And final) Vector
+   0x1C, 0x00, 0x00, 0x00, // Length of vector (28 bytes)
+    
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Finally, some actual data, our tuple of integers
+   0x01, 0x00, 0x00, 0x00, // First integer (1)
+   0x02, 0x00, 0x00, 0x00, // Second integer (2)
+   0x03, 0x00, 0x00, 0x00, // Third integer (3) 
  
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Our 2nd tuple of integers.
+   0x2A, 0x00, 0x00, 0x00, // First integer (42)
+   0x2B, 0x00, 0x00, 0x00, // First integer (43)
+   0x2C, 0x00, 0x00, 0x00, // First integer (44)
+  };
+
+  EXPECT_EQ(MarshalDBusType(vec), bytes);
+}
+
 TEST_F(MarshalTestSuite, MarshalStructContainingMapContainingStructContainingMap)
 {
   // tuple<byte, map<uint32_t, tuple<byte, map<uint32_t, uint32_t>>>>
@@ -785,61 +840,6 @@ TEST_F(MarshalTestSuite, MarshalStructContainingMapContainingStructContainingMap
                 0x14, 0x00, 0x00, 0x00,  // MapB entry value = 20
             }));
 }
-
-struct PerfScope
-{
-  std::string                           identifier {};
-  std::chrono::steady_clock::time_point start;
- 
-  PerfScope(std::string identifier)
-    : identifier {std::move(identifier)}
-    , start {std::chrono::steady_clock::now()}
-  {
-  }
- 
-  ~PerfScope()
-  {
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-    std::cout << identifier << " Performance : " << duration << " ms" << std::endl;
-  }
-};
-
-  using PowerTemperatureRuntimeMatrix = std::tuple<uint32_t, uint32_t, uint32_t>;
-  using DetailedBankInfo = std::tuple<std::string, std::vector<PowerTemperatureRuntimeMatrix>>;
-  using DetailedPlateInfo = std::tuple<std::string, std::map<uint32_t, DetailedBankInfo>>;
-
-
-void Performance(std::map<uint32_t, DetailedPlateInfo> const & map)
-{
-  PerfScope scope{"MarshalDBusType"};
-  MarshalDBusType(map);
-}
-
-TEST_F(MarshalTestSuite, PerfTest)
-{
-
-std::map<uint32_t, DetailedPlateInfo> map{};
-  for (uint32_t i{}; i < 18; ++i)
-  {
-    map[i] = std::make_tuple("plate" + std::to_string(i), std::map<uint32_t, DetailedBankInfo>{});
-    for (uint32_t l{}; l < 3; ++l)
-    {
-      DetailedBankInfo bank{std::make_tuple("bank" + std::to_string(i), std::vector<PowerTemperatureRuntimeMatrix>{})};
-      for (uint32_t j{}; j < 24; ++j)
-      {
-        for (uint32_t k{}; k < 32; ++k)
-        {
-          std::get<1>(bank).push_back(std::make_tuple(j, k, 0));
-        }
-      }
- 
-      std::get<1>(map[i]).insert({l, bank});
-    }
-  }
-
-  Performance(map);
-}
-
 
 TEST_F(MarshalTestSuite, MarshalsIndependentValuesEachStartFromOffsetZero)
 {
