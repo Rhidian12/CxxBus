@@ -95,5 +95,3 @@ static void BM_ArrayDeserialisation(benchmark::State& state)
 BENCHMARK(BM_NestedMapDeserialisation);
 BENCHMARK(BM_NestedStructDeserialisation);
 BENCHMARK(BM_ArrayDeserialisation);
-
-BENCHMARK_MAIN();
