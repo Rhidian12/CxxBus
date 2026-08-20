@@ -4,3 +4,8 @@ define_test_or_benchmark(NAME benchmark_serialisation
                   SOURCES benchmark_serialisation.cpp
                   LIBRARIES cxxbus-lib
                   INCLUDE_DIRS ${cxxbus-include-dir})
+
+define_test_or_benchmark(NAME benchmark_deserialisation
+                  SOURCES benchmark_deserialisation.cpp
+                  LIBRARIES cxxbus-lib
+                  INCLUDE_DIRS ${cxxbus-include-dir})

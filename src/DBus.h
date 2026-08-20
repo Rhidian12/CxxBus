@@ -24,7 +24,6 @@
 
 #include <sys/types.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -852,25 +851,14 @@ namespace cxxbus
     if constexpr (std::is_same_v<T, bool>)
     {
       uint32_t boolValue{};
-      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(uint32_t)),
-                reinterpret_cast<byte*>(&boolValue));
-      // uint32_t const boolValue{static_cast<uint32_t>((dbusType[0] << 24) | (dbusType[1] << 16) | (dbusType[2] << 8) |
-      // (dbusType[3]))};
+      std::memcpy(&boolValue, dbusType.data() + arrPointer, sizeof(uint32_t));
       value = boolValue == 1;
 
       arrPointer += sizeof(uint32_t);
     }
     else
     {
-      std::copy(dbusType.begin() + arrPointer, dbusType.begin() + (arrPointer + sizeof(T)),
-                reinterpret_cast<byte*>(&value));
-      // static_assert(CHAR_BIT == 8, "We only support 8 bits per byte");
-      // [&value, &dbusType]<size_t... Is>(std::index_sequence<Is...>)
-      // {
-      //   // * 8 because 8 bits per byte
-      //   // - Is - 1 so we count down from <nr of bytes> to 0
-      //   value = static_cast<T>(((static_cast<T>(dbusType[Is]) << ((sizeof(T) - Is - 1) * 8)) | ...));
-      // }(std::make_index_sequence<sizeof(T)>{});
+      std::memcpy(&value, dbusType.data() + arrPointer, sizeof(T));
 
       arrPointer += sizeof(T);
     }
@@ -1002,6 +990,7 @@ namespace cxxbus
                         ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
       }
 
+      uint32_t oldPointer{arrPointer};
       if constexpr (detail::IsArray<T>::value)
       {
         // First check if the user was correct about the fixed array's length
@@ -1019,11 +1008,12 @@ namespace cxxbus
       {
         vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
       }
-      GetSizeOfDBusType(vec.back(), bytesRead);
+      // GetSizeOfDBusType(vec.back(), bytesRead);
+      bytesRead += (arrPointer - oldPointer);
 
       if (bytesRead < arrLength)
       {
-        size_t const oldPointer{arrPointer};
+        oldPointer = arrPointer;
         SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
         bytesRead += arrPointer - oldPointer;  // Remove any potential padding
       }
@@ -1083,9 +1073,21 @@ namespace cxxbus
 
     uint32_t const mapLength{UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer)};
 
+    uint8_t const mapAlignment{GetAlignmentOfDBusType<T>()};
+    uint8_t valueAlignment{};
+    if constexpr (IsDBusMap<MappedT>)
+    {
+      // uint32_t because maps are arrays so alignment is of the array.
+      valueAlignment = GetAlignmentOfDBusType<uint32_t>();
+    }
+    else
+    {
+      valueAlignment = GetAlignmentOfDBusType<MappedT>();
+    }
+
     uint32_t oldArrPointer{arrPointer};
     // Remove the padding between the leading uint32_t and our DICT_ENTRY
-    SkipPadding(arrPointer, GetAlignmentOfDBusType<T>());
+    SkipPadding(arrPointer, mapAlignment);
 
     T map{};
 
@@ -1102,21 +1104,13 @@ namespace cxxbus
       while (bytesRead < mapLength)
       {
         oldArrPointer = arrPointer;
-        KeyT const key{UnmarshalDBusTypeImpl<KeyT>(dbusType, arrPointer)};
+        KeyT key{UnmarshalDBusTypeImpl<KeyT>(dbusType, arrPointer)};
 
-        if constexpr (IsDBusMap<MappedT>)
-        {
-          // uint32_t because maps are arrays so alignment is of the array.
-          SkipPadding(arrPointer, GetAlignmentOfDBusType<uint32_t>());
-        }
-        else
-        {
-          SkipPadding(arrPointer, GetAlignmentOfDBusType<MappedT>());
-        }
+        SkipPadding(arrPointer, valueAlignment);
 
-        MappedT const value{UnmarshalDBusTypeImpl<MappedT>(dbusType, arrPointer)};
+        MappedT value{UnmarshalDBusTypeImpl<MappedT>(dbusType, arrPointer)};
 
-        map.emplace(key, value);
+        map.emplace(std::move(key), std::move(value));
 
         // Update how much we read
         bytesRead += arrPointer - oldArrPointer;
@@ -1126,7 +1120,7 @@ namespace cxxbus
           oldArrPointer = arrPointer;
 
           // DICT_ENTRY is a struct, so just take our T's alignment (which is guaranteed to be 8)
-          AddPaddingToSize(arrPointer, GetAlignmentOfDBusType<T>());
+          AddPaddingToSize(arrPointer, mapAlignment);
 
           // Update how much we read
           bytesRead += arrPointer - oldArrPointer;

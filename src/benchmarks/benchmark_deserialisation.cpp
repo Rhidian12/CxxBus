@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <type_traits>
 
 #include "src/DBus.h"
 
@@ -25,7 +26,7 @@ struct OuterOuterStruct
   std::vector<OuterStruct> outers;
 };
 
-static void BM_NestedMapSerialisation(benchmark::State& state)
+static void BM_NestedMapDeserialisation(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
   for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
@@ -41,13 +42,15 @@ static void BM_NestedMapSerialisation(benchmark::State& state)
       }
     }
   }
+  auto data = MarshalDBusType(map);
+
   for (auto _ : state)
   {
-    MarshalDBusType(map);
+    UnmarshalDBusType<std::remove_cvref_t<decltype(map)>>(data, "a{ua{ua{ua{uu}}}}");
   }
 }
 
-static void BM_NestedStructSerialisation(benchmark::State& state)
+static void BM_NestedStructDeserialisation(benchmark::State& state)
 {
   std::vector<std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>> vec{};
   for (uint32_t i{}; i < 50; ++i)
@@ -65,13 +68,15 @@ static void BM_NestedStructSerialisation(benchmark::State& state)
     vec.push_back(outerOuter);
   }
 
+  auto data = MarshalDBusType(vec);
+
   for (auto _ : state)
   {
-    MarshalDBusType(vec);
+    UnmarshalDBusType<std::remove_cvref_t<decltype(vec)>>(data, "a(a(a(iii)))");
   }
 }
 
-static void BM_ArraySerialisation(benchmark::State& state)
+static void BM_ArrayDeserialisation(benchmark::State& state)
 {
   std::vector<uint64_t> vec;
   for (uint32_t i{}; i < 100'000; ++i)
@@ -79,12 +84,14 @@ static void BM_ArraySerialisation(benchmark::State& state)
     vec.push_back(i);
   }
 
+  auto data = MarshalDBusType(vec);
+
   for (auto _ : state)
   {
-    MarshalDBusType(vec);
+    UnmarshalDBusType<std::remove_cvref_t<decltype(vec)>>(data, "at");
   }
 }
 
-BENCHMARK(BM_NestedMapSerialisation);
-BENCHMARK(BM_NestedStructSerialisation);
-BENCHMARK(BM_ArraySerialisation);
+BENCHMARK(BM_NestedMapDeserialisation);
+BENCHMARK(BM_NestedStructDeserialisation);
+BENCHMARK(BM_ArrayDeserialisation);

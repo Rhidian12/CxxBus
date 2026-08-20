@@ -57,7 +57,8 @@ TEST_F(UnmarshalTestSuite, UnmarshalInt64Negative)
 
 TEST_F(UnmarshalTestSuite, UnmarshalUint64MaxValue)
 {
-  EXPECT_EQ(UnmarshalDBusType<uint64_t>({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, "t"), std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(UnmarshalDBusType<uint64_t>({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, "t"),
+            std::numeric_limits<uint64_t>::max());
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalDouble)
@@ -186,19 +187,23 @@ TEST_F(UnmarshalTestSuite, UnmarshalFixedArrayWithWrongAmountOfElements)
   {
     UnmarshalDBusType<std::array<uint32_t, 1>>(bytes, "au");
   }
-  catch (DBusDeserializationError const & ex)
+  catch (DBusDeserializationError const& ex)
   {
-    EXPECT_EQ(std::string{ex.what()}, "Trying to deserialize array with fixed length '1' but received array has '8' bytes too many. Is your array the correct length?");
+    EXPECT_EQ(std::string{ex.what()},
+              "Trying to deserialize array with fixed length '1' but received array has '8' bytes too many. Is your "
+              "array the correct length?");
   }
-  
+
   EXPECT_THROW((UnmarshalDBusType<std::array<uint32_t, 6>>(bytes, "au")), DBusDeserializationError);
   try
   {
     UnmarshalDBusType<std::array<uint32_t, 6>>(bytes, "au");
   }
-  catch (DBusDeserializationError const & ex)
+  catch (DBusDeserializationError const& ex)
   {
-    EXPECT_EQ(std::string{ex.what()}, "Fully deserialized received array with '3' elements, but the provided fixed array expects '6' elements. Is your array the correct length?");
+    EXPECT_EQ(std::string{ex.what()},
+              "Fully deserialized received array with '3' elements, but the provided fixed array expects '6' elements. "
+              "Is your array the correct length?");
   }
 }
 
@@ -217,6 +222,62 @@ TEST_F(UnmarshalTestSuite, UnmarshalArrayOfStringsWithInterElementPadding)
   EXPECT_EQ(UnmarshalDBusType<std::vector<std::string>>(bytes, "as"), (std::vector<std::string>{"a", "bc"}));
 }
 
+TEST_F(UnmarshalTestSuite, MarshalVeryNestedArrayStructs)
+{
+  std::vector<std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>> vec{
+
+      std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>{
+
+          std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>{
+
+              std::tuple<std::vector<std::tuple<int, int, int>>>{
+
+                  std::vector<std::tuple<int, int, int>>{
+                      std::tuple<int, int, int>{1, 2, 3},
+                      std::tuple<int, int, int>{42, 43, 44}}  // std::vector<std::tuple<int, int, int>>
+
+              }  // std::tuple<std::vector<std::tuple<int, int, int>>>
+
+          }  // std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>
+
+      }  // std::tuple<std::vector<std::tuple<std::vector<std::tuple<int, int, int>>>>>
+
+  };  // vec
+
+  // clang-format off
+  std::vector<byte> bytes = {
+    // First Vector
+    0x2C, 0x00, 0x00, 0x00, // Length of vector (44 bytes)
+
+    // First Struct
+    0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary (tuple)
+
+    // Second Vector
+    0x24, 0x00, 0x00, 0x00, // Length of vector (36 bytes)
+
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Second Struct and Third (And final) Vector
+   0x1C, 0x00, 0x00, 0x00, // Length of vector (28 bytes)
+    
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Finally, some actual data, our tuple of integers
+   0x01, 0x00, 0x00, 0x00, // First integer (1)
+   0x02, 0x00, 0x00, 0x00, // Second integer (2)
+   0x03, 0x00, 0x00, 0x00, // Third integer (3) 
+ 
+   0x00, 0x00, 0x00, 0x00, // Padding to 8 byte boundary 
+
+    // Our 2nd tuple of integers.
+   0x2A, 0x00, 0x00, 0x00, // First integer (42)
+   0x2B, 0x00, 0x00, 0x00, // First integer (43)
+   0x2C, 0x00, 0x00, 0x00, // First integer (44)
+  };
+  // clang-format on
+
+  EXPECT_EQ(UnmarshalDBusType<std::remove_cvref_t<decltype(vec)>>(bytes, "a(a(a(iii)))"), vec);
+}
 // ---------------------------------------------------------------------
 // STRUCT
 // ---------------------------------------------------------------------
@@ -270,7 +331,8 @@ TEST_F(UnmarshalTestSuite, UnmarshalMapOfUint32ToUint32)
       0x02, 0x00, 0x00, 0x00,  // entry 2 key   = 2
       0x14, 0x00, 0x00, 0x00,  // entry 2 value = 20
   };
-  EXPECT_EQ((UnmarshalDBusType<std::map<uint32_t, uint32_t>>(bytes, "a{uu}")), (std::map<uint32_t, uint32_t>{{1, 10}, {2, 20}}));
+  EXPECT_EQ((UnmarshalDBusType<std::map<uint32_t, uint32_t>>(bytes, "a{uu}")),
+            (std::map<uint32_t, uint32_t>{{1, 10}, {2, 20}}));
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalMapEntriesSkipsInterEntryPadding)
@@ -287,7 +349,8 @@ TEST_F(UnmarshalTestSuite, UnmarshalMapEntriesSkipsInterEntryPadding)
       0x02, 0x00, 0x00, 0x00,  // entry 2 key   = 2
       0xAD, 0xDE,              // entry 2 value = 0xDEAD
   };
-  EXPECT_EQ((UnmarshalDBusType<std::map<uint32_t, uint16_t>>(bytes, "a{uq}")), (std::map<uint32_t, uint16_t>{{1, 0xBEEF}, {2, 0xDEAD}}));
+  EXPECT_EQ((UnmarshalDBusType<std::map<uint32_t, uint16_t>>(bytes, "a{uq}")),
+            (std::map<uint32_t, uint16_t>{{1, 0xBEEF}, {2, 0xDEAD}}));
 }
 
 // ---------------------------------------------------------------------
