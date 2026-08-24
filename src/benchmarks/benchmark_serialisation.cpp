@@ -99,7 +99,25 @@ static void BM_StringSerialisation(benchmark::State& state)
   }
 }
 
+static void BM_IntegerSerialisation(benchmark::State& state)
+{
+  for (auto _ : state)
+  {
+    MarshalDBusType(static_cast<uint64_t>(4851335));
+  }
+}
+
+static void BM_DoubleSerialisation(benchmark::State& state)
+{
+  for (auto _ : state)
+  {
+    MarshalDBusType(static_cast<double>(3.1415161718));
+  }
+}
+
 BENCHMARK(BM_NestedMapSerialisation);
 BENCHMARK(BM_NestedStructSerialisation);
 BENCHMARK(BM_ArraySerialisation);
 BENCHMARK(BM_StringSerialisation);
+BENCHMARK(BM_IntegerSerialisation);
+BENCHMARK(BM_DoubleSerialisation);
