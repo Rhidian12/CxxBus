@@ -587,12 +587,9 @@ namespace cxxbus
       MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
     }
 
-    for (unsigned char c : str)
-    {
-      dbusType.push_back(c);
-    }
-
-    dbusType.push_back('\0');
+    size_t const oldSize{dbusType.size()};
+    dbusType.resize(dbusType.size() + str.size() + 1, 0);
+    std::memcpy(dbusType.data() + oldSize, str.data(), str.size());
   }
 
   template <IsDBusMultipleCompleteTypes T, size_t I, size_t MaxI>
@@ -890,15 +887,11 @@ namespace cxxbus
     }
 
     std::string str{};
-    str.reserve(strLength);
-
-    for (uint32_t i{}; i < strLength; ++i)
-    {
-      str.push_back(static_cast<unsigned char>(dbusType[arrPointer++]));
-    }
+    str.resize(strLength, '\0');
+    std::memcpy(str.data(), dbusType.data() + arrPointer, strLength);
 
     // + 1 to also skip the null terminator
-    ++arrPointer;
+    arrPointer += strLength + 1;
 
     if constexpr (IsString<T>)
     {

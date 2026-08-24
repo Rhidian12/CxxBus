@@ -85,6 +85,21 @@ static void BM_ArraySerialisation(benchmark::State& state)
   }
 }
 
+static void BM_StringSerialisation(benchmark::State& state)
+{
+  std::string str{};
+  for (int i{}; i < 10'000; ++i)
+  {
+    str.push_back(i % 255);
+  }
+
+  for (auto _ : state)
+  {
+    MarshalDBusType(str);
+  }
+}
+
 BENCHMARK(BM_NestedMapSerialisation);
 BENCHMARK(BM_NestedStructSerialisation);
 BENCHMARK(BM_ArraySerialisation);
+BENCHMARK(BM_StringSerialisation);

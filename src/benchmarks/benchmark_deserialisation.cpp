@@ -92,6 +92,23 @@ static void BM_ArrayDeserialisation(benchmark::State& state)
   }
 }
 
+static void BM_StringDeserialisation(benchmark::State& state)
+{
+  std::string str{};
+  for (int i{}; i < 10'000; ++i)
+  {
+    str.push_back(i % 255);
+  }
+
+  auto data = MarshalDBusType(str);
+
+  for (auto _ : state)
+  {
+    UnmarshalDBusType<std::string>(data, "s");
+  }
+}
+
 BENCHMARK(BM_NestedMapDeserialisation);
 BENCHMARK(BM_NestedStructDeserialisation);
 BENCHMARK(BM_ArrayDeserialisation);
+BENCHMARK(BM_StringDeserialisation);
