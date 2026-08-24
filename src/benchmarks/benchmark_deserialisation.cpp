@@ -92,6 +92,42 @@ static void BM_ArrayDeserialisation(benchmark::State& state)
   }
 }
 
+static void BM_StringDeserialisation(benchmark::State& state)
+{
+  std::string str{};
+  for (int i{}; i < 10'000; ++i)
+  {
+    str.push_back(i % 255);
+  }
+
+  auto data = MarshalDBusType(str);
+
+  for (auto _ : state)
+  {
+    UnmarshalDBusType<std::string>(data, "s");
+  }
+}
+
+static void BM_IntegerDeserialisation(benchmark::State& state)
+{
+  auto data = MarshalDBusType(static_cast<uint64_t>(1468413));
+  for (auto _ : state)
+  {
+    UnmarshalDBusType<uint64_t>(data, "t");
+  }
+}
+
+static void BM_DoubleDeserialisation(benchmark::State& state)
+{
+  auto data = MarshalDBusType(static_cast<double>(3.14152562));
+  for (auto _ : state)
+  {
+    UnmarshalDBusType<double>(data, "d");
+  }
+}
 BENCHMARK(BM_NestedMapDeserialisation);
 BENCHMARK(BM_NestedStructDeserialisation);
 BENCHMARK(BM_ArrayDeserialisation);
+BENCHMARK(BM_StringDeserialisation);
+BENCHMARK(BM_IntegerDeserialisation);
+BENCHMARK(BM_DoubleDeserialisation);
