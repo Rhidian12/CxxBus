@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-static void BM_EmptyMessage(benchmark::State& state)
+static void BM_SDBusEmptyMessage(benchmark::State& state)
 {
   auto proxy = sdbus::createProxy(sdbus::ServiceName{"org.cxxbus.test"}, sdbus::ObjectPath{"/org/cxxbus/test"});
 
@@ -39,7 +39,41 @@ static void BM_EmptyMessage(benchmark::State& state)
   conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-static void BM_NestedMapMessage(benchmark::State& state)
+static void BM_SDBusStringMessage(benchmark::State& state)
+{
+  auto proxy = sdbus::createProxy(sdbus::ServiceName{"org.cxxbus.test"}, sdbus::ObjectPath{"/org/cxxbus/test"});
+
+  auto conn = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.cxxbus.test"});
+  auto obj = sdbus::createObject(*conn, sdbus::ObjectPath{"/org/cxxbus/test"});
+
+  obj->addVTable(sdbus::MethodVTableItem{sdbus::MethodName{"Benchmark"},
+                                         sdbus::Signature{"s"},
+                                         {},
+                                         {},
+                                         {},
+                                         [](sdbus::MethodCall call) { call.createReply().send(); },
+                                         {}})
+      .forInterface("org.cxxbus.test");
+
+  conn->enterEventLoopAsync();
+
+  std::string str{};
+  for (int i{}; i < 10'000; ++i)
+  {
+    str.push_back(std::max(i % 127, 1));
+  }
+
+  for (auto _ : state)
+  {
+    auto method = proxy->createMethodCall(sdbus::InterfaceName{"org.cxxbus.test"}, sdbus::MethodName{"Benchmark"});
+    method << str;
+    proxy->callMethod(method);
+  }
+
+  conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+}
+
+static void BM_SDBusNestedMapMessage(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
   for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
@@ -82,7 +116,6 @@ static void BM_NestedMapMessage(benchmark::State& state)
   conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-BENCHMARK(BM_EmptyMessage);
-BENCHMARK(BM_NestedMapMessage);
-
-BENCHMARK_MAIN();
+BENCHMARK(BM_SDBusEmptyMessage);
+BENCHMARK(BM_SDBusStringMessage);
+BENCHMARK(BM_SDBusNestedMapMessage);

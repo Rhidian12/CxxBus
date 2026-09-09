@@ -156,6 +156,28 @@ TEST_F(MarshalTestSuite, MarshalString)
   EXPECT_EQ(MarshalDBusType("Hi!"), (std::vector<byte>{0x03, 0x00, 0x00, 0x00, 'H', 'i', '!', 0x00}));
 }
  
+TEST_F(MarshalTestSuite, MarshalBigString)
+{
+  std::string str{};
+  for (int i{}; i < 10'000; ++i)
+  {
+    str.push_back(std::max(i % 127, 1));
+  }
+
+  std::vector<byte> expectedData{
+    0x10, 0x27, 0x00, 0x00 // Length = 10'000 = 0x2710
+  };
+  expectedData.append_range(str);
+  expectedData.push_back('\0');
+
+  EXPECT_EQ(MarshalDBusType(str), expectedData);
+}
+
+TEST_F(MarshalTestSuite, MarshalStringContainingNullCharacter)
+{
+  EXPECT_THROW(MarshalDBusType(std::string{"Hello\0World", 11}), DBusSerializationError);
+}
+
 TEST_F(MarshalTestSuite, StringLengthExcludesNulTerminator)
 {
   auto data = MarshalDBusType(std::string("abcd"));
@@ -852,5 +874,4 @@ TEST_F(MarshalTestSuite, MarshalsIndependentValuesEachStartFromOffsetZero)
   EXPECT_EQ(first, (std::vector<byte>{0xAA}));
   EXPECT_EQ(second, (std::vector<byte>{0x01, 0x00, 0x00, 0x00}));
 }
-
 // clang-format on

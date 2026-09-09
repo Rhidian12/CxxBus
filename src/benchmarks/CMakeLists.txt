@@ -18,6 +18,6 @@ define_test_or_benchmark(NAME benchmark_cxxbus
 find_package(sdbus-c++ REQUIRED)
 define_test_or_benchmark(NAME benchmark_sdbus
                   SOURCES benchmark_sdbus.cpp
-                  LIBRARIES cxxbus-lib
+                  LIBRARIES cxxbus-lib SDBusCpp::sdbus-c++
                   INCLUDE_DIRS ${cxxbus-include-dir})
-target_link_libraries(benchmark_sdbus PRIVATE SDBusCpp::sdbus-c++)
+#target_link_libraries(benchmark_sdbus PRIVATE SDBusCpp::sdbus-c++)

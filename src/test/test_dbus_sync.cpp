@@ -360,6 +360,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 </node>
 )");
 #endif
+
+    // conn->CloseSync();
     co_return;
   };
 }
@@ -420,13 +422,13 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
                              chann2->async_send(boost::system::error_code{}, boost::asio::detached);
                            });
 
-    conn->SendMessageSync(DBusMessage::Method("RequestName")
-                              .Path(ObjectPath{"/org/freedesktop/DBus"})
-                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                              .Destination("org.freedesktop.DBus")
-                              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
-                                  DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-    LOGGER.LogInfo("Finished request name call");
+    auto reply = conn->SendMessageSync(DBusMessage::Method("RequestName")
+                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                           .Destination("org.freedesktop.DBus")
+                                           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                                               DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
+    LOGGER.LogInfo("Finished request name call: {}", reply.Get<uint32_t>());
 
     co_await chann->async_receive(boost::asio::use_awaitable);
     co_await chann2->async_receive(boost::asio::use_awaitable);

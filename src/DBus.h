@@ -553,6 +553,12 @@ namespace cxxbus
                   .requiredMessageType = {DBusMessageType::OPTIONAL, DBusMessageType::OPTIONAL}},
   };
 
+  class DBusSerializationError : public std::runtime_error
+  {
+   public:
+    using std::runtime_error::runtime_error;
+  };
+
   template <IsDBusBasicFixedType T>
   void MarshalBasicFixedType(T const& value, std::vector<byte>& dbusType)
   {
@@ -585,6 +591,11 @@ namespace cxxbus
     {
       // Encode the length as a uint8_t
       MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
+    }
+
+    if (str.contains('\0'))
+    {
+      throw DBusSerializationError{"Strings sent over DBus cannot contain null terminator characters"};
     }
 
     size_t const oldSize{dbusType.size()};

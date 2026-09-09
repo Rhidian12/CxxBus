@@ -46,7 +46,26 @@ struct DBusConnectionTestSuite : ::testing::Test
           {
             LOGGER.LogTrace("Closing DBus connection");
             co_await conn->Close();
+            LOGGER.LogTrace("Connection has {} references", conn.use_count());
+            conn.reset();
           }
+
+          auto tempConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxBusVerifier"},
+                                                          BusType::SESSION);
+
+          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
+                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                           .Destination("org.freedesktop.DBus")
+                                                           .Parameter(std::string{"com.dbus.CxxTest"})))
+                           .Get<bool>());
+
+          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
+                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                           .Destination("org.freedesktop.DBus")
+                                                           .Parameter(std::string{"com.dbus.CxxTest2"})))
+                           .Get<bool>());
         },
         [](std::exception_ptr e)
         {
@@ -588,7 +607,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
   };
 }
 
-// This test is expected to fail if the system bus is not available or if the user does not have permission to access it
+// This test is expected to fail if the system bus is not available or if the user does not have permission to access
 TEST_F(DBusConnectionTestSuite, TestSystemBus)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
@@ -717,8 +736,34 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
         BusType::SESSION);
 
     co_await chann->async_receive(boost::asio::use_awaitable);
+    LOGGER.LogDebug("Detached connection is connected");
 
     conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
     co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestSendingBigString)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+
+    conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage msg)
+                                     { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
+
+    std::string str{};
+    for (int i{}; i < 10'000; ++i)
+    {
+      str.push_back(std::max(i % 127, 1));
+    }
+
+    co_await conn->SendMessage(DBusMessage::Method("Boo")
+                                   .Destination("com.dbus.CxxTest2")
+                                   .Path(ObjectPath{"/com/test/cxxbus"})
+                                   .Parameter(str));
+
+    co_await conn2->Close();
   };
 }

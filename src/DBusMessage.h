@@ -41,12 +41,6 @@ namespace cxxbus
     using std::runtime_error::runtime_error;
   };
 
-  class DBusSerializationError : public std::runtime_error
-  {
-   public:
-    using std::runtime_error::runtime_error;
-  };
-
   class DBusMessage
   {
    private:
