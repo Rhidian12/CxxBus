@@ -513,17 +513,23 @@ TEST_F(SyncDBusConnectionTestSuite, TestCallingFunction)
   {
     auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto conn2 = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
-    bool messageReceived = false;
+    std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
 
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
-                                     [conn2, &messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
-                                     {
-                                       messageReceived = true;
-                                       co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
-                                     });
+    auto work = [messageReceived, this, conn2]()
+    {
+      conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
+                                       [conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+                                       {
+                                         *messageReceived = true;
+                                         co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+                                       });
+    };
 
     conn->SendMessageSync(
         DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
+
+    std::thread t{work};
+    t.join();
 
     EXPECT_TRUE(messageReceived);
 
