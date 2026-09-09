@@ -15,11 +15,6 @@ define_test_or_benchmark(NAME benchmark_cxxbus
                   LIBRARIES cxxbus-lib
                   INCLUDE_DIRS ${cxxbus-include-dir})
 
-define_test_or_benchmark(NAME benchmark_cxxbus_sync
-                  SOURCES benchmark_cxxbus_sync.cpp
-                  LIBRARIES cxxbus-lib
-                  INCLUDE_DIRS ${cxxbus-include-dir})
-
 find_package(sdbus-c++ REQUIRED)
 define_test_or_benchmark(NAME benchmark_sdbus
                   SOURCES benchmark_sdbus.cpp

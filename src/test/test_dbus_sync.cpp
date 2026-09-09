@@ -507,15 +507,20 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
   };
 }
 
-TEST_F(SyncDBusConnectionTestSuite, TestCallingFunction)
+TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSameProcess)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto conn2 = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+
+    std::shared_ptr<boost::asio::io_context> ioService2{std::make_shared<boost::asio::io_context>()};
+    auto workGuard =
+        std::make_unique<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>>(
+            boost::asio::make_work_guard(*ioService2));
+    auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
     std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
 
-    auto work = [messageReceived, this, conn2]()
+    auto work = [messageReceived, ioService2, conn2]()
     {
       conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
                                        [conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
@@ -523,12 +528,15 @@ TEST_F(SyncDBusConnectionTestSuite, TestCallingFunction)
                                          *messageReceived = true;
                                          co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
                                        });
+
+      ioService2->run();
     };
 
+    std::thread t{work};
     conn->SendMessageSync(
         DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
 
-    std::thread t{work};
+    workGuard.reset();
     t.join();
 
     EXPECT_TRUE(messageReceived);

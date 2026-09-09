@@ -533,18 +533,23 @@ namespace cxxbus
       uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
       LOGGER.LogTrace("Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo());
 
-      if (!state->replyChannels.contains(replySerial))
+      boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
       {
-        // It should not be possible to get a reply to a message we don't know
-        LOGGER.LogFatal(
-            "Received a reply with serial '{}' but we do not have the serial of "
-            "the original message",
-            replySerial);
-        throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
+        std::unique_lock<std::mutex> lock{*state->mutex};
+        if (!state->replyChannels.contains(replySerial))
+        {
+          // It should not be possible to get a reply to a message we don't know
+          LOGGER.LogFatal(
+              "Received a reply with serial '{}' but we do not have the serial of "
+              "the original message",
+              replySerial);
+          throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
+        }
+
+        chann = state->replyChannels[replySerial];
       }
 
-      co_await state->replyChannels[replySerial]->async_send(boost::system::error_code{}, std::move(message),
-                                                             boost::asio::use_awaitable);
+      co_await chann->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
     }
     // Simply an incoming message
     else
@@ -555,7 +560,13 @@ namespace cxxbus
       {
         LOGGER.LogTrace("Incoming message is signal, checking match rules");
 
-        for (MatchRuleInfo const& info : *state->matchRules | std::views::values)
+        std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> rules = nullptr;
+        {
+          std::unique_lock<std::mutex> lock{*state->mutex};
+          rules = state->matchRules;
+        }
+
+        for (MatchRuleInfo const& info : *rules | std::views::values)
         {
           if (info.rule.Matches(message,
                                 state->nameCache->GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
@@ -575,23 +586,37 @@ namespace cxxbus
         co_return;
       }
 
-      if (message.GetHeader().GetObjectPath().has_value() &&
-          state->objectPathHandlers->contains(message.GetHeader()
-                                                  .GetObjectPath()
-                                                  .transform([](ObjectPath const& path) { return path.GetPath(); })
-                                                  .value()))
+      bool hasObjectPathHandler = false;
+      {
+        std::unique_lock<std::mutex> lock{*state->mutex};
+        hasObjectPathHandler =
+            state->objectPathHandlers->contains(message.GetHeader()
+                                                    .GetObjectPath()
+                                                    .transform([](ObjectPath const& path) { return path.GetPath(); })
+                                                    .value());
+      }
+
+      if (message.GetHeader().GetObjectPath().has_value() && hasObjectPathHandler)
       {
         LOGGER.LogTrace("Message's ObjectPath matches a handler");
 
-        auto handler = (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()];
-        if (!state->messageFilter.empty())
+        std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> handler = nullptr;
+        std::vector<std::shared_ptr<AwaitableSignal<MessageHandled, IncomingDBusMessage>>> filters;
         {
-          for (auto const& filter : state->messageFilter | std::views::values)
+          std::unique_lock<std::mutex> lock{*state->mutex};
+          handler = (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()];
+
+          for (auto filter : state->messageFilter | std::views::values)
           {
-            if (co_await filter(message) == MessageHandled::YES)
-            {
-              co_return;
-            }
+            filters.push_back(std::move(filter));
+          }
+        }
+
+        for (auto filter : filters)
+        {
+          if (co_await (*filter)(message) == MessageHandled::YES)
+          {
+            co_return;
           }
         }
 
@@ -604,7 +629,13 @@ namespace cxxbus
       }
 
       // [TODO]: User should let us know whether they actually handled this or not
-      if (!state->onIncomingSignal.empty())
+      bool hasSignal = false;
+      {
+        std::unique_lock<std::mutex> lock{*state->mutex};
+        hasSignal = !state->onIncomingSignal.empty();
+      }
+
+      if (hasSignal)
       {
         co_return co_await state->onIncomingSignal(message);
       }
@@ -625,6 +656,7 @@ namespace cxxbus
 
     if (expectsReply)
     {
+      std::unique_lock<std::mutex> lock{*m_state->mutex};
       m_state->replyChannels[*m_state->serial] = &replyChannel;
     }
 
@@ -637,18 +669,21 @@ namespace cxxbus
                                           std::make_tuple(std::move(message), (*m_state->serial)++, messageSentChannel),
                                           boost::asio::use_awaitable);
 
-    // 3rd, wait for the message to be sent.
-    co_await messageSentChannel->async_receive(boost::asio::use_awaitable);
-
     // 4th, check if we're expecting a reply
     if (!expectsReply)
     {
+      // 3rd, wait for the message to be sent.
+      co_await messageSentChannel->async_receive(boost::asio::use_awaitable);
+
       co_return std::nullopt;
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
     IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
-    m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
+    {
+      std::unique_lock<std::mutex> lock{*m_state->mutex};
+      m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
+    }
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
     {
@@ -678,7 +713,6 @@ namespace cxxbus
       co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
     }
 
-    // std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message), ioContext);
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message));
     if (!reply.has_value())
     {
@@ -817,6 +851,7 @@ namespace cxxbus
                              .Parameter(rule.GetRule()),
                          ioContext);
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     if (it != m_state->matchRules->end())
@@ -906,6 +941,7 @@ namespace cxxbus
                              .Parameter(rule.GetRule()),
                          ioContext);
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     m_state->matchRules->erase(it);
@@ -946,6 +982,7 @@ namespace cxxbus
                                                               *m_state->ioContext);
                                          });
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     if (it != m_state->matchRules->end())
@@ -990,6 +1027,7 @@ namespace cxxbus
                                                               *m_state->ioContext);
                                          });
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     m_state->matchRules->erase(it);
@@ -1006,6 +1044,8 @@ namespace cxxbus
       // out-of-scope
       { return InvokeAsyncCallback(state->first, state->second); };
     };
+
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     if (auto it = m_state->objectPathHandlers->find(path.GetPath()); it != m_state->objectPathHandlers->end())
     {
       it->second->connect(std::move(cb));
@@ -1021,15 +1061,19 @@ namespace cxxbus
 
   void DBusConnection::UnregisterObjectPathHandler(ObjectPath path)
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     (*m_state->objectPathHandlers).erase(path.GetPath());
   }
 
   boost::asio::awaitable<void> DBusConnection::RequestWellKnownNameImpl(DBusWellKnownName name,
                                                                         boost::asio::io_context& ioContext)
   {
-    if (std::ranges::contains(*m_state->wellKnownNames, name))
     {
-      throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
+      std::unique_lock<std::mutex> lock{*m_state->mutex};
+      if (std::ranges::contains(*m_state->wellKnownNames, name))
+      {
+        throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
+      }
     }
 
     auto reply = co_await SendMessage(
@@ -1063,6 +1107,7 @@ namespace cxxbus
         break;
     }
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     m_state->wellKnownNames->push_back(name);
 
     co_return;
@@ -1090,9 +1135,12 @@ namespace cxxbus
   boost::asio::awaitable<void> DBusConnection::ReleaseWellKnownNameImpl(DBusWellKnownName name,
                                                                         boost::asio::io_context& ioContext)
   {
-    if (!std::ranges::contains(*m_state->wellKnownNames, name))
     {
-      throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
+      std::unique_lock<std::mutex> lock{*m_state->mutex};
+      if (!std::ranges::contains(*m_state->wellKnownNames, name))
+      {
+        throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
+      }
     }
 
     LOGGER.LogTrace("Releasing our well-known name '{}'", name.GetName());
@@ -1120,6 +1168,7 @@ namespace cxxbus
         break;
     }
 
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto it = std::ranges::remove(*m_state->wellKnownNames, name);
     m_state->wellKnownNames->erase(it.begin(), it.end());
 
@@ -1160,8 +1209,10 @@ namespace cxxbus
   uint32_t DBusConnection::RegisterMessageFilter(
       std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback)
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     uint32_t filterID = m_state->messageFilterID++;
-    m_state->messageFilter[filterID].connect(
+    m_state->messageFilter[filterID] = std::make_shared<AwaitableSignal<MessageHandled, IncomingDBusMessage>>();
+    m_state->messageFilter[filterID]->connect(
         [cb = std::move(callback)](
             IncomingDBusMessage message) -> std::function<boost::asio::awaitable<MessageHandled>()>
         {
@@ -1176,12 +1227,14 @@ namespace cxxbus
 
   void DBusConnection::UnregisterMessageFilter(uint32_t filterID)
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     m_state->messageFilter.erase(filterID);
   }
 
   void DBusConnection::ReceiveIncomingMessages(
       std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     m_state->onIncomingSignal.connect(
         [cb = std::move(callback)](IncomingDBusMessage message) -> std::function<boost::asio::awaitable<void>()>
         {
@@ -1195,6 +1248,7 @@ namespace cxxbus
 
   std::vector<DBusWellKnownName> const& DBusConnection::GetWellKnownNames() const
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     return *m_state->wellKnownNames;
   }
 
@@ -1205,6 +1259,7 @@ namespace cxxbus
 
   boost::signals2::connection DBusConnection::OnDisconnected(std::function<void()> callback)
   {
+    std::unique_lock<std::mutex> lock{*m_state->mutex};
     return m_state->onDisconnected.connect(std::move(callback));
   }
 

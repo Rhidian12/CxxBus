@@ -847,7 +847,7 @@ namespace cxxbus
   {
     constexpr uint32_t minSize{std::is_same_v<T, bool> ? sizeof(uint32_t) : sizeof(T)};
 
-    if (minSize > (dbusType.size() - arrPointer))
+    if (minSize > (dbusType.size() - arrPointer)) [[unlikely]]
     {
       throw DBusMalformedInputError{
           std::format("Trying to deserialize {} but the incoming buffer (total size: {}) has only {} bytes remaining "
@@ -1315,7 +1315,7 @@ namespace cxxbus
     uint32_t arrPointer{};
     T value{UnmarshalDBusType<T>(dbusType, signature, arrPointer)};
 
-    if (arrPointer != dbusType.size())
+    if (arrPointer != dbusType.size()) [[unlikely]]
     {
       throw DBusMalformedInputError{
           std::format("Deserialized {} but the incoming buffer (total size: {}) has {} bytes remaining",

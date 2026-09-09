@@ -79,7 +79,7 @@ namespace cxxbus
           replyChannels;
 
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
-      std::unordered_map<uint32_t, AwaitableSignal<MessageHandled, IncomingDBusMessage>> messageFilter;
+      std::unordered_map<uint32_t, std::shared_ptr<AwaitableSignal<MessageHandled, IncomingDBusMessage>>> messageFilter;
       uint32_t messageFilterID;
 
       boost::signals2::signal<void()> onDisconnected;
