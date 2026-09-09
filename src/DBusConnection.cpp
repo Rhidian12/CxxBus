@@ -596,9 +596,14 @@ namespace cxxbus
         }
 
         LOGGER.LogTrace("Invoking ObjectPath handler");
-        co_return co_await (*handler)(std::move(message));
+        boost::asio::co_spawn(
+            m_userIOContext, [message = std::move(message), handler]() mutable
+            { return (*handler)(std::move(message)); }, boost::asio::detached);
+        co_return;
+        // co_return co_await (*handler)(std::move(message));
       }
 
+      // [TODO]: User should let us know whether they actually handled this or not
       if (!state->onIncomingSignal.empty())
       {
         co_return co_await state->onIncomingSignal(message);
@@ -773,9 +778,7 @@ namespace cxxbus
   IncomingDBusMessage DBusConnection::SendMessageSync(DBusMessage message)
   {
     std::optional<IncomingDBusMessage> reply = WaitOnAsyncWork<std::optional<IncomingDBusMessage>>(
-        m_state->strand,
-        // [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg), *m_state->ioContext); });
-        [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg)); });
+        m_state->strand, [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg)); });
     if (!reply.has_value())
     {
       LOGGER.LogFatal("SendMessageSync() should not be able to return without having received a reply");

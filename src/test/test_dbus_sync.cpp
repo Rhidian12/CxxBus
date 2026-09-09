@@ -506,3 +506,30 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
     EXPECT_TRUE(*signalEmitted);
   };
 }
+
+TEST_F(SyncDBusConnectionTestSuite, TestCallingFunction)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+    bool messageReceived = false;
+
+    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
+                                     [conn2, &messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+                                     {
+                                       messageReceived = true;
+                                       co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+                                     });
+
+    conn->SendMessageSync(
+        DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
+
+    EXPECT_TRUE(messageReceived);
+
+    // conn->CloseSync();
+    // conn2->CloseSync();
+
+    co_return;
+  };
+}

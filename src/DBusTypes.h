@@ -238,6 +238,7 @@ namespace cxxbus
     std::string const& GetName() const;
 
     uint32_t size() const;
+    bool empty() const;
     explicit operator std::string() const;
 
     auto operator<=>(DBusWellKnownName const&) const noexcept = default;

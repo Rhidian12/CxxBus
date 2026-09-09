@@ -20,8 +20,8 @@ static void BM_EmptyMessage(benchmark::State& state)
   boost::asio::io_context ioContext{};
   auto work = [&ioContext, &state]() -> boost::asio::awaitable<void>
   {
-    auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
-    auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
+    auto serverConn = cxxbus::DBusConnection::CreateSync(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
+    auto clientConn = cxxbus::DBusConnection::CreateSync(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
     serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
@@ -29,12 +29,14 @@ static void BM_EmptyMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(
+      clientConn->SendMessageSync(
           cxxbus::DBusMessage::Method(METHOD_NAME).Destination(WELL_KNOWN_NAME.GetName()).Path(OBJECT_PATH));
     }
 
-    co_await serverConn->Close();
-    co_await clientConn->Close();
+    serverConn->CloseSync();
+    clientConn->CloseSync();
+
+    co_return;
   };
 
   boost::asio::co_spawn(ioContext, work(), boost::asio::detached);
@@ -47,8 +49,8 @@ static void BM_StringMessage(benchmark::State& state)
   boost::asio::io_context ioContext{};
   auto work = [&ioContext, &state]() -> boost::asio::awaitable<void>
   {
-    auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
-    auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
+    auto serverConn = cxxbus::DBusConnection::CreateSync(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
+    auto clientConn = cxxbus::DBusConnection::CreateSync(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
     serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
@@ -62,14 +64,16 @@ static void BM_StringMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
-                                           .Destination(WELL_KNOWN_NAME.GetName())
-                                           .Path(OBJECT_PATH)
-                                           .Parameter(str));
+      clientConn->SendMessageSync(cxxbus::DBusMessage::Method(METHOD_NAME)
+                                      .Destination(WELL_KNOWN_NAME.GetName())
+                                      .Path(OBJECT_PATH)
+                                      .Parameter(str));
     }
 
-    co_await serverConn->Close();
-    co_await clientConn->Close();
+    serverConn->CloseSync();
+    clientConn->CloseSync();
+
+    co_return;
   };
 
   boost::asio::co_spawn(ioContext, work(), boost::asio::detached);
@@ -97,8 +101,8 @@ static void BM_NestedMapMessage(benchmark::State& state)
   boost::asio::io_context ioContext{};
   auto work = [&ioContext, &state, &map]() -> boost::asio::awaitable<void>
   {
-    auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
-    auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
+    auto serverConn = cxxbus::DBusConnection::CreateSync(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
+    auto clientConn = cxxbus::DBusConnection::CreateSync(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
     serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
@@ -106,14 +110,16 @@ static void BM_NestedMapMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
-                                           .Destination(WELL_KNOWN_NAME.GetName())
-                                           .Path(OBJECT_PATH)
-                                           .Parameter(map));
+      clientConn->SendMessageSync(cxxbus::DBusMessage::Method(METHOD_NAME)
+                                      .Destination(WELL_KNOWN_NAME.GetName())
+                                      .Path(OBJECT_PATH)
+                                      .Parameter(map));
     }
 
-    co_await serverConn->Close();
-    co_await clientConn->Close();
+    serverConn->CloseSync();
+    clientConn->CloseSync();
+
+    co_return;
   };
 
   boost::asio::co_spawn(ioContext, work(), boost::asio::detached);

@@ -12,50 +12,53 @@
 #include <cstdint>
 #include <cstdlib>
 
+sdbus::ServiceName const SERVICE_NAME = sdbus::ServiceName{"org.cxxbus.test"};
+sdbus::ObjectPath const OBJECT_PATH = sdbus::ObjectPath{"/org/cxxbus/test"};
+sdbus::InterfaceName const INTERFACE_NAME = sdbus::InterfaceName{"org.cxxbus.test"};
+sdbus::MethodName const METHOD_NAME = sdbus::MethodName{"Benchmark"};
+
 static void BM_SDBusEmptyMessage(benchmark::State& state)
 {
-  auto proxy = sdbus::createProxy(sdbus::ServiceName{"org.cxxbus.test"}, sdbus::ObjectPath{"/org/cxxbus/test"});
+  auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
+  auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
 
-  auto conn = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.cxxbus.test"});
-  auto obj = sdbus::createObject(*conn, sdbus::ObjectPath{"/org/cxxbus/test"});
+  obj
+      ->addVTable(sdbus::MethodVTableItem{
+          METHOD_NAME, sdbus::Signature{""}, {}, {}, {}, [](sdbus::MethodCall call) { call.createReply().send(); }, {}})
+      .forInterface(INTERFACE_NAME);
 
-  obj->addVTable(sdbus::MethodVTableItem{sdbus::MethodName{"Benchmark"},
-                                         sdbus::Signature{""},
-                                         {},
-                                         {},
-                                         {},
-                                         [](sdbus::MethodCall call) { call.createReply().send(); },
-                                         {}})
-      .forInterface("org.cxxbus.test");
+  serverConn->enterEventLoopAsync();
 
-  conn->enterEventLoopAsync();
+  auto clientConn = sdbus::createSessionBusConnection();
+  auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   for (auto _ : state)
   {
-    auto method = proxy->createMethodCall(sdbus::InterfaceName{"org.cxxbus.test"}, sdbus::MethodName{"Benchmark"});
+    auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
     proxy->callMethod(method);
   }
 
-  conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+  serverConn->releaseName(SERVICE_NAME);
 }
 
 static void BM_SDBusStringMessage(benchmark::State& state)
 {
-  auto proxy = sdbus::createProxy(sdbus::ServiceName{"org.cxxbus.test"}, sdbus::ObjectPath{"/org/cxxbus/test"});
+  auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
+  auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
 
-  auto conn = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.cxxbus.test"});
-  auto obj = sdbus::createObject(*conn, sdbus::ObjectPath{"/org/cxxbus/test"});
-
-  obj->addVTable(sdbus::MethodVTableItem{sdbus::MethodName{"Benchmark"},
+  obj->addVTable(sdbus::MethodVTableItem{METHOD_NAME,
                                          sdbus::Signature{"s"},
                                          {},
                                          {},
                                          {},
                                          [](sdbus::MethodCall call) { call.createReply().send(); },
                                          {}})
-      .forInterface("org.cxxbus.test");
+      .forInterface(INTERFACE_NAME);
 
-  conn->enterEventLoopAsync();
+  serverConn->enterEventLoopAsync();
+
+  auto clientConn = sdbus::createSessionBusConnection();
+  auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   std::string str{};
   for (int i{}; i < 10'000; ++i)
@@ -65,12 +68,12 @@ static void BM_SDBusStringMessage(benchmark::State& state)
 
   for (auto _ : state)
   {
-    auto method = proxy->createMethodCall(sdbus::InterfaceName{"org.cxxbus.test"}, sdbus::MethodName{"Benchmark"});
+    auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
     method << str;
     proxy->callMethod(method);
   }
 
-  conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+  serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
 static void BM_SDBusNestedMapMessage(benchmark::State& state)
@@ -90,30 +93,31 @@ static void BM_SDBusNestedMapMessage(benchmark::State& state)
     }
   }
 
-  auto proxy = sdbus::createProxy(sdbus::ServiceName{"org.cxxbus.test"}, sdbus::ObjectPath{"/org/cxxbus/test"});
+  auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
+  auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
 
-  auto conn = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.cxxbus.test"});
-  auto obj = sdbus::createObject(*conn, sdbus::ObjectPath{"/org/cxxbus/test"});
-
-  obj->addVTable(sdbus::MethodVTableItem{sdbus::MethodName{"Benchmark"},
+  obj->addVTable(sdbus::MethodVTableItem{METHOD_NAME,
                                          sdbus::Signature{"a{ua{ua{ua{uu}}}}"},
                                          {},
                                          {},
                                          {},
                                          [](sdbus::MethodCall call) { call.createReply().send(); },
                                          {}})
-      .forInterface("org.cxxbus.test");
+      .forInterface(INTERFACE_NAME);
 
-  conn->enterEventLoopAsync();
+  serverConn->enterEventLoopAsync();
+
+  auto clientConn = sdbus::createSessionBusConnection();
+  auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   for (auto _ : state)
   {
-    auto method = proxy->createMethodCall(sdbus::InterfaceName{"org.cxxbus.test"}, sdbus::MethodName{"Benchmark"});
+    auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
     method << map;
     proxy->callMethod(method);
   }
 
-  conn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+  serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
 BENCHMARK(BM_SDBusEmptyMessage);

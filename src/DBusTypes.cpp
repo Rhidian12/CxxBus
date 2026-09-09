@@ -245,6 +245,11 @@ namespace cxxbus
     return m_name.size();
   }
 
+  bool DBusWellKnownName::empty() const
+  {
+    return m_name.empty();
+  }
+
   DBusWellKnownName::operator std::string() const
   {
     return m_name;
