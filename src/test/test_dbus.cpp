@@ -40,13 +40,13 @@ struct DBusConnectionTestSuite : ::testing::Test
         [this]() -> boost::asio::awaitable<void>
         {
           co_await coroutineToRun();
-          LOGGER.LogTrace("Finished running coroutine");
+          LOG_TRACE(LOGGER, "Finished running coroutine");
 
           if (conn != nullptr)
           {
-            LOGGER.LogTrace("Closing DBus connection");
+            LOG_TRACE(LOGGER, "Closing DBus connection");
             co_await conn->Close();
-            LOGGER.LogTrace("Connection has {} references", conn.use_count());
+            LOG_TRACE(LOGGER, "Connection has {} references", conn.use_count());
             conn.reset();
           }
 
@@ -518,28 +518,28 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    LOGGER.LogInfo("Making first connection");
+    LOG_INFO(LOGGER, "Making first connection");
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    LOGGER.LogInfo("Making second connection");
+    LOG_INFO(LOGGER, "Making second connection");
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     conn2->ReceiveIncomingMessages(
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
-          LOGGER.LogDebug("Connection2 received the message, returning an error");
+          LOG_DEBUG(LOGGER, "Connection2 received the message, returning an error");
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
 
     conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
                                      [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
                                      {
-                                       LOGGER.LogDebug("Connection2 received the Method call. Returning a reply");
+                                       LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
                                        co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
                                            MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
                                      });
 
-    LOGGER.LogDebug("Sending a message from connection1 to connection2");
+    LOG_DEBUG(LOGGER, "Sending a message from connection1 to connection2");
     EXPECT_THROW(
         co_await conn->SendMessage(
             DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
@@ -555,7 +555,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
       EXPECT_EQ(ex.GetErrorReason(), "lol you're so stupid");
     }
 
-    LOGGER.LogDebug("Sending a final message from connection1 to connection2");
+    LOG_DEBUG(LOGGER, "Sending a final message from connection1 to connection2");
     EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
                                                .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
                                                .Destination("com.dbus.CxxTest2")))
@@ -563,7 +563,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
               (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
     co_await conn2->Close();
-    LOGGER.LogTrace("Finished closing 2nd connection");
+    LOG_TRACE(LOGGER, "Finished closing 2nd connection");
   };
 }
 
@@ -581,7 +581,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
         DBusMatchRule::Create().Member("SignalEmitted"),
         [&signalEmitted, chann, this](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         {
-          LOGGER.LogInfo("Received emitted signal");
+          LOG_INFO(LOGGER, "Received emitted signal");
           signalEmitted = true;
           EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
                     (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
@@ -599,7 +599,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
             .Path(ObjectPath{"/com/dbus/CxxTest"})
             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
-    LOGGER.LogDebug("Waiting for signal to be received");
+    LOG_DEBUG(LOGGER, "Waiting for signal to be received");
     co_await chann->async_receive(boost::asio::use_awaitable);
     EXPECT_TRUE(signalEmitted);
 
@@ -629,12 +629,12 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
     {
       if (ex.GetErrorName() == "org.freedesktop.DBus.Error.AccessDenied")
       {
-        LOGGER.LogInfo("Access denied to system bus. Test skipped.");
+        LOG_TRACE(LOGGER, "Access denied to system bus. Test skipped.");
         co_return;
       }
       else
       {
-        LOGGER.LogError("DBusError: {} - {}", ex.GetErrorName(), ex.GetErrorReason());
+        LOG_ERROR(LOGGER, "DBusError: {} - {}", ex.GetErrorName(), ex.GetErrorReason());
         throw;
       }
     }
@@ -652,8 +652,8 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     uint32_t const id = conn2->RegisterMessageFilter(
         [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
         {
-          LOGGER.LogInfo("Message filter called for message with member '{}'",
-                         msg.GetHeader().GetMember().value_or(""));
+          LOG_INFO(LOGGER, "Message filter called for message with member '{}'",
+                   msg.GetHeader().GetMember().value_or(""));
           ++nrOfCalls;
 
           if (msg.GetHeader().GetMember() == "Handle")
@@ -673,7 +673,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
         ObjectPath{"/com/dbus/CxxTest2/Foo"},
         [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         {
-          LOGGER.LogInfo("Object path handler called");
+          LOG_INFO(LOGGER, "Object path handler called");
           objectPathHandlerCalled = !objectPathHandlerCalled;
           co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
           co_return co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
@@ -736,7 +736,7 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
         BusType::SESSION);
 
     co_await chann->async_receive(boost::asio::use_awaitable);
-    LOGGER.LogDebug("Detached connection is connected");
+    LOG_DEBUG(LOGGER, "Detached connection is connected");
 
     conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
     co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});

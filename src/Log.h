@@ -25,6 +25,18 @@
 #include <format>
 #include <string_view>
 
+#define LOG_IMPL(logLevel_, logger, format, ...)                                          \
+  if ((logger).logLevel <= cxxbus::LogLevel::logLevel_)                                   \
+  {                                                                                       \
+    (logger).LogImplArgs(cxxbus::LogLevel::logLevel_, format __VA_OPT__(, ) __VA_ARGS__); \
+  }
+
+#define LOG_TRACE(logger, format, ...) LOG_IMPL(TRACE, logger, format, __VA_ARGS__)
+#define LOG_DEBUG(logger, format, ...) LOG_IMPL(DEBUG, logger, format, __VA_ARGS__)
+#define LOG_INFO(logger, format, ...) LOG_IMPL(INFO, logger, format, __VA_ARGS__)
+#define LOG_ERROR(logger, format, ...) LOG_IMPL(ERROR, logger, format, __VA_ARGS__)
+#define LOG_FATAL(logger, format, ...) LOG_IMPL(FATAL, logger, format, __VA_ARGS__)
+
 namespace cxxbus
 {
   enum class LogLevel
@@ -44,33 +56,9 @@ namespace cxxbus
     void LogImpl(LogLevel wantedLogLevel, std::string_view message) const;
 
     template <typename... Args>
-    void LogTrace(std::string_view format, Args&&... args) const
+    void LogImplArgs(LogLevel wantedLogLevel, std::string_view format, Args&&... args) const
     {
-      LogImpl(LogLevel::TRACE, std::vformat(format, std::make_format_args(args...)));
-    }
-
-    template <typename... Args>
-    void LogDebug(std::string_view format, Args&&... args) const
-    {
-      LogImpl(LogLevel::DEBUG, std::vformat(format, std::make_format_args(args...)));
-    }
-
-    template <typename... Args>
-    void LogInfo(std::string_view format, Args&&... args) const
-    {
-      LogImpl(LogLevel::INFO, std::vformat(format, std::make_format_args(args...)));
-    }
-
-    template <typename... Args>
-    void LogError(std::string_view format, Args&&... args) const
-    {
-      LogImpl(LogLevel::ERROR, std::vformat(format, std::make_format_args(args...)));
-    }
-
-    template <typename... Args>
-    void LogFatal(std::string_view format, Args&&... args) const
-    {
-      LogImpl(LogLevel::FATAL, std::vformat(format, std::make_format_args(args...)));
+      LogImpl(wantedLogLevel, std::vformat(format, std::make_format_args(args...)));
     }
   };
 }  // namespace cxxbus

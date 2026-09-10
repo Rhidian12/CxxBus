@@ -55,7 +55,7 @@ namespace cxxbus
       case DBusMessageType::INVALID:
       case DBusMessageType::NONE:
       case DBusMessageType::OPTIONAL:
-        LOGGER.LogError("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on");
+        LOG_ERROR(LOGGER, "INVALID, NONE and OPTIONAL are invalid message types to create a match rule on");
         throw InvalidDBusMatchRule{
             std::format("INVALID, NONE and OPTIONAL are invalid message types to create a match rule on")};
       default:

@@ -122,5 +122,5 @@ static void BM_NestedMapMessage(benchmark::State& state)
 }
 
 BENCHMARK(BM_EmptyMessage);
-BENCHMARK(BM_StringMessage);
-BENCHMARK(BM_NestedMapMessage);
+// BENCHMARK(BM_StringMessage);
+// BENCHMARK(BM_NestedMapMessage);

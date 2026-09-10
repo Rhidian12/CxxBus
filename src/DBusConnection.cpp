@@ -251,12 +251,12 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::CloseData()
   {
-    LOGGER.LogTrace("Closing data");
+    LOG_TRACE(LOGGER, "Closing data");
     co_await boost::asio::co_spawn(
         *m_state->strand,
         [this]() -> boost::asio::awaitable<void>
         {
-          LOGGER.LogTrace("Closing channels and signals");
+          LOG_TRACE(LOGGER, "Closing channels and signals");
           m_state->sendLoop.close();
           m_state->onIncomingSignal.disconnect_all_slots();
           m_state->objectPathHandlers->clear();
@@ -264,17 +264,17 @@ namespace cxxbus
           m_state->timer.cancel();
           m_state->connectionReady.store(false);
 
-          LOGGER.LogTrace("Closing socket");
+          LOG_TRACE(LOGGER, "Closing socket");
           if (m_state->socket->is_open())
           {
             boost::system::error_code ec;
             std::ignore = m_state->socket->close(ec);
           }
-          LOGGER.LogTrace("Closed socket");
+          LOG_TRACE(LOGGER, "Closed socket");
 
           co_await m_state->readLoopFinished.async_receive(boost::asio::use_awaitable);
           co_await m_state->sendLoopFinished.async_receive(boost::asio::use_awaitable);
-          LOGGER.LogTrace("Both the Send and Read loop have fully finished");
+          LOG_TRACE(LOGGER, "Both the Send and Read loop have fully finished");
 
           co_return;
         },
@@ -288,7 +288,7 @@ namespace cxxbus
       co_return;
     }
 
-    LOGGER.LogError("Connection to the dbus-daemon was lost unexpectedly");
+    LOG_ERROR(LOGGER, "Connection to the dbus-daemon was lost unexpectedly");
 
     m_state->connectionReady.store(false);
     co_await Close(*m_state->ioContext);
@@ -310,7 +310,7 @@ namespace cxxbus
       co_return;
     }
 
-    LOGGER.LogInfo("Closing DBus Connection");
+    LOG_TRACE(LOGGER, "Closing DBus Connection");
 
     if (m_state->connectionReady.load())
     {
@@ -322,7 +322,7 @@ namespace cxxbus
 
       auto names{*m_state->wellKnownNames};
       // Release our well-known name from the dbus-daemon
-      LOGGER.LogTrace("Releasing our well-known name");
+      LOG_TRACE(LOGGER, "Releasing our well-known name");
       for (DBusWellKnownName name : names)
       {
         co_await ReleaseWellKnownName(name, ioContext);
@@ -359,13 +359,13 @@ namespace cxxbus
     {
       return;
     }
-    LOGGER.LogTrace("Synchronously closing the connection");
+    LOG_TRACE(LOGGER, "Synchronously closing the connection");
     WaitOnAsyncWork<void>(m_state->strand, [this]() { return Close(*m_state->ioContext); });
 
-    LOGGER.LogTrace("Joining thread");
+    LOG_TRACE(LOGGER, "Joining thread");
     m_state->workGuard.reset();
     m_state->ioThread->join();
-    LOGGER.LogTrace("Joined thread");
+    LOG_TRACE(LOGGER, "Joined thread");
   }
 
   boost::asio::awaitable<void> DBusConnection::AuthenticateDBusConnection()
@@ -394,7 +394,7 @@ namespace cxxbus
 
     if (!reply.starts_with("OK"))
     {
-      LOGGER.LogError("Authentication failed!");
+      LOG_ERROR(LOGGER, "Authentication failed!");
       throw std::runtime_error{"Authentication failed!"};
     }
 
@@ -414,7 +414,7 @@ namespace cxxbus
     {
       boost::asio::local::stream_protocol::endpoint endpoint{ParseDBusAddress(busType)};
       co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
-      LOGGER.LogTrace("Connected to DBus Session bus");
+      LOG_TRACE(LOGGER, "Connected to DBus Session bus");
     }
     else
     {
@@ -425,7 +425,7 @@ namespace cxxbus
       }
       boost::asio::local::stream_protocol::endpoint endpoint{address};
       co_await state->socket->async_connect(endpoint, boost::asio::as_tuple(boost::asio::use_awaitable));
-      LOGGER.LogTrace("Connected to DBus System bus");
+      LOG_TRACE(LOGGER, "Connected to DBus System bus");
     }
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
@@ -434,13 +434,13 @@ namespace cxxbus
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
-    LOGGER.LogTrace("Connected to DBus-daemon. Starting Send loop");
+    LOG_TRACE(LOGGER, "Connected to DBus-daemon. Starting Send loop");
     boost::asio::co_spawn(*m_state->strand, SendLoop(), boost::asio::detached);
 
-    LOGGER.LogTrace("Send loop started. Starting Read loop");
+    LOG_TRACE(LOGGER, "Send loop started. Starting Read loop");
     boost::asio::co_spawn(*m_state->strand, ReadLoop(), boost::asio::detached);
 
-    LOGGER.LogTrace("Read loop started. Starting connection handshake");
+    LOG_TRACE(LOGGER, "Read loop started. Starting connection handshake");
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -455,7 +455,7 @@ namespace cxxbus
       m_state->uniqueConnection = std::make_shared<DBusUniqueConnectionName>(reply->Get<std::string>());
     }
 
-    LOGGER.LogInfo("Unique Connection ID: {}", m_state->uniqueConnection->GetName());
+    LOG_INFO(LOGGER, "Unique Connection ID: {}", m_state->uniqueConnection->GetName());
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -472,9 +472,9 @@ namespace cxxbus
 
       if (!reply.has_value())
       {
-        LOGGER.LogFatal(
-            "Internal error: RequestName() should not be able to return without having received a "
-            "reply");
+        LOG_FATAL(LOGGER,
+                  "Internal error: RequestName() should not be able to return without having received a "
+                  "reply");
         throw InternalError{
             "Internal error: RequestName() should not be able to return without having received a "
             "reply"};
@@ -484,28 +484,28 @@ namespace cxxbus
       switch (ret)
       {
         case 1:
-          LOGGER.LogDebug("Successfully acquired well-known name '{}'", name.GetName());
+          LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
           break;
         // [TODO]: Allow user passing flags for the Well-known name.
         case 2:
-          LOGGER.LogError(
-              "Well-known name '{}' is already owned by another connection and we did "
-              "not ask to replace the name",
-              name.GetName());
+          LOG_ERROR(LOGGER,
+                    "Well-known name '{}' is already owned by another connection and we did "
+                    "not ask to replace the name",
+                    name.GetName());
           break;
         case 3:
-          LOGGER.LogError("The well-known name '{}' already has an owner", name.GetName());
+          LOG_ERROR(LOGGER, "The well-known name '{}' already has an owner", name.GetName());
           break;
         case 4:
-          LOGGER.LogDebug("We're already owner of our well-known name");
+          LOG_DEBUG(LOGGER, "We're already owner of our well-known name");
           break;
         default:
-          LOGGER.LogError("Unknown return value from 'RequestName()': {}", ret);
+          LOG_ERROR(LOGGER, "Unknown return value from 'RequestName()': {}", ret);
           break;
       }
     }
 
-    LOGGER.LogTrace("Connection handshake completed.");
+    LOG_TRACE(LOGGER, "Connection handshake completed.");
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
@@ -517,7 +517,7 @@ namespace cxxbus
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
-    LOGGER.LogTrace("Subscribing to NameOwnerChanged signal");
+    LOG_TRACE(LOGGER, "Subscribing to NameOwnerChanged signal");
     co_await m_state->nameCache->SubscribeToNameChanges(ioContext);
 
     co_return co_await HopToIOContext(ioContext);
@@ -531,7 +531,7 @@ namespace cxxbus
     if (message.GetHeader().GetReplySerial().has_value())
     {
       uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
-      LOGGER.LogTrace("Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo());
+      LOG_TRACE(LOGGER, "Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo());
 
       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
       {
@@ -539,10 +539,10 @@ namespace cxxbus
         if (!state->replyChannels.contains(replySerial))
         {
           // It should not be possible to get a reply to a message we don't know
-          LOGGER.LogFatal(
-              "Received a reply with serial '{}' but we do not have the serial of "
-              "the original message",
-              replySerial);
+          LOG_FATAL(LOGGER,
+                    "Received a reply with serial '{}' but we do not have the serial of "
+                    "the original message",
+                    replySerial);
           throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
         }
 
@@ -554,11 +554,11 @@ namespace cxxbus
     // Simply an incoming message
     else
     {
-      LOGGER.LogTrace("Received incoming message '{}'", message.GetInfo());
+      LOG_TRACE(LOGGER, "Received incoming message '{}'", message.GetInfo());
 
       if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
       {
-        LOGGER.LogTrace("Incoming message is signal, checking match rules");
+        LOG_TRACE(LOGGER, "Incoming message is signal, checking match rules");
 
         std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> rules = nullptr;
         {
@@ -571,7 +571,7 @@ namespace cxxbus
           if (info.rule.Matches(message,
                                 state->nameCache->GetWellKnownNames(message.GetHeader().GetSender().value_or(""))))
           {
-            LOGGER.LogTrace("Rule '{}' matched incoming signal", info.rule.GetRule());
+            LOG_TRACE(LOGGER, "Rule '{}' matched incoming signal", info.rule.GetRule());
             if (info.callback != nullptr)
             {
               co_await (*info.callback)(message);
@@ -598,7 +598,7 @@ namespace cxxbus
 
       if (message.GetHeader().GetObjectPath().has_value() && hasObjectPathHandler)
       {
-        LOGGER.LogTrace("Message's ObjectPath matches a handler");
+        LOG_TRACE(LOGGER, "Message's ObjectPath matches a handler");
 
         std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> handler = nullptr;
         std::vector<std::shared_ptr<AwaitableSignal<MessageHandled, IncomingDBusMessage>>> filters;
@@ -620,7 +620,7 @@ namespace cxxbus
           }
         }
 
-        LOGGER.LogTrace("Invoking ObjectPath handler");
+        LOG_TRACE(LOGGER, "Invoking ObjectPath handler");
         boost::asio::co_spawn(
             m_userIOContext, [message = std::move(message), handler]() mutable
             { return (*handler)(std::move(message)); }, boost::asio::detached);
@@ -690,7 +690,7 @@ namespace cxxbus
       // We got an error, so throw an error here
       if (!reply.GetHeader().GetErrorName().has_value())
       {
-        LOGGER.LogFatal("Incoming DBus Error did not specify the ERROR_NAME header field");
+        LOG_TRACE(LOGGER, "Incoming DBus Error did not specify the ERROR_NAME header field");
       }
 
       throw DBusError{
@@ -708,7 +708,7 @@ namespace cxxbus
     // Wait until our Connnection is ready
     if (!m_state->connectionReady.load())
     {
-      LOGGER.LogTrace("Connection not ready yet, waiting for it to complete");
+      LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
       co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
     }
@@ -716,7 +716,7 @@ namespace cxxbus
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message));
     if (!reply.has_value())
     {
-      LOGGER.LogFatal("SendMessage() should not be able to return without having received a reply");
+      LOG_TRACE(LOGGER, "SendMessage() should not be able to return without having received a reply");
       throw InternalError{
           "Internal Error: SendMessage() should not be able to return without having received a "
           "reply"};
@@ -762,7 +762,7 @@ namespace cxxbus
     // Wait until our Connnection is ready
     if (!m_state->connectionReady.load())
     {
-      LOGGER.LogTrace("Connection not ready yet, waiting for it to complete");
+      LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
       co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
     }
@@ -815,7 +815,7 @@ namespace cxxbus
         m_state->strand, [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg)); });
     if (!reply.has_value())
     {
-      LOGGER.LogFatal("SendMessageSync() should not be able to return without having received a reply");
+      LOG_FATAL(LOGGER, "SendMessageSync() should not be able to return without having received a reply");
       throw InternalError{
           "Internal Error: SendMessageSync() should not be able to return without having received a "
           "reply"};
@@ -842,7 +842,7 @@ namespace cxxbus
       DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
       boost::asio::io_context& ioContext)
   {
-    LOGGER.LogTrace("Adding match rule '{}'", rule.GetRule());
+    LOG_TRACE(LOGGER, "Adding match rule '{}'", rule.GetRule());
 
     co_await SendMessage(DBusMessage::Method("AddMatch")
                              .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -932,7 +932,7 @@ namespace cxxbus
   boost::asio::awaitable<void> DBusConnection::RemoveMatchRuleImpl(DBusMatchRule rule,
                                                                    boost::asio::io_context& ioContext)
   {
-    LOGGER.LogTrace("Removing match rule '{}'", rule.GetRule());
+    LOG_TRACE(LOGGER, "Removing match rule '{}'", rule.GetRule());
 
     co_await SendMessage(DBusMessage::Method("RemoveMatch")
                              .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -969,7 +969,7 @@ namespace cxxbus
 
   void DBusConnection::AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback)
   {
-    LOGGER.LogTrace("Adding match rule '{}'", rule.GetRule());
+    LOG_TRACE(LOGGER, "Adding match rule '{}'", rule.GetRule());
 
     WaitOnAsyncWork<IncomingDBusMessage>(m_state->strand,
                                          [this, rule]()
@@ -1014,7 +1014,7 @@ namespace cxxbus
 
   void DBusConnection::RemoveMatchRuleSync(DBusMatchRule rule)
   {
-    LOGGER.LogTrace("Removing match rule '{}'", rule.GetRule());
+    LOG_TRACE(LOGGER, "Removing match rule '{}'", rule.GetRule());
 
     WaitOnAsyncWork<IncomingDBusMessage>(m_state->strand,
                                          [this, rule]()
@@ -1087,23 +1087,23 @@ namespace cxxbus
     switch (reply.Get<uint32_t>())
     {
       case 1:
-        LOGGER.LogDebug("Successfully acquired well-known name '{}'", name.GetName());
+        LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
         break;
       // [TODO]: Allow user passing flags for the Well-known name.
       case 2:
-        LOGGER.LogError(
-            "Well-known name '{}' is already owned by another connection and we did "
-            "not ask to replace the name",
-            name.GetName());
+        LOG_ERROR(LOGGER,
+                  "Well-known name '{}' is already owned by another connection and we did "
+                  "not ask to replace the name",
+                  name.GetName());
         break;
       case 3:
-        LOGGER.LogError("The well-known name '{}' already has an owner", name.GetName());
+        LOG_ERROR(LOGGER, "The well-known name '{}' already has an owner", name.GetName());
         break;
       case 4:
-        LOGGER.LogDebug("We're already owner of our well-known name");
+        LOG_DEBUG(LOGGER, "We're already owner of our well-known name");
         break;
       default:
-        LOGGER.LogError("Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>());
+        LOG_ERROR(LOGGER, "Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>());
         break;
     }
 
@@ -1143,7 +1143,7 @@ namespace cxxbus
       }
     }
 
-    LOGGER.LogTrace("Releasing our well-known name '{}'", name.GetName());
+    LOG_TRACE(LOGGER, "Releasing our well-known name '{}'", name.GetName());
     IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
                                                              .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                              .Destination("org.freedesktop.DBus")
@@ -1155,16 +1155,16 @@ namespace cxxbus
     switch (res)
     {
       case 1:
-        LOGGER.LogDebug("Successfully released well-known name '{}'", name.GetName());
+        LOG_DEBUG(LOGGER, "Successfully released well-known name '{}'", name.GetName());
         break;
       case 2:
-        LOGGER.LogError("Well-known name '{}' is not owned by the dbus-daemon", name.GetName());
+        LOG_ERROR(LOGGER, "Well-known name '{}' is not owned by the dbus-daemon", name.GetName());
         break;
       case 3:
-        LOGGER.LogError("Well-known name '{}' is not owned by this connection", name.GetName());
+        LOG_ERROR(LOGGER, "Well-known name '{}' is not owned by this connection", name.GetName());
         break;
       default:
-        LOGGER.LogError("Unknown return value from 'ReleaseName()': {}", res);
+        LOG_ERROR(LOGGER, "Unknown return value from 'ReleaseName()': {}", res);
         break;
     }
 
@@ -1265,7 +1265,7 @@ namespace cxxbus
 
   void DBusConnection::SimulateConnectionLoss()
   {
-    LOGGER.LogTrace("Simulating loss of the connection to the dbus-daemon");
+    LOG_TRACE(LOGGER, "Simulating loss of the connection to the dbus-daemon");
 
     if (m_state->socket->is_open())
     {

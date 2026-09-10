@@ -103,17 +103,17 @@ namespace cxxbus
 
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
-        LOGGER.LogError("Read loop lost connection to dbus-daemon: {}", ex.what());
+        LOG_ERROR(LOGGER, "Read loop lost connection to dbus-daemon: {}", ex.what());
         boost::asio::co_spawn(*state->strand, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
       {
-        LOGGER.LogError("Error occured in message read loop: {}", ex.what());
+        LOG_ERROR(LOGGER, "Error occured in message read loop: {}", ex.what());
       }
     }
 
-    LOGGER.LogTrace("Read Loop is quitting gracefully");
+    LOG_TRACE(LOGGER, "Read Loop is quitting gracefully");
     state->readLoopFinished.async_send(boost::system::error_code{}, boost::asio::detached);
   }
 
@@ -136,7 +136,7 @@ namespace cxxbus
                                           boost::asio::use_awaitable);
 
         std::string const info = message.GetInfo();
-        LOGGER.LogTrace("Sent message '{}' with serial '{}'", info, serial);
+        LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", info, serial);
         // co_await messageSentChannel->async_send(
         //     boost::system::error_code{}, boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
         co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
@@ -161,17 +161,17 @@ namespace cxxbus
 
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
-        LOGGER.LogError("Send loop lost connection to dbus-daemon: {}", ex.what());
+        LOG_ERROR(LOGGER, "Send loop lost connection to dbus-daemon: {}", ex.what());
         boost::asio::co_spawn(*state->strand, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
       {
-        LOGGER.LogError("Error occured in message send loop: {}", ex.what());
+        LOG_ERROR(LOGGER, "Error occured in message send loop: {}", ex.what());
       }
     }
 
-    LOGGER.LogTrace("Send Loop is quitting gracefully");
+    LOG_TRACE(LOGGER, "Send Loop is quitting gracefully");
     state->sendLoopFinished.async_send(boost::system::error_code{}, boost::asio::detached);
   }
 

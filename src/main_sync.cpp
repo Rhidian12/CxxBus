@@ -30,8 +30,8 @@ void DBusSubscribeToSignal(std::shared_ptr<DBusConnection> conn)
                              .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
                          [](IncomingDBusMessage message)
                          {
-                           LOGGER.LogInfo(
-                               "Received NameOwnerChanged signal. New Name: {}, Sender: {}",
+                           LOG_INFO(
+                               LOGGER, "Received NameOwnerChanged signal. New Name: {}, Sender: {}",
                                message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
                                message.GetHeader().GetSender().value_or(""));
                          });
@@ -43,14 +43,14 @@ void DBusSubscribeToSignal(std::shared_ptr<DBusConnection> conn)
                                 .Destination("org.freedesktop.DBus")
                                 .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                     DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo(std::format("Reply to first name change: {}", reply.Get<uint32_t>()));
+  LOG_INFO(LOGGER, std::format("Reply to first name change: {}", reply.Get<uint32_t>()));
   reply = conn->SendMessageSync(
       DBusMessage::Method("RequestName")
           .Path(ObjectPath{"/org/freedesktop/DBus"})
           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
           .Destination("org.freedesktop.DBus")
           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"com.dbus.CxxTest3", static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo("Reply to second name change: {}", reply.Get<uint32_t>());
+  LOG_INFO(LOGGER, "Reply to second name change: {}", reply.Get<uint32_t>());
 }
 
 int main()
@@ -61,7 +61,7 @@ int main()
       ioService,
       [&ioService]() -> boost::asio::awaitable<void>
       {
-        LOGGER.LogInfo("Running Sync Main");
+        LOG_INFO(LOGGER, "Running Sync Main");
         std::shared_ptr<DBusConnection> conn{
             DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
 
@@ -71,6 +71,6 @@ int main()
       },
       boost::asio::detached);
 
-  LOGGER.LogInfo("Running IOService");
+  LOG_INFO(LOGGER, "Running IOService");
   ioService.run();
 }

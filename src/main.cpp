@@ -22,22 +22,22 @@ namespace
 
 boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
 {
-  LOGGER.LogInfo("Sending first message");
+  LOG_INFO(LOGGER, "Sending first message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
                                  .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
-  LOGGER.LogInfo("Sending second message");
+  LOG_INFO(LOGGER, "Sending second message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
                                  .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
-  LOGGER.LogInfo("Sending third message");
+  LOG_INFO(LOGGER, "Sending third message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
                                  .Interface(DBusInterfaceName{"com.example.Echo"})
                                  .Destination("com.example.Echo"));
-  LOGGER.LogInfo("Sending fourth message");
+  LOG_INFO(LOGGER, "Sending fourth message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
                                  .Path(ObjectPath{"/echo"})
                                  .Interface(DBusInterfaceName{"com.example.Echo"})
@@ -51,8 +51,8 @@ boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnect
       [](IncomingDBusMessage message) -> boost::asio::awaitable<void>
       {
         DBusMessageHeader const& header = message.GetHeader();
-        LOGGER.LogInfo(
-            "Message Received! Member: {}, Sender: {}, Destination: {}, Interface: {}, Message Type: {}",
+        LOG_INFO(
+            LOGGER, "Message Received! Member: {}, Sender: {}, Destination: {}, Interface: {}, Message Type: {}",
             header.GetMember().value_or(""), header.GetSender().value_or(""), header.GetDestination().value_or(""),
             header.GetInterface().transform([](DBusInterfaceName const& name) { return name.GetName(); }).value_or(""),
             static_cast<int>(header.GetMessageType()));
@@ -78,9 +78,9 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
           .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
       [](IncomingDBusMessage message) -> boost::asio::awaitable<void>
       {
-        LOGGER.LogInfo("Received NameOwnerChanged signal. New Name: {}, Sender: {}",
-                       message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
-                       message.GetHeader().GetSender().value_or(""));
+        LOG_INFO(LOGGER, "Received NameOwnerChanged signal. New Name: {}, Sender: {}",
+                 message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
+                 message.GetHeader().GetSender().value_or(""));
         co_return;
       });
 
@@ -91,14 +91,14 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
                                      .Destination("org.freedesktop.DBus")
                                      .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
                                          DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo("Reply to first name change: {}", reply.Get<uint32_t>());
+  LOG_INFO(LOGGER, "Reply to first name change: {}", reply.Get<uint32_t>());
   reply = co_await conn->SendMessage(
       DBusMessage::Method("RequestName")
           .Path(ObjectPath{"/org/freedesktop/DBus"})
           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
           .Destination("org.freedesktop.DBus")
           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"com.dbus.CxxTest3", static_cast<uint32_t>(0x1)}));
-  LOGGER.LogInfo("Reply to second name change: {}", reply.Get<uint32_t>());
+  LOG_INFO(LOGGER, "Reply to second name change: {}", reply.Get<uint32_t>());
 
   boost::asio::system_timer timer{ioService};
   timer.expires_after(std::chrono::seconds(5));
@@ -107,7 +107,7 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
 
 boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> conn)
 {
-  LOGGER.LogInfo("Sending first message");
+  LOG_INFO(LOGGER, "Sending first message");
   try
   {
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
@@ -118,7 +118,7 @@ boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> c
   }
   catch (std::exception const& ex)
   {
-    LOGGER.LogError(ex.what());
+    LOG_ERROR(LOGGER, ex.what());
   }
 }
 
