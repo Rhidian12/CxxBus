@@ -163,7 +163,7 @@ namespace cxxbus
                               CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
                         }}}
     {
-      GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
+      // GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
     }
 
     // Wraps a Variant inside a Variant (nested/boxed variant)
@@ -185,8 +185,8 @@ namespace cxxbus
                               CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
                         }}}
     {
-      GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
-      std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
+      // GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
+      // std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
     }
 
     Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
@@ -897,9 +897,7 @@ namespace cxxbus
                       ConstexprTypeName<T>(), strLength, dbusType.size(), dbusType.size() - arrPointer)};
     }
 
-    std::string str{};
-    str.resize(strLength, '\0');
-    std::memcpy(str.data(), dbusType.data() + arrPointer, strLength);
+    std::string str{reinterpret_cast<char const*>(dbusType.data()) + arrPointer, strLength};
 
     // + 1 to also skip the null terminator
     arrPointer += strLength + 1;
