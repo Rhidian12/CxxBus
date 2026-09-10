@@ -91,11 +91,11 @@ namespace cxxbus
 
       std::vector<DBusMessageHeader::HeaderFieldReplyData> headerFieldData{};
       std::ranges::transform(headerFields, std::back_inserter(headerFieldData),
-                             [](std::tuple<uint8_t, Variant> const& headerData)
+                             [](std::tuple<uint8_t, Variant> headerData)
                              {
                                return DBusMessageHeader::HeaderFieldReplyData{
                                    .code = static_cast<HeaderFieldCode>(std::get<0>(headerData)),
-                                   .data = std::get<1>(headerData)};
+                                   .data = std::get<1>(std::move(headerData))};
                              });
 
       auto const signatureIt =
@@ -230,7 +230,7 @@ namespace cxxbus
       data.signature = signatureIt == headerFieldData.cend()
                            ? std::nullopt
                            : std::optional{signatureIt->data.UnmarshalData<Signature>()};
-      data.headerFields = headerFieldData;
+      data.headerFields = headerFieldData;  // std::move is signficantly slower here...
     }
   }  // namespace
 
@@ -301,7 +301,7 @@ namespace cxxbus
 
   void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)
   {
-    m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(data, "u");
+    m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(std::move(data), "u");
   }
 
   void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer)
