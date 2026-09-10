@@ -84,11 +84,10 @@ namespace cxxbus
               .headerFields = {}};
     }
 
-    void UnmarshalDBusHeader(std::vector<byte> const& dbusMessage, DBusMessageHeader::ReplyData& data,
-                             uint32_t& arrPointer)
+    void UnmarshalDBusHeader(std::vector<byte> dbusMessage, DBusMessageHeader::ReplyData& data, uint32_t& arrPointer)
     {
       auto headerFields =
-          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(dbusMessage, "a(yv)", arrPointer);
+          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(std::move(dbusMessage), "a(yv)", arrPointer);
 
       std::vector<DBusMessageHeader::HeaderFieldReplyData> headerFieldData{};
       std::ranges::transform(headerFields, std::back_inserter(headerFieldData),
@@ -305,9 +304,9 @@ namespace cxxbus
     m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(data, "u");
   }
 
-  void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer)
+  void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer)
   {
-    UnmarshalDBusHeader(data, m_data, arrPointer);
+    UnmarshalDBusHeader(std::move(data), m_data, arrPointer);
   }
 
   IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)

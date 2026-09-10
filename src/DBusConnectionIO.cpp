@@ -26,11 +26,9 @@ namespace cxxbus
       try
       {
         rawFullReply.clear();
-
         std::vector<byte> tempBuffer{};
+
         tempBuffer.resize(FIRST_HEADER_PART_SIZE);
-        // co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer),
-        //                                  boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
@@ -40,8 +38,6 @@ namespace cxxbus
         DBusMessageHeader messageHeader{std::move(tempBuffer)};
 
         tempBuffer.resize(sizeof(uint32_t));
-        // co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer),
-        //                                  boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(tempBuffer);
@@ -51,8 +47,6 @@ namespace cxxbus
         messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
 
         tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
-        // co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer),
-        //                                  boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 #if __cpp_lib_containers_ranges
         rawFullReply.append_range(std::move(tempBuffer));
@@ -61,15 +55,13 @@ namespace cxxbus
 #endif
 
         uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
-        messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
+        messageHeader.ParseRemainderOfHeader(std::move(rawFullReply), arrPointer);
 
         uint32_t const oldArrPointer{arrPointer};
         AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
         uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
 
         tempBuffer.resize(nrOfPaddingBytes + messageHeader.GetMessageLength());
-        // co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer),
-        //                                  boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
 
         // Skip over the padding, we don't care about it
