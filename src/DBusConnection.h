@@ -70,22 +70,13 @@ namespace cxxbus
     };
 
    private:
-    struct ChannelInfo
-    {
-      boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> channel;
-      bool available;
-      uint32_t serial;
-    };
-
     struct InternalState
     {
       std::shared_ptr<boost::asio::io_context> ioContext;
 
       // Store channels to make our 'SendMessage' be awaitable
-      // std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
-      //     replyChannels;
-      std::vector<std::unique_ptr<ChannelInfo>> replyChannels;  // unique_ptr because we need to be able to handle
-                                                                // reallocation while not losing our references
+      std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
+          replyChannels;
 
       AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
       std::unordered_map<uint32_t, std::shared_ptr<AwaitableSignal<MessageHandled, IncomingDBusMessage>>> messageFilter;

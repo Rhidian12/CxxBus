@@ -194,44 +194,44 @@ namespace cxxbus
     , m_userIOContext(ioService)
   {
     std::shared_ptr<boost::asio::io_context> ioContext{std::make_shared<boost::asio::io_context>()};
-    m_state = std::shared_ptr<InternalState>(new InternalState{
-        .ioContext = ioContext,
-        // .replyChannels =
-        //     std::map<uint32_t,
-        //              boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
-        .replyChannels = {},
-        .onIncomingSignal = {},
-        .messageFilter = {},
-        .messageFilterID = 0,
-        .onDisconnected = {},
-        .sendLoop =
-            boost::asio::experimental::channel<void(
-                boost::system::error_code,
-                std::tuple<DBusMessage, uint32_t,
-                           std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
-                *ioContext, 10},
-        .connectionReady = false,
-        .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
-        .nrOfWaiters = 0,
-        .strand = std::make_shared<boost::asio::strand<typename boost::asio::io_context::executor_type>>(
-            ioContext->get_executor()),
-        .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(*ioContext),
-        .uniqueConnection = nullptr,
-        .wellKnownNames = std::make_shared<std::vector<DBusWellKnownName>>(),
-        .serial = std::make_shared<uint32_t>(1),
-        .subscriptionCounter = std::make_shared<uint32_t>(0),
-        .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
-        .nameCache = std::make_shared<DBusNameCache>(*this),
-        .objectPathHandlers = std::make_shared<
-            std::unordered_map<std::string, std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>>>>(),
-        .mutex = std::make_shared<std::mutex>(),
-        .workGuard = nullptr,
-        .ioThread = nullptr,
-        .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
-        .timer = boost::asio::system_timer{*ioContext},
-        .shouldQuit = false,
-        .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
-        .sendLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
+    m_state =
+        std::shared_ptr<InternalState>(new InternalState{
+            .ioContext = ioContext,
+            .replyChannels =
+                std::map<uint32_t,
+                         boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
+            .onIncomingSignal = {},
+            .messageFilter = {},
+            .messageFilterID = 0,
+            .onDisconnected = {},
+            .sendLoop =
+                boost::asio::experimental::channel<void(
+                    boost::system::error_code,
+                    std::tuple<DBusMessage, uint32_t,
+                               std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
+                    *ioContext, 10},
+            .connectionReady = false,
+            .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
+            .nrOfWaiters = 0,
+            .strand = std::make_shared<boost::asio::strand<typename boost::asio::io_context::executor_type>>(
+                ioContext->get_executor()),
+            .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(*ioContext),
+            .uniqueConnection = nullptr,
+            .wellKnownNames = std::make_shared<std::vector<DBusWellKnownName>>(),
+            .serial = std::make_shared<uint32_t>(1),
+            .subscriptionCounter = std::make_shared<uint32_t>(0),
+            .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
+            .nameCache = std::make_shared<DBusNameCache>(*this),
+            .objectPathHandlers = std::make_shared<
+                std::unordered_map<std::string, std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>>>>(),
+            .mutex = std::make_shared<std::mutex>(),
+            .workGuard = nullptr,
+            .ioThread = nullptr,
+            .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
+            .timer = boost::asio::system_timer{*ioContext},
+            .shouldQuit = false,
+            .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
+            .sendLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
 
     if (wellKnownName.has_value())
     {
@@ -536,9 +536,7 @@ namespace cxxbus
       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
       {
         std::unique_lock<std::mutex> lock{*state->mutex};
-        auto it = std::ranges::find_if(state->replyChannels, [replySerial](std::unique_ptr<ChannelInfo> const& c)
-                                       { return c->serial == replySerial; });
-        if (it == state->replyChannels.cend())
+        if (!state->replyChannels.contains(replySerial))
         {
           // It should not be possible to get a reply to a message we don't know
           LOG_FATAL(LOGGER,
@@ -548,7 +546,7 @@ namespace cxxbus
           throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
         }
 
-        chann = &((*it).get()->channel);
+        chann = state->replyChannels[replySerial];
       }
 
       co_await chann->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
@@ -651,26 +649,15 @@ namespace cxxbus
   boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
+    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{
+        m_state->socket->get_executor(), 1};
+
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
-    ChannelInfo* channInfo = nullptr;
 
     if (expectsReply)
     {
       std::unique_lock<std::mutex> lock{*m_state->mutex};
-      auto it = std::ranges::find_if(m_state->replyChannels,
-                                     [](std::unique_ptr<ChannelInfo> const& c) { return c->available; });
-
-      if (it == m_state->replyChannels.cend())
-      {
-        boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{
-            m_state->socket->get_executor(), 1};
-        m_state->replyChannels.push_back(std::make_unique<ChannelInfo>(std::move(replyChannel), true, 0));
-        it = m_state->replyChannels.end() - 1;
-      }
-
-      channInfo = (*it).get();
-      channInfo->available = false;
-      channInfo->serial = *m_state->serial;
+      m_state->replyChannels[*m_state->serial] = &replyChannel;
     }
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> messageSentChannel =
@@ -692,10 +679,10 @@ namespace cxxbus
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
-    IncomingDBusMessage reply = co_await channInfo->channel.async_receive(boost::asio::use_awaitable);
+    IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
     {
       std::unique_lock<std::mutex> lock{*m_state->mutex};
-      channInfo->available = true;
+      m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
     }
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
