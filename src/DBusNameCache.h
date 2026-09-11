@@ -32,7 +32,6 @@
 namespace cxxbus
 {
   class DBusConnection;
-  class SyncDBusConnection;
 
   class DBusNameCache
   {
@@ -46,7 +45,7 @@ namespace cxxbus
    public:
     DBusNameCache(DBusConnection& conn);
 
-    boost::asio::awaitable<void> SubscribeToNameChanges(boost::asio::io_context& ioContext);
+    boost::asio::awaitable<void> SubscribeToNameChanges();
 
     // Returns a list of well-known names associated with the given unique connection name.
     // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not

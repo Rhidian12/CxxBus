@@ -48,7 +48,7 @@ namespace cxxbus
   {
   }
 
-  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges(boost::asio::io_context& ioContext)
+  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
   {
     co_await m_conn.AddMatchRule(
         DBusMatchRule::Create()
@@ -61,7 +61,7 @@ namespace cxxbus
           OnNameOwnerChanged(std::move(message));
           co_return;
         },
-        ioContext);
+        DBusConnection::DONT_HOP);
   }
 
   void DBusNameCache::OnNameOwnerChanged(IncomingDBusMessage message)

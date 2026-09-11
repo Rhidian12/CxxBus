@@ -59,7 +59,7 @@ namespace cxxbus
   class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   {
    private:
-    friend class SyncDBusConnection;
+    friend class DBusNameCache;
 
    public:
     struct MatchRuleInfo
@@ -68,6 +68,11 @@ namespace cxxbus
       std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> callback;
       std::shared_ptr<boost::signals2::signal<void(IncomingDBusMessage)>> syncCallback;
     };
+
+    struct DontHopTag
+    {
+    };
+    constexpr static DontHopTag DONT_HOP{};
 
    private:
     struct InternalState
@@ -128,7 +133,7 @@ namespace cxxbus
 
    private:
     boost::asio::awaitable<void> AuthenticateDBusConnection();
-    boost::asio::awaitable<void> Connect(BusType busType, boost::asio::io_context& ioContext);
+    boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
     boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
@@ -148,17 +153,24 @@ namespace cxxbus
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessageImpl(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReplyImpl(DBusMessage message);
-    boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name, boost::asio::io_context& ioContext);
-    boost::asio::awaitable<void> ReleaseWellKnownNameImpl(DBusWellKnownName name, boost::asio::io_context& ioContext);
+    boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name);
+    boost::asio::awaitable<void> ReleaseWellKnownNameImpl(DBusWellKnownName name);
     boost::asio::awaitable<void> AddMatchRuleImpl(
-        DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
-        boost::asio::io_context& ioContext);
-    boost::asio::awaitable<void> RemoveMatchRuleImpl(DBusMatchRule rule, boost::asio::io_context& ioContext);
-    boost::asio::awaitable<void> CloseImpl(boost::asio::io_context& ioContext);
+        DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> RemoveMatchRuleImpl(DBusMatchRule rule);
+    boost::asio::awaitable<void> CloseImpl();
+
+    boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message, DontHopTag);
+    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule,
+                                              std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
+                                              DontHopTag);
+    boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule, DontHopTag);
+    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name, DontHopTag);
+    boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name, DontHopTag);
+    boost::asio::awaitable<void> Close(DontHopTag);
 
    public:
     ~DBusConnection();
-    boost::asio::awaitable<void> Close(boost::asio::io_context& ioContext);
     boost::asio::awaitable<void> Close();
     void CloseSync();
 
@@ -182,17 +194,12 @@ namespace cxxbus
 
     boost::asio::awaitable<void> AddMatchRule(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
-    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule,
-                                              std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
-                                              boost::asio::io_context& ioContext);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
-    boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule, boost::asio::io_context& ioContext);
 
     void AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
     void RemoveMatchRuleSync(DBusMatchRule rule);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
-    boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message, boost::asio::io_context& ioContext);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message, boost::asio::io_context& ioContext);
 
@@ -200,8 +207,6 @@ namespace cxxbus
     void SendMessageNoReplySync(DBusMessage message);
 
     boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name);
-    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name, boost::asio::io_context& ioContext);
-    boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name, boost::asio::io_context& ioContext);
     boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name);
 
     void RequestWellKnownNameSync(DBusWellKnownName name);

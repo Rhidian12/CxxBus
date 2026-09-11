@@ -12,6 +12,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <functional>
 #include <memory>
+#include <thread>
 
 #include "src/DBusConnection.h"
 #include "src/DBusMatchRule.h"
@@ -53,11 +54,13 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto threadID = std::this_thread::get_id();
     auto reply = conn->SendMessageSync(DBusMessage::Method("Introspect")
                                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                            .Destination("org.freedesktop.DBus"));
 
+    EXPECT_EQ(threadID, std::this_thread::get_id());
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
