@@ -147,7 +147,7 @@ namespace cxxbus
       requires(!std::is_same_v<std::remove_cvref_t<T>, Variant>)
     explicit Variant(T&& value)
       : m_variantData{
-            VariantData{.signature = GetTypeSignature<std::remove_cvref_t<T>>(),
+            VariantData{.signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
                         .dataSize = 0,
                         .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
                         .data = std::unique_ptr<void, CustomDeleter>(
@@ -169,7 +169,7 @@ namespace cxxbus
     // Wraps a Variant inside a Variant (nested/boxed variant)
     Variant(InPlaceT, Variant variant)
       : m_variantData{
-            VariantData{.signature = GetTypeSignature<Variant>(),
+            VariantData{.signature = std::string{GetTypeSignature<Variant>()},
                         .dataSize = 0,
                         .dataAlignment = GetAlignmentOfDBusType<Variant>(),
                         .data = std::unique_ptr<void, CustomDeleter>(
@@ -300,12 +300,12 @@ namespace cxxbus
 
       DeserializedVariantData const& data = std::get<DeserializedVariantData>(m_variantData);
 
-      if (GetTypeSignature<T>() != data.signature)
+      if (std::string{GetTypeSignature<T>()} != data.signature)
       {
         throw VariantUnmarshalError{
             std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to "
                         "deserialize {}",
-                        data.signature.GetSignature(), GetTypeSignature<T>())};
+                        data.signature.GetSignature(), std::string{GetTypeSignature<T>()})};
       }
 
       uint32_t arrPointer{};
@@ -1291,6 +1291,7 @@ namespace cxxbus
       throw DBusInvalidSignatureError{std::format("Signature '{}' contains unknown DBus Type Codes.", signature)};
     }
 
+    // [TODO]: stop being lazy and check this at compile time
     if (!AreDBusTypeCodeBracketsEven(signature))
     {
       throw DBusInvalidSignatureError{
@@ -1300,7 +1301,8 @@ namespace cxxbus
     if (signature != GetTypeSignature<T>())
     {
       throw DBusInvalidSignatureError{std::format("Type {} (signature: '{}') and Signature {} do not match.",
-                                                  ConstexprTypeName<T>(), GetTypeSignature<T>(), signature)};
+                                                  ConstexprTypeName<T>(), std::string{GetTypeSignature<T>()},
+                                                  signature)};
     }
 
     return UnmarshalDBusTypeImpl<T>(dbusType, arrPointer);

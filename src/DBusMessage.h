@@ -72,7 +72,7 @@ namespace cxxbus
     template <typename T>
     DBusMessage& Parameter(T&& value)
     {
-      m_signature = GetTypeSignature<std::remove_cvref_t<T>>();
+      m_signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()};
       m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
 
       return *this;
@@ -86,6 +86,8 @@ namespace cxxbus
     std::vector<uint8_t> Serialize(uint32_t serial) const;
 
     std::vector<DBusMessageFlags> const& GetFlags() const;
+
+    bool ExpectsReply() const;
 
     std::optional<ObjectPath> const& GetPath() const;
     std::optional<Signature> const& GetSignature() const;

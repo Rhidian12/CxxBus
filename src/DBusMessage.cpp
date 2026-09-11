@@ -284,6 +284,11 @@ namespace cxxbus
     return m_flags;
   }
 
+  bool DBusMessage::ExpectsReply() const
+  {
+    return !std::ranges::contains(m_flags, DBusMessageFlags::NO_REPLY_EXPECTED);
+  }
+
   std::optional<ObjectPath> const& DBusMessage::GetPath() const
   {
     return m_path;

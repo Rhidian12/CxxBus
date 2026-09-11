@@ -23,6 +23,7 @@
 #pragma once
 
 #include <boost/asio/awaitable.hpp>
+#include <tuple>
 
 #include "DBusConcepts.h"
 #include "DBusTypes.h"
@@ -47,86 +48,179 @@ namespace cxxbus
   std::string ParseDBusAddress(BusType busType);
   std::string HexEncodeString(std::string const& str);
 
+  template <size_t N>
+  class ConstexprString
+  {
+   private:
+    template <size_t N2>
+    friend class ConstexprString;
+
+   private:
+    std::array<char, N + 1> data;
+    size_t size = N;
+
+   public:
+    constexpr ConstexprString() = default;
+    constexpr ConstexprString(char const (&str)[N + 1])
+    {
+      for (size_t i{}; i < N; ++i)
+      {
+        data[i] = str[i];
+      }
+      data[N] = '\0';
+    }
+
+    template <size_t N2>
+    constexpr ConstexprString<N + N2> Concat(ConstexprString<N2> str)
+    {
+      ConstexprString<N + N2> newStr{};
+      for (size_t i{}; i < N; ++i)
+      {
+        newStr.data[i] = data[i];
+      }
+      for (size_t i{}; i < N2; ++i)
+      {
+        newStr.data[N + i] = str.data[i];
+      }
+      newStr.data[N + N2] = '\0';
+      return newStr;
+    }
+
+    template <size_t N2>
+    constexpr bool operator==(ConstexprString<N2> other) const noexcept
+    {
+      return N == N2 && data == other.data;
+    }
+
+    bool operator==(std::string const& other) const noexcept
+    {
+      if (N != other.size()) return false;
+
+      for (size_t i{}; i < N; ++i)
+      {
+        if (data[i] != other[i])
+        {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    explicit operator std::string() const
+    {
+      return std::string{data.data()};
+    }
+  };
+
   template <IsDBusType T>
-  constexpr std::string GetTypeSignature()
+  constexpr auto GetTypeSignature();
+
+  template <typename T, size_t I>
+  constexpr auto BuildStructSignatureImpl()
+  {
+    if constexpr (I == std::tuple_size_v<T>)
+    {
+      return ConstexprString<1>{")"};
+    }
+    else
+    {
+      return GetTypeSignature<std::tuple_element_t<I, T>>().Concat(BuildStructSignatureImpl<T, I + 1>());
+    }
+  }
+
+  template <typename T>
+  constexpr auto BuildStructSignature()
+  {
+    return ConstexprString<1>{"("}.Concat(BuildStructSignatureImpl<T, 0>());
+  }
+
+  template <typename T, size_t I>
+  constexpr auto BuildMultipleCompleteTypesSignature()
+  {
+    if constexpr (I == std::tuple_size_v<typename T::type>)
+    {
+      return ConstexprString<0>{};
+    }
+    else
+    {
+      return GetTypeSignature<std::tuple_element_t<I, typename T::type>>().Concat(
+          BuildMultipleCompleteTypesSignature<T, I + 1>());
+    }
+  }
+
+  template <IsDBusType T>
+  constexpr auto GetTypeSignature()
   {
     if constexpr (std::is_same_v<T, uint8_t>)
     {
-      return "y";
+      return ConstexprString<1>{"y"};
     }
     else if constexpr (std::is_same_v<T, bool>)
     {
-      return "b";
+      return ConstexprString<1>{"b"};
     }
     else if constexpr (std::is_same_v<T, int16_t>)
     {
-      return "n";
+      return ConstexprString<1>{"n"};
     }
     else if constexpr (std::is_same_v<T, uint16_t>)
     {
-      return "q";
+      return ConstexprString<1>{"q"};
     }
     else if constexpr (std::is_same_v<T, int32_t>)
     {
-      return "i";
+      return ConstexprString<1>{"i"};
     }
     else if constexpr (std::is_same_v<T, uint32_t>)
     {
-      return "u";
+      return ConstexprString<1>{"u"};
     }
     else if constexpr (std::is_same_v<T, int64_t>)
     {
-      return "x";
+      return ConstexprString<1>{"x"};
     }
     else if constexpr (std::is_same_v<T, uint64_t>)
     {
-      return "t";
+      return ConstexprString<1>{"t"};
     }
     else if constexpr (std::is_same_v<T, double>)
     {
-      return "d";
+      return ConstexprString<1>{"d"};
     }
     else if constexpr (IsString<T> || std::same_as<T, DBusInterfaceName>)
     {
-      return "s";
+      return ConstexprString<1>{"s"};
     }
     else if constexpr (std::is_same_v<T, ObjectPath>)
     {
-      return "o";
+      return ConstexprString<1>{"o"};
     }
     else if constexpr (std::is_same_v<T, Signature>)
     {
-      return "g";
+      return ConstexprString<1>{"g"};
     }
     else if constexpr (IsDBusArray<T>)
     {
-      return std::string{"a"} + GetTypeSignature<typename T::value_type>();
+      return ConstexprString<1>{"a"}.Concat(GetTypeSignature<typename T::value_type>());
     }
     else if constexpr (IsDBusStruct<T>)
     {
-      std::string type{"("};
-      [&type]<size_t... Is>(std::index_sequence<Is...>)
-      {
-        type += (GetTypeSignature<std::tuple_element_t<Is, T>>() + ...);
-      }(std::make_index_sequence<std::tuple_size_v<T>>{});
-      type += ")";
-      return type;
+      return BuildStructSignature<T>();
     }
     else if constexpr (IsDBusVariant<T>)
     {
-      return "v";
+      return ConstexprString<1>{"v"};
     }
     else if constexpr (IsDBusMap<T>)
     {
-      return std::string{"a{"} + GetTypeSignature<typename T::key_type>() +
-             GetTypeSignature<typename T::mapped_type>() + "}";
+      return ConstexprString<2>{"a{"}
+          .Concat(GetTypeSignature<typename T::key_type>())
+          .Concat(GetTypeSignature<typename T::mapped_type>())
+          .Concat(ConstexprString<1>{"}"});
     }
     else if constexpr (IsDBusMultipleCompleteTypes<T>)
     {
-      return std::string{[]<size_t... Is>(std::index_sequence<Is...>)
-                         {
-                           return (GetTypeSignature<std::tuple_element_t<Is, typename T::type>>() + ...);
-                         }(std::make_index_sequence<std::tuple_size_v<typename T::type>>{})};
+      return BuildMultipleCompleteTypesSignature<T, 0>();
     }
   }
 
