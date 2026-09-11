@@ -163,7 +163,6 @@ namespace cxxbus
                               CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
                         }}}
     {
-      // GetSizeOfDBusType(value, std::get<VariantData>(m_variantData).dataSize);
     }
 
     // Wraps a Variant inside a Variant (nested/boxed variant)
@@ -185,8 +184,6 @@ namespace cxxbus
                               CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
                         }}}
     {
-      // GetSizeOfDBusType<Signature>(variant.GetSignature(), std::get<VariantData>(m_variantData).dataSize);
-      // std::get<VariantData>(m_variantData).dataSize += variant.GetDataSize();
     }
 
     Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
@@ -860,7 +857,6 @@ namespace cxxbus
     {
       uint32_t boolValue{};
       std::memcpy(&boolValue, dbusType.data() + arrPointer, sizeof(uint32_t));
-      value = boolValue == 1;
 
       arrPointer += sizeof(uint32_t);
     }
@@ -908,7 +904,7 @@ namespace cxxbus
     }
     else
     {
-      return T{str};
+      return T{std::move(str)};
     }
   }
 
@@ -1010,7 +1006,6 @@ namespace cxxbus
       {
         vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
       }
-      // GetSizeOfDBusType(vec.back(), bytesRead);
       bytesRead += (arrPointer - oldPointer);
 
       if (bytesRead < arrLength)

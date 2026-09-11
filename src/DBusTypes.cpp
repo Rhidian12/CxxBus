@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <format>
 #include <optional>
-#include <ranges>
 
 #include "DBusHelpers.h"
 
@@ -92,39 +91,33 @@ namespace cxxbus
 
       if (path.empty()) return "Object Path cannot be empty";
       if (path[0] != '/') return "Object Path must start with '/'";
+      if (path.size() == 1) return std::nullopt;  // root path
 
-      // First element is empty if first character is '/'
-      auto range = path | std::views::split('/') | std::views::drop(1);
-      std::vector<std::string_view> const elements(range.begin(), range.end());
-
-      if (path.size() > 1 && std::ranges::any_of(elements, [](std::string_view elem) { return elem.empty(); }))
+      size_t elementStart = 1;
+      for (size_t i{elementStart}; i <= path.size(); ++i)
       {
-        return "Object Path cannot contain empty elements in between '/'";
-      }
+        // Did we find a slash or have we reached the end of our string?
+        if (path[i] == '/' || i == path.size())
+        {
+          // Did we already set the start of our element to this index? If so the previous index was ALSO a slash
+          // Which can mean we failed for several reasons, list them and error
+          if (i == elementStart)
+          {
+            return "Object path cannot contain empty elements in between '/', consecutive '/' or a trailing '/'";
+          }
 
-      if (std::ranges::any_of(elements,
-                              [](std::string_view elem)
-                              {
-                                return std::ranges::any_of(elem,
-                                                           [](unsigned char c)
-                                                           {
-                                                             return !((c >= 'A' && c <= 'Z') ||
-                                                                      (c >= 'a' && c <= 'z') ||
-                                                                      (c >= '0' && c <= '9') || c == '_');
-                                                           });
-                              }))
-      {
-        return "Object Path elements can only contain characters in the following range: '[A-Z][a-z][0-9]_'";
-      }
+          elementStart = i + 1;
+        }
+        else
+        {
+          unsigned char const c = static_cast<unsigned char>(path[i]);
+          bool const valid = ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_');
 
-      if (path.contains("//"))
-      {
-        return "Object Path cannot contain consecutive '/'";
-      }
-
-      if (path.back() == '/' && (path.size() > 1 || (path.size() == 1 && path[0] != '/')))
-      {
-        return "Object Path cannot end with '/' unless it is the root path ('/')";
+          if (!valid)
+          {
+            return "Object Path elements can only contain characters in the following range: '[A-Z][a-z][0-9]_'";
+          }
+        }
       }
 
       return std::nullopt;
