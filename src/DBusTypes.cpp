@@ -168,7 +168,7 @@ namespace cxxbus
   // Get the alignment of the contained signature
   uint8_t Signature::GetAlignmentOfSignature() const
   {
-    return ::cxxbus::GetAlignmentOfSignature(*this);
+    return ::cxxbus::GetAlignmentOfSignature(m_signature[0]);
   }
 
   bool Signature::Empty() const

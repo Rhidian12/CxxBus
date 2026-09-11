@@ -27,7 +27,6 @@
 #include <stdexcept>
 
 #include "DBusTypes.h"
-#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
@@ -127,9 +126,9 @@ namespace cxxbus
     return counter == 0;
   }
 
-  uint8_t GetAlignmentOfSignature(Signature const& signature)
+  uint8_t GetAlignmentOfSignature(char const signature)
   {
-    switch (static_cast<DBusTypeCodes>(signature.GetSignature()[0]))
+    switch (static_cast<DBusTypeCodes>(signature))
     {
       case DBusTypeCodes::BYTE:
       case DBusTypeCodes::SIGNATURE:
@@ -152,8 +151,7 @@ namespace cxxbus
       case DBusTypeCodes::STRUCT_BEGIN:
         return 8;
       default:
-        throw std::runtime_error{
-            std::format("Alignment of signature '{}' cannot be requested", signature.GetSignature()[0])};
+        throw std::runtime_error{std::format("Alignment of signature '{}' cannot be requested", signature)};
     }
   }
 
@@ -166,7 +164,8 @@ namespace cxxbus
     }
 
     // Looks something like: unix:path=/run/user/1000/bus or unix:path=/var/run/dbus/system_bus_socket
-    // after the 'unix:' prefix, we have multiple key=value pairs, separated by commas. We only care about the 'path' key
+    // after the 'unix:' prefix, we have multiple key=value pairs, separated by commas. We only care about the 'path'
+    // key
     std::string_view dbusAddress{rawAddress};
 
     if (!dbusAddress.starts_with("unix:"))

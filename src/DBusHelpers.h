@@ -44,7 +44,7 @@ namespace cxxbus
   bool IsDBusTypeCode(unsigned char c);
   bool IsDBusTypeCode(std::string const& str);
   bool AreDBusTypeCodeBracketsEven(std::string const& str);
-  uint8_t GetAlignmentOfSignature(Signature const& signature);
+  uint8_t GetAlignmentOfSignature(char const signature);
   std::string ParseDBusAddress(BusType busType);
   std::string HexEncodeString(std::string const& str);
 
