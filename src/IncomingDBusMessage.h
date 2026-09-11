@@ -81,7 +81,7 @@ namespace cxxbus
     std::optional<std::string> const& GetErrorName() const;
 
     void ParseHeaderFieldLength(std::vector<byte> data);
-    void ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer);
+    void ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer);
 
     bool operator==(DBusMessageHeader const&) const noexcept = default;
   };

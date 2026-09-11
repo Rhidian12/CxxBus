@@ -43,6 +43,7 @@ function(define_test_or_benchmark)
     find_package(GTest REQUIRED)
   else()
     find_package(benchmark REQUIRED)
+    find_package(sdbus-c++ REQUIRED)
   endif()
 
   # Make the test sources a relative path for later usage
@@ -59,7 +60,7 @@ function(define_test_or_benchmark)
     include(GoogleTest)
     gtest_discover_tests(${DU_NAME})
   else()
-    target_link_libraries(${DU_NAME} PRIVATE benchmark::benchmark benchmark::benchmark_main)
+    target_link_libraries(${DU_NAME} PRIVATE benchmark::benchmark_main)
   endif()
 
   if(NOT DO_NOT_ADD_TO_CACHE)

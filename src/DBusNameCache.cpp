@@ -69,8 +69,8 @@ namespace cxxbus
     MultipleCompleteTypes<std::string, std::string, std::string> const parameters{
         message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>()};
 
-    LOGGER.LogTrace("NameOwnerChanged signal triggered: '{}', '{}', '{}'", parameters.GetType<0>(),
-                    parameters.GetType<1>(), parameters.GetType<2>());
+    LOG_TRACE(LOGGER, "NameOwnerChanged signal triggered: '{}', '{}', '{}'", parameters.GetType<0>(),
+              parameters.GetType<1>(), parameters.GetType<2>());
 
     std::string const wellKnownName{parameters.GetType<0>()};
     std::string const oldUniqueName{parameters.GetType<1>()};

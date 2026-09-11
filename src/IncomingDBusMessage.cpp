@@ -28,7 +28,6 @@
 #include <format>
 #include <iterator>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <vector>
 
@@ -85,19 +84,18 @@ namespace cxxbus
               .headerFields = {}};
     }
 
-    void UnmarshalDBusHeader(std::vector<byte> const& dbusMessage, DBusMessageHeader::ReplyData& data,
-                             uint32_t& arrPointer)
+    void UnmarshalDBusHeader(std::vector<byte> dbusMessage, DBusMessageHeader::ReplyData& data, uint32_t& arrPointer)
     {
       auto headerFields =
-          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(dbusMessage, "a(yv)", arrPointer);
+          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(std::move(dbusMessage), "a(yv)", arrPointer);
 
       std::vector<DBusMessageHeader::HeaderFieldReplyData> headerFieldData{};
       std::ranges::transform(headerFields, std::back_inserter(headerFieldData),
-                             [](std::tuple<uint8_t, Variant> const& headerData)
+                             [](std::tuple<uint8_t, Variant> headerData)
                              {
                                return DBusMessageHeader::HeaderFieldReplyData{
                                    .code = static_cast<HeaderFieldCode>(std::get<0>(headerData)),
-                                   .data = std::get<1>(headerData)};
+                                   .data = std::get<1>(std::move(headerData))};
                              });
 
       auto const signatureIt =
@@ -232,7 +230,7 @@ namespace cxxbus
       data.signature = signatureIt == headerFieldData.cend()
                            ? std::nullopt
                            : std::optional{signatureIt->data.UnmarshalData<Signature>()};
-      data.headerFields = headerFieldData;
+      data.headerFields = headerFieldData;  // std::move is signficantly slower here...
     }
   }  // namespace
 
@@ -303,12 +301,12 @@ namespace cxxbus
 
   void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)
   {
-    m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(data, "u");
+    m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(std::move(data), "u");
   }
 
-  void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> const& data, uint32_t& arrPointer)
+  void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer)
   {
-    UnmarshalDBusHeader(data, m_data, arrPointer);
+    UnmarshalDBusHeader(std::move(data), m_data, arrPointer);
   }
 
   IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)

@@ -90,7 +90,7 @@ static void BM_StringSerialisation(benchmark::State& state)
   std::string str{};
   for (int i{}; i < 10'000; ++i)
   {
-    str.push_back(i % 255);
+    str.push_back(std::max(i % 127, 1));
   }
 
   for (auto _ : state)

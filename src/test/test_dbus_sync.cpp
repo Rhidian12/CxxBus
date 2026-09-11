@@ -37,7 +37,7 @@ struct SyncDBusConnectionTestSuite : ::testing::Test
         [this]() -> boost::asio::awaitable<void>
         {
           co_await coroutineToRun();
-          LOGGER.LogTrace("Finished running coroutine");
+          LOG_TRACE(LOGGER, "Finished running coroutine");
         },
         [](std::exception_ptr e)
         {
@@ -360,6 +360,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 </node>
 )");
 #endif
+
+    // conn->CloseSync();
     co_return;
   };
 }
@@ -396,7 +398,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann2{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
 
-    LOGGER.LogDebug("Adding extensive match rule");
+    LOG_DEBUG(LOGGER, "Adding extensive match rule");
     DBusMatchRule const extensiveRule{DBusMatchRule::Create()
                                           .Type(DBusMessageType::SIGNAL)
                                           .Member("NameOwnerChanged")
@@ -405,28 +407,28 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
     conn->AddMatchRuleSync(extensiveRule,
                            [&extensiveMatchRuleTriggered, chann](IncomingDBusMessage)
                            {
-                             LOGGER.LogInfo("Extensive match rule was triggered");
+                             LOG_INFO(LOGGER, "Extensive match rule was triggered");
                              extensiveMatchRuleTriggered = true;
                              chann->async_send(boost::system::error_code{}, boost::asio::detached);
                            });
 
-    LOGGER.LogDebug("Adding simple match rule");
+    LOG_DEBUG(LOGGER, "Adding simple match rule");
     DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
     conn->AddMatchRuleSync(simpleRule,
                            [&simpleMatchRuleTriggered, chann2](IncomingDBusMessage)
                            {
-                             LOGGER.LogInfo("Simple match rule was triggered");
+                             LOG_INFO(LOGGER, "Simple match rule was triggered");
                              simpleMatchRuleTriggered = true;
                              chann2->async_send(boost::system::error_code{}, boost::asio::detached);
                            });
 
-    conn->SendMessageSync(DBusMessage::Method("RequestName")
-                              .Path(ObjectPath{"/org/freedesktop/DBus"})
-                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                              .Destination("org.freedesktop.DBus")
-                              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
-                                  DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
-    LOGGER.LogInfo("Finished request name call");
+    auto reply = conn->SendMessageSync(DBusMessage::Method("RequestName")
+                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                           .Destination("org.freedesktop.DBus")
+                                           .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                                               DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
+    LOG_INFO(LOGGER, "Finished request name call: {}", reply.Get<uint32_t>());
 
     co_await chann->async_receive(boost::asio::use_awaitable);
     co_await chann2->async_receive(boost::asio::use_awaitable);
@@ -485,7 +487,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
     conn2->AddMatchRuleSync(DBusMatchRule::Create().Member("SignalEmitted"),
                             [signalEmitted, chann](IncomingDBusMessage msg)
                             {
-                              LOGGER.LogInfo("Received emitted signal");
+                              LOG_INFO(LOGGER, "Received emitted signal");
                               *signalEmitted = true;
                               EXPECT_EQ(
                                   (msg.Get<std::tuple<std::string, int, double, std::string>>()),
@@ -502,5 +504,46 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
     co_await chann->async_receive(boost::asio::use_awaitable);
 
     EXPECT_TRUE(*signalEmitted);
+  };
+}
+
+TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSameProcess)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+
+    std::shared_ptr<boost::asio::io_context> ioService2{std::make_shared<boost::asio::io_context>()};
+    auto workGuard =
+        std::make_unique<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>>(
+            boost::asio::make_work_guard(*ioService2));
+    auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+    std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
+
+    auto work = [messageReceived, ioService2, conn2]()
+    {
+      conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
+                                       [conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+                                       {
+                                         *messageReceived = true;
+                                         co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+                                       });
+
+      ioService2->run();
+    };
+
+    std::thread t{work};
+    conn->SendMessageSync(
+        DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
+
+    workGuard.reset();
+    t.join();
+
+    EXPECT_TRUE(messageReceived);
+
+    // conn->CloseSync();
+    // conn2->CloseSync();
+
+    co_return;
   };
 }
