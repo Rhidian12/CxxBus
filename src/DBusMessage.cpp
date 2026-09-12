@@ -115,7 +115,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("replySerial is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{replySerial.value()};
+            variant.emplace(replySerial.value());
             break;
           case HeaderFieldCode::ERROR_NAME:
             if (!errorName.has_value() || errorName->empty())
@@ -123,7 +123,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("ErrorName is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{errorName.value()};
+            variant.emplace(errorName.value());
             break;
           case HeaderFieldCode::PATH:
             if (!objectPath.has_value() || objectPath->Empty())
@@ -131,7 +131,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Path is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*objectPath};
+            variant.emplace(*objectPath);
             break;
           case HeaderFieldCode::INTERFACE:
             if (!interface.has_value() || interface->empty())
@@ -139,7 +139,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Interface is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*interface};
+            variant.emplace(*interface);
             break;
           case HeaderFieldCode::MEMBER:
             if (!method.has_value() || method->empty())
@@ -147,7 +147,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Method is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*method};
+            variant.emplace(*method);
             break;
           case HeaderFieldCode::SIGNATURE:
             if (!signature.has_value() || signature->Empty())
@@ -155,7 +155,7 @@ namespace cxxbus
               throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body",
                                                        magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*signature};
+            variant.emplace(*signature);
             break;
         }
 

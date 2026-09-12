@@ -39,7 +39,7 @@ namespace cxxbus
 {
   namespace
   {
-    DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::vector<byte> dbusMessage)
+    DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> data)
     {
       // In this function we parse everything up until the array of variants, BUT INCLUDING the length of the array of
       // variants That way, we know how many bytes to read in always (16 at first, followed by the length of the header
@@ -60,14 +60,14 @@ namespace cxxbus
       // to this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message
       // type specifies which fields are required
 
-      if (dbusMessage.size() != FIRST_HEADER_PART_SIZE)
+      if (data.size() != FIRST_HEADER_PART_SIZE)
       {
         throw DBusMalformedInputError{std::format("Incoming DBus header should be {} bytes, it is {} bytes instead",
-                                                  FIRST_HEADER_PART_SIZE, dbusMessage.size())};
+                                                  FIRST_HEADER_PART_SIZE, data.size())};
       }
 
       auto header = UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>(
-          dbusMessage, "yyyyuu");
+          data, "yyyyuu");
 
       return {.serial = header.GetType<5>(),
               .replySerial = 0,
@@ -84,14 +84,15 @@ namespace cxxbus
               .headerFields = {}};
     }
 
-    void UnmarshalDBusHeader(std::vector<byte> dbusMessage, DBusMessageHeader::ReplyData& data, uint32_t& arrPointer)
+    void UnmarshalDBusHeader(std::span<byte const> dbusMessage, DBusMessageHeader::ReplyData& data,
+                             uint32_t& arrPointer)
     {
       auto headerFields =
-          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(std::move(dbusMessage), "a(yv)", arrPointer);
+          UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(dbusMessage, "a(yv)", arrPointer);
 
       std::vector<DBusMessageHeader::HeaderFieldReplyData> headerFieldData{};
       std::ranges::transform(headerFields, std::back_inserter(headerFieldData),
-                             [](std::tuple<uint8_t, Variant> headerData)
+                             [](std::tuple<uint8_t, Variant> const& headerData)
                              {
                                return DBusMessageHeader::HeaderFieldReplyData{
                                    .code = static_cast<HeaderFieldCode>(std::get<0>(headerData)),
@@ -234,7 +235,7 @@ namespace cxxbus
     }
   }  // namespace
 
-  DBusMessageHeader::DBusMessageHeader(std::vector<byte> data)
+  DBusMessageHeader::DBusMessageHeader(std::span<byte const> data)
     : m_data(UnmarshalDBusHeader(std::move(data)))
   {
   }
@@ -299,14 +300,14 @@ namespace cxxbus
     return m_data.errorName;
   }
 
-  void DBusMessageHeader::ParseHeaderFieldLength(std::vector<byte> data)
+  void DBusMessageHeader::ParseHeaderFieldLength(std::span<byte const> data)
   {
     m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(std::move(data), "u");
   }
 
-  void DBusMessageHeader::ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer)
+  void DBusMessageHeader::ParseRemainderOfHeader(std::span<byte const> data, uint32_t& arrPointer)
   {
-    UnmarshalDBusHeader(std::move(data), m_data, arrPointer);
+    UnmarshalDBusHeader(data, m_data, arrPointer);
   }
 
   IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)

@@ -4,8 +4,8 @@
 
 #include "src/DBus.h"
 #include "src/DBusMessage.h"
-#include "src/IncomingDBusMessage.h"
 #include "src/DBusTypes.h"
+#include "src/IncomingDBusMessage.h"
 
 using namespace cxxbus;
 
@@ -14,17 +14,19 @@ namespace
   IncomingDBusMessage ParseFullMessage(std::vector<byte> const& fullMessageBytes)
   {
     uint32_t arrPointer{};
-    DBusMessageHeader header{std::ranges::to<std::vector>(fullMessageBytes | std::views::take(FIRST_HEADER_PART_SIZE))};
+    DBusMessageHeader header{
+        std::span<byte const>{fullMessageBytes.begin(), fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE}};
 
     arrPointer += FIRST_HEADER_PART_SIZE;
 
-    header.ParseHeaderFieldLength(std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer) | std::views::take(sizeof(uint32_t))));
+    header.ParseHeaderFieldLength(std::span<byte const>{fullMessageBytes.begin() + arrPointer, sizeof(uint32_t)});
 
     header.ParseRemainderOfHeader(fullMessageBytes, arrPointer);
 
     AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
 
-    return IncomingDBusMessage{std::move(header), std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer))};
+    return IncomingDBusMessage{std::move(header),
+                               std::ranges::to<std::vector>(fullMessageBytes | std::views::drop(arrPointer))};
   }
 }  // namespace
 

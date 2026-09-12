@@ -78,7 +78,7 @@ namespace cxxbus
   void MarshalDBusTypeImpl(T const& value, std::vector<byte>& dbusType);
 
   template <IsDBusType T>
-  T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer);
+  T UnmarshalDBusTypeImpl(std::span<byte const> dbusType, uint32_t& arrPointer);
 
   struct InPlaceT
   {
@@ -284,7 +284,7 @@ namespace cxxbus
 
       uint32_t arrPointer{};
 
-      return UnmarshalDBusTypeImpl<T>(data.data, arrPointer);
+      return UnmarshalDBusTypeImpl<T>(std::span<byte const>{data.data}, arrPointer);
     }
 
     bool operator==(Variant const& other) const noexcept
@@ -293,7 +293,7 @@ namespace cxxbus
     }
   };
 
-  inline uint32_t GetSizeOfDBusTypeBasedOnSignature(std::string const& signature, std::vector<byte> const& dbusType,
+  inline uint32_t GetSizeOfDBusTypeBasedOnSignature(std::string const& signature, std::span<byte const> dbusType,
                                                     uint32_t& arrPointer)
   {
     switch (static_cast<DBusTypeCodes>(signature[0]))
@@ -705,7 +705,7 @@ namespace cxxbus
   };
 
   template <IsDBusBasicFixedType T>
-  T UnmarshalDBusBasicFixedType(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusBasicFixedType(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     constexpr uint32_t minSize{std::is_same_v<T, bool> ? sizeof(uint32_t) : sizeof(T)};
 
@@ -738,7 +738,7 @@ namespace cxxbus
 
   template <IsDBusBasicStringlikeType T>
     requires(!std::is_same_v<T, std::string_view>)
-  T UnmarshalDBusBasicStringlikeType(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusBasicStringlikeType(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     uint32_t strLength{};
     if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
@@ -775,7 +775,7 @@ namespace cxxbus
   }
 
   template <IsDBusMultipleCompleteTypes T, size_t I, size_t MaxI>
-  auto UnmarshalDBusBasicMultipleCompleteTypes(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  auto UnmarshalDBusBasicMultipleCompleteTypes(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     using ElemType = typename std::tuple_element_t<I, typename T::type>;
 
@@ -791,7 +791,7 @@ namespace cxxbus
   }
 
   template <IsDBusMultipleCompleteTypes T>
-  T UnmarshalDBusBasicMultipleCompleteTypes(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusBasicMultipleCompleteTypes(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
     {
@@ -801,7 +801,7 @@ namespace cxxbus
   }
 
   template <IsDBusBasicType T>
-  T UnmarshalDBusBasicType(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusBasicType(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     if constexpr (IsDBusBasicFixedType<T>)
     {
@@ -818,7 +818,7 @@ namespace cxxbus
   }
 
   template <IsDBusArray T>
-  T UnmarshalDBusArray(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusArray(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     uint32_t const arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
 
@@ -897,7 +897,7 @@ namespace cxxbus
   }
 
   template <IsDBusStruct T, size_t I, size_t MaxI>
-  auto UnmarshalDBusStruct(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  auto UnmarshalDBusStruct(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     using ElemType = typename std::tuple_element_t<I, T>;
 
@@ -920,7 +920,7 @@ namespace cxxbus
   }
 
   template <IsDBusStruct T>
-  T UnmarshalDBusStruct(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusStruct(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     return [&dbusType, &arrPointer]<size_t... Is>(std::index_sequence<Is...>) -> T
     {
@@ -929,7 +929,7 @@ namespace cxxbus
   }
 
   template <IsDBusMap T>
-  T UnmarshalDBusMap(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusMap(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     using KeyT = typename T::key_type;
     using MappedT = typename T::mapped_type;
@@ -995,7 +995,7 @@ namespace cxxbus
   }
 
   template <IsDBusVariant T>
-  T UnmarshalDBusVariant(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusVariant(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     Signature const signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
     SkipPadding(arrPointer, signature.GetAlignmentOfSignature());
@@ -1016,7 +1016,7 @@ namespace cxxbus
   }
 
   template <IsDBusContainer T>
-  T UnmarshalDBusContainer(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusContainer(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     if constexpr (IsDBusArray<T>)
     {
@@ -1037,7 +1037,7 @@ namespace cxxbus
   }
 
   template <IsDBusType T>
-  T UnmarshalDBusTypeImpl(std::vector<byte> const& dbusType, uint32_t& arrPointer)
+  T UnmarshalDBusTypeImpl(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     if constexpr (IsDBusBasicType<T>)
     {
@@ -1050,7 +1050,7 @@ namespace cxxbus
   }
 
   template <IsDBusType T>
-  T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature, uint32_t& arrPointer)
+  T UnmarshalDBusType(std::span<byte const> dbusType, std::string const& signature, uint32_t& arrPointer)
   {
     if (!IsDBusTypeCode(signature))
     {
@@ -1077,6 +1077,23 @@ namespace cxxbus
   template <IsDBusType T>
     requires(!IsRawStringLiteral<std::decay_t<T>>)
   T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
+  {
+    uint32_t arrPointer{};
+    T value{UnmarshalDBusType<T>(dbusType, signature, arrPointer)};
+
+    if (arrPointer != dbusType.size()) [[unlikely]]
+    {
+      throw DBusMalformedInputError{
+          std::format("Deserialized {} but the incoming buffer (total size: {}) has {} bytes remaining",
+                      ConstexprTypeName<T>(), dbusType.size(), dbusType.size() - arrPointer)};
+    }
+
+    return value;
+  }
+  template <IsDBusType T>
+
+    requires(!IsRawStringLiteral<std::decay_t<T>>)
+  T UnmarshalDBusType(std::span<byte const> dbusType, std::string const& signature)
   {
     uint32_t arrPointer{};
     T value{UnmarshalDBusType<T>(dbusType, signature, arrPointer)};

@@ -1,7 +1,13 @@
+#include <sys/types.h>
+
+#include <boost/asio/completion_condition.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/system/detail/error_code.hpp>
+#include <cstdint>
 
 #include "DBusConnection.h"
+#include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
@@ -16,9 +22,8 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::ReadLoop()
   {
-    // std::shared_ptr<DBusConnection> conn{shared_from_this()};
-
     std::vector<byte> rawFullReply{};
+    rawFullReply.reserve(1028);
     auto state = m_state;
 
     while (!state->shouldQuit)
@@ -26,53 +31,40 @@ namespace cxxbus
       try
       {
         rawFullReply.clear();
-        std::vector<byte> tempBuffer{};
 
-        tempBuffer.resize(FIRST_HEADER_PART_SIZE);
-        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
-#if __cpp_lib_containers_ranges
-        rawFullReply.append_range(tempBuffer);
-#else
-        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
-        DBusMessageHeader messageHeader{std::move(tempBuffer)};
+        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
+                                         boost::asio::transfer_exactly(FIRST_HEADER_PART_SIZE),
+                                         boost::asio::use_awaitable);
 
-        tempBuffer.resize(sizeof(uint32_t));
-        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
-#if __cpp_lib_containers_ranges
-        rawFullReply.append_range(tempBuffer);
-#else
-        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
-        messageHeader.ParseHeaderFieldLength(std::move(tempBuffer));
+        DBusMessageHeader messageHeader{rawFullReply};
 
-        tempBuffer.resize(messageHeader.GetHeaderFieldsLength());
-        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
-#if __cpp_lib_containers_ranges
-        rawFullReply.append_range(std::move(tempBuffer));
-#else
-        rawFullReply.insert(rawFullReply.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
+        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
+                                         boost::asio::transfer_exactly(sizeof(uint32_t)), boost::asio::use_awaitable);
+
+        messageHeader.ParseHeaderFieldLength(
+            std::span<byte>{rawFullReply.begin() + FIRST_HEADER_PART_SIZE, rawFullReply.end()});
+
+        uint32_t const headerFieldLength = messageHeader.GetHeaderFieldsLength();
+        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
+                                         boost::asio::transfer_exactly(headerFieldLength), boost::asio::use_awaitable);
 
         uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
-        messageHeader.ParseRemainderOfHeader(std::move(rawFullReply), arrPointer);
+        messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
 
         uint32_t const oldArrPointer{arrPointer};
         AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
         uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
 
-        tempBuffer.resize(nrOfPaddingBytes + messageHeader.GetMessageLength());
-        co_await boost::asio::async_read(*state->socket, boost::asio::buffer(tempBuffer), boost::asio::use_awaitable);
+        co_await boost::asio::async_read(
+            *state->socket, boost::asio::dynamic_buffer(rawFullReply),
+            boost::asio::transfer_exactly(nrOfPaddingBytes + messageHeader.GetMessageLength()),
+            boost::asio::use_awaitable);
 
         // Skip over the padding, we don't care about it
-#if __cpp_lib_ranges_to_container
-        IncomingDBusMessage message{std::move(messageHeader),
-                                    std::ranges::to<std::vector>(tempBuffer | std::views::drop(nrOfPaddingBytes))};
-#else
-        IncomingDBusMessage message{std::move(messageHeader),
-                                    std::vector<byte>(tempBuffer.begin() + nrOfPaddingBytes, tempBuffer.end())};
-#endif
-
+        IncomingDBusMessage message{
+            std::move(messageHeader),
+            std::ranges::to<std::vector>(rawFullReply | std::views::drop(FIRST_HEADER_PART_SIZE + sizeof(uint32_t) +
+                                                                         headerFieldLength + nrOfPaddingBytes))};
         co_await HandleReadMessage(std::move(message));
       }
       catch (boost::system::system_error const& ex)
@@ -111,8 +103,6 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::SendLoop()
   {
-    // std::shared_ptr<DBusConnection> conn{shared_from_this()};
-
     auto state = m_state;
 
     while (!state->shouldQuit)
@@ -122,16 +112,15 @@ namespace cxxbus
         // Wait for an incoming message to send
         auto [message, serial, messageSentChannel] = co_await state->sendLoop.async_receive(
             boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
-        // co_await boost::asio::async_write(*state->socket, boost::asio::buffer(message.Serialize(serial)),
-        //                                   boost::asio::bind_executor(*state->strand, boost::asio::use_awaitable));
         co_await boost::asio::async_write(*state->socket, boost::asio::buffer(message.Serialize(serial)),
                                           boost::asio::use_awaitable);
 
         std::string const info = message.GetInfo();
         LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", info, serial);
-        // co_await messageSentChannel->async_send(
-        //     boost::system::error_code{}, boost::asio::bind_executor(*m_state->strand, boost::asio::use_awaitable));
-        co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+        if (!message.ExpectsReply())
+        {
+          co_await messageSentChannel->async_send(boost::system::error_code{}, boost::asio::use_awaitable);
+        }
       }
       catch (boost::system::system_error const& ex)
       {
