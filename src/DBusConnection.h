@@ -41,7 +41,6 @@
 #include <queue>
 #include <unordered_map>
 
-#include "AwaitableSignal.h"
 #include "DBusMatchRule.h"
 #include "DBusMessage.h"
 #include "DBusNameCache.h"
@@ -65,8 +64,9 @@ namespace cxxbus
     struct MatchRuleInfo
     {
       DBusMatchRule rule;
-      std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>> callback;
-      std::shared_ptr<boost::signals2::signal<void(IncomingDBusMessage)>> syncCallback;
+      std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>> callback;
+      std::vector<std::function<void(IncomingDBusMessage)>> syncCallback;
+      bool executeOnUserContext;
     };
 
     struct DontHopTag
@@ -83,8 +83,9 @@ namespace cxxbus
       std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
           replyChannels;
 
-      AwaitableSignal<void, IncomingDBusMessage> onIncomingSignal;
-      std::unordered_map<uint32_t, std::shared_ptr<AwaitableSignal<MessageHandled, IncomingDBusMessage>>> messageFilter;
+      std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>> onIncomingSignal;
+      std::unordered_map<uint32_t, std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)>>
+          messageFilters;
       uint32_t messageFilterID;
 
       boost::signals2::signal<void()> onDisconnected;
@@ -108,7 +109,8 @@ namespace cxxbus
       std::shared_ptr<uint32_t> subscriptionCounter;
       std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
-      std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<AwaitableSignal<void, IncomingDBusMessage>>>>
+      std::shared_ptr<std::unordered_map<std::string,
+                                         std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>>>>
           objectPathHandlers;
 
       // Thread Info
@@ -156,7 +158,8 @@ namespace cxxbus
     boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name);
     boost::asio::awaitable<void> ReleaseWellKnownNameImpl(DBusWellKnownName name);
     boost::asio::awaitable<void> AddMatchRuleImpl(
-        DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+        DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
+        bool executeOnUserContext);
     boost::asio::awaitable<void> RemoveMatchRuleImpl(DBusMatchRule rule);
     boost::asio::awaitable<void> CloseImpl();
 
@@ -164,6 +167,9 @@ namespace cxxbus
     boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule,
                                               std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
                                               DontHopTag);
+    boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule,
+                                              std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback,
+                                              bool executeOnUserContext);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule, DontHopTag);
     boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name, DontHopTag);
     boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name, DontHopTag);

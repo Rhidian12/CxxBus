@@ -470,6 +470,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                   co_return;
                                 });
 
+    LOG_DEBUG(LOGGER, "Sending message to trigger NameOwnerChanged signal");
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
@@ -479,6 +480,8 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 
     EXPECT_TRUE(extensiveMatchRuleTriggered);
     EXPECT_TRUE(simpleMatchRuleTriggered);
+
+    LOG_TRACE(LOGGER, "Removing match rules");
 
     EXPECT_NO_THROW(co_await conn->RemoveMatchRule(extensiveRule));
     EXPECT_NO_THROW(co_await conn->RemoveMatchRule(simpleRule));

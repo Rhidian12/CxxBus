@@ -433,12 +433,13 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
                                                DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
     LOG_INFO(LOGGER, "Finished request name call: {}", reply.Get<uint32_t>());
 
-    co_await chann->async_receive(boost::asio::use_awaitable);
     co_await chann2->async_receive(boost::asio::use_awaitable);
+    co_await chann->async_receive(boost::asio::use_awaitable);
 
     EXPECT_TRUE(extensiveMatchRuleTriggered);
     EXPECT_TRUE(simpleMatchRuleTriggered);
 
+    LOG_DEBUG(LOGGER, "Removing Match Rules");
     EXPECT_NO_THROW(conn->RemoveMatchRuleSync(extensiveRule));
     EXPECT_NO_THROW(conn->RemoveMatchRuleSync(simpleRule));
 
@@ -523,14 +524,15 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
     auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
     std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
 
-    auto work = [messageReceived, ioService2, conn2]()
+    auto work = [messageReceived, ioService2, &conn2]()
     {
-      conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
-                                       [conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
-                                       {
-                                         *messageReceived = true;
-                                         co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
-                                       });
+      conn2->RegisterObjectPathHandler(
+          ObjectPath{"/com/dbus/CxxTest2"},
+          [&conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+          {
+            *messageReceived = true;
+            co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+          });
 
       ioService2->run();
     };
@@ -543,10 +545,6 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
     t.join();
 
     EXPECT_TRUE(messageReceived);
-
-    // conn->CloseSync();
-    // conn2->CloseSync();
-
     co_return;
   };
 }

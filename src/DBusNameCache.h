@@ -24,6 +24,7 @@
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
+#include <memory>
 #include <set>
 #include <unordered_map>
 
@@ -33,7 +34,7 @@ namespace cxxbus
 {
   class DBusConnection;
 
-  class DBusNameCache
+  class DBusNameCache : public std::enable_shared_from_this<DBusNameCache>
   {
    private:
     DBusConnection& m_conn;
