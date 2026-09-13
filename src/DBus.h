@@ -27,7 +27,6 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
-#include <functional>
 #include <memory>
 #include <ranges>
 #include <stdexcept>
@@ -96,25 +95,25 @@ namespace cxxbus
     using std::runtime_error::runtime_error;
   };
 
+  struct VariantVTable
+  {
+    void (*marshalDataFunc)(void*, std::vector<byte>&);
+  };
+
+  template <typename T>
+  inline static constexpr VariantVTable vTableInstance{
+      .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
+      { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); }};
+
   class Variant
   {
    private:
-    struct CustomDeleter
-    {
-      std::function<void(void*)> deleter;
-      void operator()(void* data)
-      {
-        deleter(data);
-      }
-    };
-
     struct VariantData
     {
       Signature signature;
       uint8_t dataAlignment;
-      std::unique_ptr<void, CustomDeleter> data;
-      std::function<void(void*, std::vector<byte>&)> marshalDataFunc;
-      std::function<std::unique_ptr<void, CustomDeleter>(void*)> copyFunc;
+      std::shared_ptr<void> data;
+      VariantVTable const* vTable;
 
       bool operator==(VariantData const& other) const noexcept
       {
@@ -139,44 +138,14 @@ namespace cxxbus
     }
 
     template <IsDBusType T>
-      requires(!std::is_same_v<std::remove_cvref_t<T>, Variant>)
-    explicit Variant(T&& value)
-      : m_variantData{
-            VariantData{.signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
-                        .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-                        .data = std::unique_ptr<void, CustomDeleter>(
-                            new std::decay_t<T>{std::forward<T>(value)},
-                            CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }}),
-                        .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
-                        { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); },
-                        .copyFunc =
-                            [](void* otherData)
-                        {
-                          return std::unique_ptr<void, CustomDeleter>(
-                              new std::decay_t<T>{*static_cast<std::decay_t<T>*>(otherData)},
-                              CustomDeleter{.deleter = [](void* data) { delete static_cast<std::decay_t<T>*>(data); }});
-                        }}}
+    static Variant Create(T&& value)
     {
-    }
-
-    // Wraps a Variant inside a Variant (nested/boxed variant)
-    Variant(InPlaceT, Variant variant)
-      : m_variantData{
-            VariantData{.signature = std::string{GetTypeSignature<Variant>()},
-                        .dataAlignment = GetAlignmentOfDBusType<Variant>(),
-                        .data = std::unique_ptr<void, CustomDeleter>(
-                            new Variant(std::move(variant)),
-                            CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }}),
-                        .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
-                        { static_cast<Variant*>(data)->MarshalData(dbusType); },
-                        .copyFunc =
-                            [](void* otherData)
-                        {
-                          return std::unique_ptr<void, CustomDeleter>(
-                              new Variant(*static_cast<Variant*>(otherData)),
-                              CustomDeleter{.deleter = [](void* data) { delete static_cast<Variant*>(data); }});
-                        }}}
-    {
+      Variant variant;
+      variant.m_variantData = VariantData{.signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
+                                          .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
+                                          .data = std::make_shared<std::decay_t<T>>(std::forward<T>(value)),
+                                          .vTable = &vTableInstance<T>};
+      return variant;
     }
 
     Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
@@ -190,11 +159,8 @@ namespace cxxbus
       if (std::holds_alternative<VariantData>(other.m_variantData))
       {
         VariantData const& data = std::get<VariantData>(other.m_variantData);
-        m_variantData = VariantData{.signature = data.signature,
-                                    .dataAlignment = data.dataAlignment,
-                                    .data = data.copyFunc(data.data.get()),
-                                    .marshalDataFunc = data.marshalDataFunc,
-                                    .copyFunc = data.copyFunc};
+        m_variantData = VariantData{
+            .signature = data.signature, .dataAlignment = data.dataAlignment, .data = data.data, .vTable = data.vTable};
       }
       else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
       {
@@ -223,7 +189,7 @@ namespace cxxbus
       return *this;
     }
 
-    Signature GetSignature() const
+    Signature const& GetSignature() const
     {
       if (std::holds_alternative<VariantData>(m_variantData))
       {
@@ -268,7 +234,7 @@ namespace cxxbus
       MarshalDBusTypeImpl(data.signature, dbusType);
       ApplyPadding(dbusType, data.dataAlignment);
 
-      data.marshalDataFunc(data.data.get(), dbusType);
+      data.vTable->marshalDataFunc(data.data.get(), dbusType);
     }
 
     template <IsDBusType T>
