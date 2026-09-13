@@ -203,8 +203,15 @@ namespace cxxbus
       }
     }
 
-    Variant(Variant&&) noexcept = default;
-    Variant& operator=(Variant&& other) noexcept = default;
+    Variant(Variant&& other) noexcept
+      : m_variantData(std::move(other.m_variantData))
+    {
+    }
+    Variant& operator=(Variant&& other) noexcept
+    {
+      m_variantData = std::move(other.m_variantData);
+      return *this;
+    }
 
     Variant& operator=(Variant const& other)
     {
