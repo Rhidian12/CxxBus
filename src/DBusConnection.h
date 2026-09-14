@@ -207,7 +207,6 @@ namespace cxxbus
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
-    boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message, boost::asio::io_context& ioContext);
 
     IncomingDBusMessage SendMessageSync(DBusMessage message);
     void SendMessageNoReplySync(DBusMessage message);

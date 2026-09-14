@@ -118,6 +118,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                                 .Destination("org.freedesktop.DBus"));
+    LOG_INFO(LOGGER, "SENT MESSAGE");
 
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
