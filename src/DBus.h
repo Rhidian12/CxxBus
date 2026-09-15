@@ -415,27 +415,29 @@ namespace cxxbus
   template <IsDBusBasicStringlikeType T>
   void MarshalBasicStringlikeType(T const& value, std::vector<byte>& dbusType)
   {
-    std::string const str{std::string{value}};
+    std::string const str{value};
 
-    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
-    {
-      // Encode the length as a uint32_t
-      MarshalBasicFixedType(static_cast<uint32_t>(str.size()), dbusType);
-    }
-    else  // Signature
-    {
-      // Encode the length as a uint8_t
-      MarshalBasicFixedType(static_cast<uint8_t>(str.size()), dbusType);
-    }
-
-    if (str.contains('\0'))
+    if (str.contains('\0')) [[unlikely]]
     {
       throw DBusSerializationError{"Strings sent over DBus cannot contain null terminator characters"};
     }
 
+    size_t const size{str.size()};
+
+    if constexpr (IsString<T> || std::is_same_v<T, ObjectPath> || std::is_same_v<T, DBusInterfaceName>)
+    {
+      // Encode the length as a uint32_t
+      MarshalBasicFixedType(static_cast<uint32_t>(size), dbusType);
+    }
+    else  // Signature
+    {
+      // Encode the length as a uint8_t
+      MarshalBasicFixedType(static_cast<uint8_t>(size), dbusType);
+    }
+
     size_t const oldSize{dbusType.size()};
-    dbusType.resize(dbusType.size() + str.size() + 1, 0);
-    std::memcpy(dbusType.data() + oldSize, str.data(), str.size());
+    dbusType.resize(dbusType.size() + size + 1, 0);
+    std::memcpy(dbusType.data() + oldSize, str.data(), size);
   }
 
   template <IsDBusMultipleCompleteTypes T, size_t I, size_t MaxI>
