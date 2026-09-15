@@ -308,7 +308,7 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::Close(DontHopTag)
   {
-    co_return co_await boost::asio::co_spawn(*m_state->strand, CloseImpl(), boost::asio::use_awaitable);
+    co_return co_await CloseImpl();
   }
 
   void DBusConnection::CloseSync()
@@ -687,8 +687,7 @@ namespace cxxbus
 
   boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessage(DBusMessage message, DontHopTag)
   {
-    IncomingDBusMessage reply = co_await boost::asio::co_spawn(*m_state->strand, SendMessageImpl(std::move(message)),
-                                                               boost::asio::use_awaitable);
+    IncomingDBusMessage reply = co_await SendMessageImpl(std::move(message));
     co_return reply;
   }
 
@@ -795,8 +794,7 @@ namespace cxxbus
   boost::asio::awaitable<void> DBusConnection::AddMatchRule(
       DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback, DontHopTag)
   {
-    co_return co_await boost::asio::co_spawn(
-        *m_state->strand, AddMatchRuleImpl(std::move(rule), std::move(callback), true), boost::asio::use_awaitable);
+    co_return co_await AddMatchRuleImpl(std::move(rule), std::move(callback), true);
   }
 
   boost::asio::awaitable<void> DBusConnection::RemoveMatchRuleImpl(DBusMatchRule rule)
@@ -827,8 +825,7 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::RemoveMatchRule(DBusMatchRule rule, DontHopTag)
   {
-    co_return co_await boost::asio::co_spawn(*m_state->strand, RemoveMatchRuleImpl(std::move(rule)),
-                                             boost::asio::use_awaitable);
+    co_return co_await RemoveMatchRuleImpl(std::move(rule));
   }
 
   void DBusConnection::AddMatchRuleSync(
@@ -953,8 +950,7 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::RequestWellKnownName(DBusWellKnownName name, DontHopTag)
   {
-    co_return co_await boost::asio::co_spawn(*m_state->strand, RequestWellKnownNameImpl(std::move(name)),
-                                             boost::asio::use_awaitable);
+    co_return co_await RequestWellKnownNameImpl(std::move(name));
   }
 
   boost::asio::awaitable<void> DBusConnection::ReleaseWellKnownNameImpl(DBusWellKnownName name)
@@ -1003,8 +999,7 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::ReleaseWellKnownName(DBusWellKnownName name, DontHopTag)
   {
-    co_return co_await boost::asio::co_spawn(*m_state->strand, ReleaseWellKnownNameImpl(std::move(name)),
-                                             boost::asio::use_awaitable);
+    co_return co_await ReleaseWellKnownNameImpl(std::move(name));
   }
 
   void DBusConnection::RequestWellKnownNameSync(DBusWellKnownName name)
