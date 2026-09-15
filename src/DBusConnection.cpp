@@ -32,7 +32,6 @@
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
-#include <boost/asio/system_timer.hpp>
 #include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
@@ -176,43 +175,34 @@ namespace cxxbus
     , m_userIOContext(ioService)
   {
     std::shared_ptr<boost::asio::io_context> ioContext{std::make_shared<boost::asio::io_context>()};
-    m_state =
-        std::shared_ptr<InternalState>(new InternalState{
-            .ioContext = ioContext,
-            .replyChannels =
-                std::map<uint32_t,
-                         boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
-            .onIncomingSignal = {},
-            .messageFilters = {},
-            .messageFilterID = 0,
-            .onDisconnected = {},
-            .sendLoop =
-                boost::asio::experimental::channel<void(
-                    boost::system::error_code,
-                    std::tuple<DBusMessage, uint32_t,
-                               std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>)>{
-                    *ioContext, 10},
-            .connectionReady = false,
-            .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
-            .nrOfWaiters = 0,
-            .strand = std::make_shared<boost::asio::strand<typename boost::asio::io_context::executor_type>>(
-                ioContext->get_executor()),
-            .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(*ioContext),
-            .uniqueConnection = nullptr,
-            .wellKnownNames = std::make_shared<std::vector<DBusWellKnownName>>(),
-            .serial = std::make_shared<uint32_t>(1),
-            .subscriptionCounter = std::make_shared<uint32_t>(0),
-            .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
-            .nameCache = std::make_shared<DBusNameCache>(*this),
-            .objectPathHandlers = std::make_shared<std::unordered_map<
-                std::string, std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>>>>(),
-            .mutex = std::make_shared<std::mutex>(),
-            .workGuard = nullptr,
-            .ioThread = nullptr,
-            .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
-            .timer = boost::asio::system_timer{*ioContext},
-            .shouldQuit = false,
-            .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
+    m_state = std::shared_ptr<InternalState>(new InternalState{
+        .ioContext = ioContext,
+        .replyChannels =
+            std::map<uint32_t,
+                     boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
+        .onIncomingSignal = {},
+        .messageFilters = {},
+        .messageFilterID = 0,
+        .onDisconnected = {},
+        .connectionReady = false,
+        .connectionCompleted = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
+        .nrOfWaiters = 0,
+        .strand = std::make_shared<boost::asio::strand<typename boost::asio::io_context::executor_type>>(
+            ioContext->get_executor()),
+        .socket = std::make_shared<boost::asio::local::stream_protocol::socket>(*ioContext),
+        .uniqueConnection = nullptr,
+        .wellKnownNames = std::make_shared<std::vector<DBusWellKnownName>>(),
+        .serial = std::make_shared<uint32_t>(1),
+        .subscriptionCounter = std::make_shared<uint32_t>(0),
+        .matchRules = std::make_shared<std::unordered_map<uint32_t, MatchRuleInfo>>(),
+        .nameCache = std::make_shared<DBusNameCache>(*this),
+        .objectPathHandlers = std::make_shared<std::unordered_map<
+            std::string, std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>>>>(),
+        .mutex = std::make_shared<std::mutex>(),
+        .workGuard = nullptr,
+        .ioThread = nullptr,
+        .shouldQuit = false,
+        .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
 
     if (wellKnownName.has_value())
     {
@@ -238,11 +228,9 @@ namespace cxxbus
         [this]() -> boost::asio::awaitable<void>
         {
           LOG_TRACE(LOGGER, "Closing channels and signals");
-          m_state->sendLoop.close();
           m_state->onIncomingSignal.clear();
           m_state->objectPathHandlers->clear();
           m_state->shouldQuit = true;
-          m_state->timer.cancel();
           m_state->connectionReady.store(false);
 
           LOG_TRACE(LOGGER, "Closing socket");

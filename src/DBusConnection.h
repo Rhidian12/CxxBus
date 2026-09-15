@@ -38,7 +38,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <unordered_map>
 
 #include "DBusMatchRule.h"
@@ -90,13 +89,6 @@ namespace cxxbus
 
       boost::signals2::signal<void()> onDisconnected;
 
-      // Send messages to the SendLoop() coroutine
-      boost::asio::experimental::channel<void(boost::system::error_code,
-                                              std::tuple<DBusMessage /* message */, uint32_t /* serial */,
-                                                         std::shared_ptr<boost::asio::experimental::channel<void(
-                                                             boost::system::error_code)>> /* messageSentChannel */>)>
-          sendLoop;
-
       std::atomic_bool connectionReady;
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
@@ -117,12 +109,6 @@ namespace cxxbus
       std::shared_ptr<std::mutex> mutex;
       std::unique_ptr<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>> workGuard;
       std::shared_ptr<std::thread> ioThread;
-
-      // Information gotten from other connections
-      std::shared_ptr<std::queue<IncomingDBusMessage>> unhandledIncomingMessages;
-
-      // Information to deal with unhandled messages
-      boost::asio::system_timer timer;
 
       bool shouldQuit;
       boost::asio::experimental::channel<void(boost::system::error_code)> readLoopFinished;
