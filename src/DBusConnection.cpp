@@ -35,6 +35,7 @@
 #include <boost/asio/this_coro.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/signals2/connection.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/system/system_error.hpp>
 #include <cstdint>
@@ -518,11 +519,7 @@ namespace cxxbus
       {
         LOG_TRACE(LOGGER, "Incoming message is signal, checking match rules");
 
-        std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> rules = nullptr;
-        {
-          std::unique_lock<std::mutex> lock{*state->mutex};
-          rules = state->matchRules;
-        }
+        std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> rules = state->matchRules;
 
         for (MatchRuleInfo const& info : *rules | std::views::values)
         {
@@ -545,20 +542,6 @@ namespace cxxbus
                   },
                   boost::asio::detached);
             }
-            if (!info.syncCallback.empty())
-            {
-              boost::asio::co_spawn(
-                  ioContext,
-                  [info, message = message] -> boost::asio::awaitable<void>
-                  {
-                    for (auto const& cb : info.syncCallback)
-                    {
-                      cb(message);
-                    }
-                    co_return;
-                  },
-                  boost::asio::detached);
-            }
           }
         }
 
@@ -567,7 +550,6 @@ namespace cxxbus
 
       bool hasObjectPathHandler = false;
       {
-        std::unique_lock<std::mutex> lock{*state->mutex};
         hasObjectPathHandler =
             state->objectPathHandlers->contains(message.GetHeader()
                                                     .GetObjectPath()
@@ -582,7 +564,6 @@ namespace cxxbus
         std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>> handlers{};
         std::vector<std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)>> filters;
         {
-          std::unique_lock<std::mutex> lock{*state->mutex};
           handlers = (*state->objectPathHandlers)[message.GetHeader().GetObjectPath().value().GetPath()];
 
           for (auto filter : state->messageFilters | std::views::values)
@@ -616,7 +597,6 @@ namespace cxxbus
       // [TODO]: User should let us know whether they actually handled this or not
       std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>> signals{};
       {
-        std::unique_lock<std::mutex> lock{*state->mutex};
         signals = state->onIncomingSignal;
       }
 
@@ -797,7 +777,6 @@ namespace cxxbus
                              .Parameter(rule.GetRule()),
                          DONT_HOP);
 
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     if (it != m_state->matchRules->end())
@@ -809,7 +788,6 @@ namespace cxxbus
       m_state->matchRules->emplace((*m_state->subscriptionCounter)++,
                                    MatchRuleInfo{.rule = std::move(rule),
                                                  .callback = std::vector{std::move(callback)},
-                                                 .syncCallback = {},
                                                  .executeOnUserContext = executeOnUserContext});
     }
 
@@ -849,7 +827,6 @@ namespace cxxbus
                              .Parameter(rule.GetRule()),
                          DONT_HOP);
 
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
                                          { return elem.second.rule == rule; });
     if (it != m_state->matchRules->end())
@@ -871,66 +848,23 @@ namespace cxxbus
                                              boost::asio::use_awaitable);
   }
 
-  void DBusConnection::AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback)
+  void DBusConnection::AddMatchRuleSync(DBusMatchRule rule,
+                                        std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    LOG_TRACE(LOGGER, "Adding match rule '{}'", rule.GetRule());
-
-    WaitOnAsyncWork<IncomingDBusMessage>(m_state->strand,
-                                         [this, rule]()
-                                         {
-                                           return SendMessage(DBusMessage::Method("AddMatch")
-                                                                  .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                                  .Destination("org.freedesktop.DBus")
-                                                                  .Parameter(rule.GetRule()),
-                                                              DONT_HOP);
-                                         });
-
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
-                                         { return elem.second.rule == rule; });
-    if (it != m_state->matchRules->end())
-    {
-      it->second.syncCallback.push_back(std::move(callback));
-    }
-    else
-    {
-      m_state->matchRules->emplace((*m_state->subscriptionCounter)++,
-                                   MatchRuleInfo{.rule = std::move(rule),
-                                                 .callback = {},
-                                                 .syncCallback = std::vector{std::move(callback)},
-                                                 .executeOnUserContext = true});
-    }
+    WaitOnAsyncWork<void>(m_state->strand,
+                          [this, rule = std::move(rule), callback = std::move(callback)] -> boost::asio::awaitable<void>
+                          { co_return co_await AddMatchRuleImpl(std::move(rule), std::move(callback), true); });
   }
 
   void DBusConnection::RemoveMatchRuleSync(DBusMatchRule rule)
   {
-    LOG_TRACE(LOGGER, "Removing match rule '{}'", rule.GetRule());
-
-    WaitOnAsyncWork<IncomingDBusMessage>(m_state->strand,
-                                         [this, rule]()
-                                         {
-                                           return SendMessage(DBusMessage::Method("RemoveMatch")
-                                                                  .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                                  .Destination("org.freedesktop.DBus")
-                                                                  .Parameter(rule.GetRule()),
-                                                              DONT_HOP);
-                                         });
-
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    auto const it = std::ranges::find_if(*m_state->matchRules, [&rule](std::pair<uint32_t, MatchRuleInfo> const& elem)
-                                         { return elem.second.rule == rule; });
-    if (it != m_state->matchRules->end())
-    {
-      m_state->matchRules->erase(it);
-    }
+    WaitOnAsyncWork<void>(m_state->strand, [this, rule = std::move(rule)] -> boost::asio::awaitable<void>
+                          { co_return co_await RemoveMatchRuleImpl(std::move(rule)); });
   }
 
-  void DBusConnection::RegisterObjectPathHandler(
+  boost::asio::awaitable<void> DBusConnection::RegisterObjectPathHandlerImpl(
       ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
     if (auto it = m_state->objectPathHandlers->find(path.GetPath()); it != m_state->objectPathHandlers->end())
     {
       it->second.push_back(std::move(callback));
@@ -939,18 +873,53 @@ namespace cxxbus
     {
       m_state->objectPathHandlers->emplace(path.GetPath(), std::vector{std::move(callback)});
     }
+
+    co_return;
   }
 
-  void DBusConnection::UnregisterObjectPathHandler(ObjectPath path)
+  boost::asio::awaitable<void> DBusConnection::RegisterObjectPathHandler(
+      ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    (*m_state->objectPathHandlers).erase(path.GetPath());
+    co_return co_await boost::asio::co_spawn(*m_state->strand,
+                                             RegisterObjectPathHandlerImpl(std::move(path), std::move(callback)),
+                                             boost::asio::use_awaitable);
+  }
+
+  void DBusConnection::RegisterObjectPathHandlerSync(
+      ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
+  {
+    WaitOnAsyncWork<void>(m_state->strand,
+                          [this, path = std::move(path), callback = std::move(callback)] -> boost::asio::awaitable<void>
+                          { co_return co_await RegisterObjectPathHandlerImpl(std::move(path), std::move(callback)); });
+  }
+
+  boost::asio::awaitable<void> DBusConnection::UnregisterObjectPathHandlerImpl(ObjectPath path)
+  {
+    co_return co_await boost::asio::co_spawn(
+        *m_state->strand,
+        [this, path = std::move(path)] -> boost::asio::awaitable<void>
+        {
+          (*m_state->objectPathHandlers).erase(path.GetPath());
+          co_return;
+        },
+        boost::asio::use_awaitable);
+  }
+
+  boost::asio::awaitable<void> DBusConnection::UnregisterObjectPathHandler(ObjectPath path)
+  {
+    co_return co_await boost::asio::co_spawn(*m_state->strand, UnregisterObjectPathHandlerImpl(std::move(path)),
+                                             boost::asio::use_awaitable);
+  }
+
+  void DBusConnection::UnregisterObjectPathHandlerSync(ObjectPath path)
+  {
+    WaitOnAsyncWork<void>(m_state->strand, [this, path = std::move(path)] -> boost::asio::awaitable<void>
+                          { co_return co_await UnregisterObjectPathHandlerImpl(std::move(path)); });
   }
 
   boost::asio::awaitable<void> DBusConnection::RequestWellKnownNameImpl(DBusWellKnownName name)
   {
     {
-      std::unique_lock<std::mutex> lock{*m_state->mutex};
       if (std::ranges::contains(*m_state->wellKnownNames, name))
       {
         throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
@@ -988,7 +957,6 @@ namespace cxxbus
         break;
     }
 
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
     m_state->wellKnownNames->push_back(name);
 
     co_return;
@@ -1008,12 +976,9 @@ namespace cxxbus
 
   boost::asio::awaitable<void> DBusConnection::ReleaseWellKnownNameImpl(DBusWellKnownName name)
   {
+    if (!std::ranges::contains(*m_state->wellKnownNames, name))
     {
-      std::unique_lock<std::mutex> lock{*m_state->mutex};
-      if (!std::ranges::contains(*m_state->wellKnownNames, name))
-      {
-        throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
-      }
+      throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
     }
 
     LOG_TRACE(LOGGER, "Releasing our well-known name '{}'", name.GetName());
@@ -1041,7 +1006,6 @@ namespace cxxbus
         break;
     }
 
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
     auto it = std::ranges::remove(*m_state->wellKnownNames, name);
     m_state->wellKnownNames->erase(it.begin(), it.end());
 
@@ -1072,26 +1036,43 @@ namespace cxxbus
                           [this, name = std::move(name)] { return ReleaseWellKnownNameImpl(std::move(name)); });
   }
 
-  uint32_t DBusConnection::RegisterMessageFilter(
+  boost::asio::awaitable<uint32_t> DBusConnection::RegisterMessageFilter(
       std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    uint32_t filterID = m_state->messageFilterID++;
-    m_state->messageFilters.emplace(filterID, std::move(callback));
-    return filterID;
+    co_return co_await boost::asio::co_spawn(
+        *m_state->strand,
+        [this, callback = std::move(callback)] -> boost::asio::awaitable<uint32_t>
+        {
+          uint32_t filterID = m_state->messageFilterID++;
+          m_state->messageFilters.emplace(filterID, std::move(callback));
+          co_return filterID;
+        },
+        boost::asio::use_awaitable);
   }
 
-  void DBusConnection::UnregisterMessageFilter(uint32_t filterID)
+  boost::asio::awaitable<void> DBusConnection::UnregisterMessageFilter(uint32_t filterID)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    m_state->messageFilters.erase(filterID);
+    co_return co_await boost::asio::co_spawn(
+        *m_state->strand,
+        [this, filterID] -> boost::asio::awaitable<void>
+        {
+          m_state->messageFilters.erase(filterID);
+          co_return;
+        },
+        boost::asio::use_awaitable);
   }
 
-  void DBusConnection::ReceiveIncomingMessages(
+  boost::asio::awaitable<void> DBusConnection::ReceiveIncomingMessages(
       std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    m_state->onIncomingSignal.push_back(std::move(callback));
+    co_return co_await boost::asio::co_spawn(
+        *m_state->strand,
+        [this, callback = std::move(callback)] -> boost::asio::awaitable<void>
+        {
+          m_state->onIncomingSignal.push_back(std::move(callback));
+          co_return;
+        },
+        boost::asio::use_awaitable);
   }
 
   std::vector<DBusWellKnownName> const& DBusConnection::GetWellKnownNames() const
@@ -1105,10 +1086,11 @@ namespace cxxbus
     return m_state->connectionReady.load();
   }
 
-  boost::signals2::connection DBusConnection::OnDisconnected(std::function<void()> callback)
+  boost::asio::awaitable<boost::signals2::connection> DBusConnection::OnDisconnected(std::function<void()> callback)
   {
-    std::unique_lock<std::mutex> lock{*m_state->mutex};
-    return m_state->onDisconnected.connect(std::move(callback));
+    co_return co_await boost::asio::co_spawn(
+        *m_state->strand, [this, callback = std::move(callback)] -> boost::asio::awaitable<boost::signals2::connection>
+        { co_return m_state->onDisconnected.connect(std::move(callback)); }, boost::asio::use_awaitable);
   }
 
   void DBusConnection::SimulateConnectionLoss()

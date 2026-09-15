@@ -23,7 +23,7 @@ static void BM_EmptyMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
+    co_await serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
@@ -50,7 +50,7 @@ static void BM_StringMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
+    co_await serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
@@ -85,7 +85,7 @@ static void BM_BigStringMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
+    co_await serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
@@ -135,7 +135,7 @@ static void BM_NestedMapMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
+    co_await serverConn->RegisterObjectPathHandler(
         OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 

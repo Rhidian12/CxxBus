@@ -526,7 +526,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
 
     auto work = [messageReceived, ioService2, &conn2]()
     {
-      conn2->RegisterObjectPathHandler(
+      conn2->RegisterObjectPathHandlerSync(
           ObjectPath{"/com/dbus/CxxTest2"},
           [&conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
           {

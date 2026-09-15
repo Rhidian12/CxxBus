@@ -93,7 +93,7 @@ TEST_F(DBusConnectionTestSuite, TestDetectingLostConnectionToDBusDaemon)
     EXPECT_TRUE(conn->IsConnected());
 
     bool disconnected{false};
-    conn->OnDisconnected([&disconnected]() { disconnected = true; });
+    co_await conn->OnDisconnected([&disconnected]() { disconnected = true; });
 
     // Simulate the dbus-daemon dying/killing our connection, without needing to spawn and kill a
     // real dbus-daemon process.
@@ -527,7 +527,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     LOG_INFO(LOGGER, "Making second connection");
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
-    conn2->ReceiveIncomingMessages(
+    co_await conn2->ReceiveIncomingMessages(
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
@@ -535,13 +535,14 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
 
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
-                                     [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
-                                     {
-                                       LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
-                                       co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
-                                           MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-                                     });
+    co_await conn2->RegisterObjectPathHandler(
+        ObjectPath{"/com/dbus/CxxTest2/Method"},
+        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        {
+          LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
+          co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
+              MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+        });
 
     LOG_DEBUG(LOGGER, "Sending a message from connection1 to connection2");
     EXPECT_THROW(
@@ -653,7 +654,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     int nrOfCalls{};
-    uint32_t const id = conn2->RegisterMessageFilter(
+    uint32_t const id = co_await conn2->RegisterMessageFilter(
         [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
         {
           LOG_INFO(LOGGER, "Message filter called for message with member '{}'",
@@ -673,7 +674,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 2)};
 
     bool objectPathHandlerCalled{};
-    conn2->RegisterObjectPathHandler(
+    co_await conn2->RegisterObjectPathHandler(
         ObjectPath{"/com/dbus/CxxTest2/Foo"},
         [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
         {
@@ -694,7 +695,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     EXPECT_TRUE(objectPathHandlerCalled);
     EXPECT_EQ(nrOfCalls, 2);
 
-    conn2->UnregisterMessageFilter(id);
+    co_await conn2->UnregisterMessageFilter(id);
     co_await conn->SendMessage(
         DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
 
@@ -754,8 +755,8 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage msg)
-                                     { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
+    co_await conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage msg)
+                                              { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
 
     std::string str{};
     for (int i{}; i < 10'000; ++i)

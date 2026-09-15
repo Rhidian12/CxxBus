@@ -64,7 +64,6 @@ namespace cxxbus
     {
       DBusMatchRule rule;
       std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage)>> callback;
-      std::vector<std::function<void(IncomingDBusMessage)>> syncCallback;
       bool executeOnUserContext;
     };
 
@@ -147,6 +146,9 @@ namespace cxxbus
         bool executeOnUserContext);
     boost::asio::awaitable<void> RemoveMatchRuleImpl(DBusMatchRule rule);
     boost::asio::awaitable<void> CloseImpl();
+    boost::asio::awaitable<void> RegisterObjectPathHandlerImpl(
+        ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> UnregisterObjectPathHandlerImpl(ObjectPath path);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message, DontHopTag);
     boost::asio::awaitable<void> AddMatchRule(DBusMatchRule rule,
@@ -174,20 +176,26 @@ namespace cxxbus
                                                       std::optional<DBusWellKnownName> wellKnownName, BusType busType);
 
     // Receive messages on a specific object path
-    void RegisterObjectPathHandler(ObjectPath path,
-                                   std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
-    void UnregisterObjectPathHandler(ObjectPath path);
+    boost::asio::awaitable<void> RegisterObjectPathHandler(
+        ObjectPath path, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> UnregisterObjectPathHandler(ObjectPath path);
+    void RegisterObjectPathHandlerSync(ObjectPath path,
+                                       std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    void UnregisterObjectPathHandlerSync(ObjectPath path);
     // Register a filter that will filter incoming messages before dispatching them to object path handlers
-    uint32_t RegisterMessageFilter(std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback);
-    void UnregisterMessageFilter(uint32_t filterID);
+    boost::asio::awaitable<uint32_t> RegisterMessageFilter(
+        std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> UnregisterMessageFilter(uint32_t filterID);
 
-    void ReceiveIncomingMessages(std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
+    boost::asio::awaitable<void> ReceiveIncomingMessages(
+        std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     boost::asio::awaitable<void> RemoveMatchRule(DBusMatchRule rule);
 
-    void AddMatchRuleSync(DBusMatchRule rule, std::function<void(IncomingDBusMessage)> callback);
+    void AddMatchRuleSync(DBusMatchRule rule,
+                          std::function<boost::asio::awaitable<void>(IncomingDBusMessage)> callback);
     void RemoveMatchRuleSync(DBusMatchRule rule);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
@@ -206,7 +214,7 @@ namespace cxxbus
 
     bool IsConnected() const;
 
-    boost::signals2::connection OnDisconnected(std::function<void()> callback);
+    boost::asio::awaitable<boost::signals2::connection> OnDisconnected(std::function<void()> callback);
 
     // This is a hack to simulate a connection loss for testing purposes
     void SimulateConnectionLoss();
