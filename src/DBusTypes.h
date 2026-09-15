@@ -153,7 +153,7 @@ namespace cxxbus
    public:
     Signature(std::string signature);
 
-    uint32_t Size() const;
+    uint32_t size() const;
     explicit operator std::string() const;
     std::string const& GetSignature() const;
     // Get the alignment of the contained signature
@@ -190,7 +190,7 @@ namespace cxxbus
     }
 
     template <size_t I>
-    auto GetType() const
+    auto const& GetType() const
     {
       return std::get<I>(m_types);
     }

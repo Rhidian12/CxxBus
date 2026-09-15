@@ -150,7 +150,7 @@ namespace cxxbus
   {
   }
 
-  uint32_t Signature::Size() const
+  uint32_t Signature::size() const
   {
     return m_signature.size();
   }
