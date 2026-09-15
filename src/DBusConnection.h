@@ -126,7 +126,6 @@ namespace cxxbus
 
       bool shouldQuit;
       boost::asio::experimental::channel<void(boost::system::error_code)> readLoopFinished;
-      boost::asio::experimental::channel<void(boost::system::error_code)> sendLoopFinished;
     };
 
    private:

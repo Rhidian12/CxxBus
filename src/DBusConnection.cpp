@@ -212,8 +212,7 @@ namespace cxxbus
             .unhandledIncomingMessages = std::make_shared<std::queue<IncomingDBusMessage>>(),
             .timer = boost::asio::system_timer{*ioContext},
             .shouldQuit = false,
-            .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext},
-            .sendLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
+            .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{*ioContext}});
 
     if (wellKnownName.has_value())
     {
@@ -255,7 +254,6 @@ namespace cxxbus
           LOG_TRACE(LOGGER, "Closed socket");
 
           co_await m_state->readLoopFinished.async_receive(boost::asio::use_awaitable);
-          co_await m_state->sendLoopFinished.async_receive(boost::asio::use_awaitable);
           LOG_TRACE(LOGGER, "Both the Send and Read loop have fully finished");
 
           co_return;
@@ -410,10 +408,7 @@ namespace cxxbus
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
-    LOG_TRACE(LOGGER, "Connected to DBus-daemon. Starting Send loop");
-    boost::asio::co_spawn(*m_state->strand, SendLoop(), boost::asio::detached);
-
-    LOG_TRACE(LOGGER, "Send loop started. Starting Read loop");
+    LOG_TRACE(LOGGER, "Connected to DBus-daemon. Starting Read loop");
     boost::asio::co_spawn(*m_state->strand, ReadLoop(), boost::asio::detached);
 
     LOG_TRACE(LOGGER, "Read loop started. Starting connection handshake");
@@ -675,21 +670,15 @@ namespace cxxbus
       m_state->replyChannels[*m_state->serial] = &replyChannel;
     }
 
-    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> messageSentChannel =
-        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(
-            m_state->socket->get_executor(), 1);
+    // Write our actual message
+    co_await boost::asio::async_write(*m_state->socket, boost::asio::buffer(message.Serialize((*m_state->serial)++)),
+                                      boost::asio::use_awaitable);
 
-    // 2nd, send our message to the SendLoop() coroutine to actually send the message
-    co_await m_state->sendLoop.async_send(boost::system::error_code{},
-                                          std::make_tuple(std::move(message), (*m_state->serial)++, messageSentChannel),
-                                          boost::asio::use_awaitable);
+    LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", message.GetInfo(), *m_state->serial);
 
     // 4th, check if we're expecting a reply
     if (!expectsReply)
     {
-      // 3rd, wait for the message to be sent.
-      co_await messageSentChannel->async_receive(boost::asio::use_awaitable);
-
       co_return std::nullopt;
     }
 
