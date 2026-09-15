@@ -124,7 +124,7 @@ namespace cxxbus
     struct DeserializedVariantData
     {
       Signature signature;
-      std::vector<byte> data;
+      std::shared_ptr<std::vector<byte>> data;
 
       auto operator<=>(DeserializedVariantData const&) const noexcept = default;
     };
@@ -149,7 +149,8 @@ namespace cxxbus
     }
 
     Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
-      : m_variantData{DeserializedVariantData{.signature = std::move(signature), .data = std::move(data)}}
+      : m_variantData{DeserializedVariantData{.signature = std::move(signature),
+                                              .data = std::make_shared<std::vector<byte>>(std::move(data))}}
     {
     }
 
@@ -159,13 +160,12 @@ namespace cxxbus
       if (std::holds_alternative<VariantData>(other.m_variantData))
       {
         VariantData const& data = std::get<VariantData>(other.m_variantData);
-        m_variantData = VariantData{
-            .signature = data.signature, .dataAlignment = data.dataAlignment, .data = data.data, .vTable = data.vTable};
+        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
       }
       else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
       {
         DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
-        m_variantData = DeserializedVariantData{.signature = data.signature, .data = data.data};
+        m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
       }
     }
 
@@ -181,11 +181,17 @@ namespace cxxbus
 
     Variant& operator=(Variant const& other)
     {
-      if (this != &other)
+      if (std::holds_alternative<VariantData>(other.m_variantData))
       {
-        Variant tmp(other);
-        *this = std::move(tmp);
+        VariantData const& data = std::get<VariantData>(other.m_variantData);
+        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
       }
+      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      {
+        DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
+        m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
+      }
+
       return *this;
     }
 
@@ -257,7 +263,7 @@ namespace cxxbus
 
       uint32_t arrPointer{};
 
-      return UnmarshalDBusTypeImpl<T>(std::span<byte const>{data.data}, arrPointer);
+      return UnmarshalDBusTypeImpl<T>(std::span<byte const>{*data.data}, arrPointer);
     }
 
     bool operator==(Variant const& other) const noexcept
