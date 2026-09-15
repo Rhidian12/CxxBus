@@ -456,16 +456,17 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                           .Member("NameOwnerChanged")
                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                           .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
-    co_await conn->AddMatchRule(extensiveRule,
-                                [&extensiveMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
-                                {
-                                  extensiveMatchRuleTriggered = true;
-                                  co_return;
-                                });
+    co_await conn->AddMatchRule(
+        extensiveRule,
+        [&extensiveMatchRuleTriggered](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          extensiveMatchRuleTriggered = true;
+          co_return;
+        });
 
     DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
     co_await conn->AddMatchRule(simpleRule,
-                                [&simpleMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                                [&simpleMatchRuleTriggered](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
                                 {
                                   simpleMatchRuleTriggered = true;
                                   co_return;
@@ -537,7 +538,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
 
     co_await conn2->RegisterObjectPathHandler(
         ObjectPath{"/com/dbus/CxxTest2/Method"},
-        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        [conn2](IncomingDBusMessage const& message) -> boost::asio::awaitable<void>
         {
           LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
           co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
@@ -584,7 +585,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
     bool signalEmitted{};
     co_await conn2->AddMatchRule(
         DBusMatchRule::Create().Member("SignalEmitted"),
-        [&signalEmitted, chann, this](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        [&signalEmitted, chann, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
           LOG_INFO(LOGGER, "Received emitted signal");
           signalEmitted = true;
@@ -655,7 +656,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
 
     int nrOfCalls{};
     uint32_t const id = co_await conn2->RegisterMessageFilter(
-        [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
+        [&nrOfCalls, conn2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<MessageHandled>
         {
           LOG_INFO(LOGGER, "Message filter called for message with member '{}'",
                    msg.GetHeader().GetMember().value_or(""));
@@ -676,7 +677,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     bool objectPathHandlerCalled{};
     co_await conn2->RegisterObjectPathHandler(
         ObjectPath{"/com/dbus/CxxTest2/Foo"},
-        [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
           LOG_INFO(LOGGER, "Object path handler called");
           objectPathHandlerCalled = !objectPathHandlerCalled;
@@ -755,7 +756,7 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
-    co_await conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage msg)
+    co_await conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage const& msg)
                                               { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
 
     std::string str{};
