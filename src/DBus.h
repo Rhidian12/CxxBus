@@ -24,6 +24,7 @@
 
 #include <sys/types.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -97,22 +98,112 @@ namespace cxxbus
 
   struct VariantVTable
   {
-    void (*marshalDataFunc)(void*, std::vector<byte>&);
+    void (*marshalDataFunc)(void const*, std::vector<byte>&);
   };
 
   template <typename T>
   inline static constexpr VariantVTable vTableInstance{
-      .marshalDataFunc = [](void* data, std::vector<byte>& dbusType)
-      { MarshalDBusTypeImpl(*static_cast<std::decay_t<T>*>(data), dbusType); }};
+      .marshalDataFunc = [](void const* data, std::vector<byte>& dbusType)
+      { MarshalDBusTypeImpl(*static_cast<std::remove_reference_t<T> const*>(data), dbusType); }};
+
+  inline uint32_t RoundUp(uint32_t number, uint32_t multiple)
+  {
+    return ((number + multiple - 1) / multiple) * multiple;
+  }
+
+  template <typename T>
+  uint32_t GetNaiveSizeOfType(T const& val)
+  {
+    if constexpr (IsDBusBasicType<T>)
+    {
+      if constexpr (IsDBusBasicFixedType<T>)
+      {
+        if constexpr (std::is_same_v<T, bool>)
+        {
+          return sizeof(uint32_t);
+        }
+        else
+        {
+          return sizeof(T);
+        }
+      }
+      else if constexpr (IsDBusBasicStringlikeType<T>)
+      {
+        if constexpr (std::is_same_v<T, Signature>)
+        {
+          return sizeof(uint8_t) + val.size() + 1;
+        }
+        else
+        {
+          return sizeof(uint32_t) + val.size() + 1;
+        }
+      }
+      else if constexpr (IsDBusMultipleCompleteTypes<T>)
+      {
+        return [&val]<size_t... Is>(std::index_sequence<Is...>)
+        {
+          return (RoundUp(GetNaiveSizeOfType<std::tuple_element_t<Is, typename T::type>>(std::get<Is>(val.GetTypes())),
+                          GetAlignmentOfDBusType<std::tuple_element_t<Is, typename T::type>>()) +
+                  ...);
+        }(std::make_index_sequence<std::tuple_size_v<T>>{});
+      }
+    }
+    else if constexpr (IsDBusContainer<T>)
+    {
+      if constexpr (IsDBusArray<T>)
+      {
+        if (val.empty())
+        {
+          return sizeof(uint32_t);
+        }
+        else
+        {
+          return RoundUp(sizeof(uint32_t) + val.size() * GetNaiveSizeOfType<typename T::value_type>(val[0]),
+                         GetAlignmentOfDBusType<T>());
+        }
+      }
+      else if constexpr (IsDBusMap<T>)
+      {
+        if (val.empty())
+        {
+          return RoundUp(sizeof(uint32_t), GetAlignmentOfDBusType<T>());
+        }
+        else
+        {
+          return RoundUp(sizeof(uint32_t) +
+                             RoundUp(val.size() * GetNaiveSizeOfType<typename T::key_type>(val.begin()->first),
+                                     GetAlignmentOfDBusType<T>()) +
+                             RoundUp(val.size() * GetNaiveSizeOfType<typename T::mapped_type>(val.begin()->second),
+                                     GetAlignmentOfDBusType<T>()),
+                         GetAlignmentOfDBusType<T>());
+        }
+      }
+      else if constexpr (IsDBusStruct<T>)
+      {
+        return [&val]<size_t... Is>(std::index_sequence<Is...>)
+        {
+          return (
+              RoundUp(GetNaiveSizeOfType<std::tuple_element_t<Is, T>>(std::get<Is>(val)), GetAlignmentOfDBusType<T>()) +
+              ...);
+        }(std::make_index_sequence<std::tuple_size_v<T>>{});
+      }
+      else
+      {
+        static_assert(false, "Not supported");
+      }
+    }
+  }
 
   class Variant
   {
    private:
+    inline constexpr static uint32_t SMALL_BUFFER_SIZE = 32;
+
     struct VariantData
     {
       Signature signature;
       uint8_t dataAlignment;
-      std::shared_ptr<void> data;
+      std::variant<std::shared_ptr<void>, std::array<byte, SMALL_BUFFER_SIZE>> data;
       VariantVTable const* vTable;
 
       bool operator==(VariantData const& other) const noexcept
@@ -141,10 +232,25 @@ namespace cxxbus
     static Variant Create(T&& value)
     {
       Variant variant;
-      variant.m_variantData = VariantData{.signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
-                                          .dataAlignment = GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-                                          .data = std::make_shared<std::decay_t<T>>(std::forward<T>(value)),
-                                          .vTable = &vTableInstance<T>};
+      if constexpr (std::is_trivially_copyable_v<std::decay_t<T>>)
+      {
+        if (sizeof(std::decay_t<T>) <= SMALL_BUFFER_SIZE)
+        {
+          std::array<byte, SMALL_BUFFER_SIZE> buff{};
+          std::memcpy(buff.data(), &value, sizeof(T));
+          variant.m_variantData.emplace<VariantData>(std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
+                                                     GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
+                                                     std::move(buff),  // [TODO]: Store data as raw byte array
+                                                     &vTableInstance<T>);
+
+          return variant;
+        }
+      }
+
+      // Nested variants don't get optimized
+      variant.m_variantData.emplace<VariantData>(
+          std::string{GetTypeSignature<std::remove_cvref_t<T>>()}, GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
+          std::make_shared<std::decay_t<T>>(std::forward<T>(value)), &vTableInstance<T>);
       return variant;
     }
 
@@ -240,7 +346,14 @@ namespace cxxbus
       MarshalDBusTypeImpl(data.signature, dbusType);
       ApplyPadding(dbusType, data.dataAlignment);
 
-      data.vTable->marshalDataFunc(data.data.get(), dbusType);
+      if (std::holds_alternative<std::shared_ptr<void>>(data.data))
+      {
+        data.vTable->marshalDataFunc(std::get<std::shared_ptr<void>>(data.data).get(), dbusType);
+      }
+      else
+      {
+        data.vTable->marshalDataFunc(std::get<std::array<byte, SMALL_BUFFER_SIZE>>(data.data).data(), dbusType);
+      }
     }
 
     template <IsDBusType T>
@@ -280,7 +393,7 @@ namespace cxxbus
       case DBusTypeCodes::BYTE:
         return sizeof(uint8_t);
       case DBusTypeCodes::BOOLEAN:
-        return sizeof(bool);
+        return sizeof(bool);  // [TODO]: Investigate, should this not be uint32_t?
       case DBusTypeCodes::INT16:
         return sizeof(int16_t);
       case DBusTypeCodes::UINT16:
@@ -349,12 +462,12 @@ namespace cxxbus
       {
         // Variant = Signature + Padding + Size of data
         Signature variantSignature = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
-        arrPointer -= sizeof(uint8_t) + variantSignature.Size() +
+        arrPointer -= sizeof(uint8_t) + variantSignature.size() +
                       1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
 
         uint32_t length = GetSizeOfDBusTypeBasedOnSignature(variantSignature.GetSignature(), dbusType, arrPointer);
         AddPaddingToSize(length, variantSignature.GetAlignmentOfSignature());
-        return sizeof(uint8_t) + variantSignature.Size() + 1 + length;
+        return sizeof(uint8_t) + variantSignature.size() + 1 + length;
       }
       default:
         throw std::runtime_error{"Unsupported type for size calculation based on signature"};
