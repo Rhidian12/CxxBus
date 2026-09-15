@@ -178,9 +178,7 @@ namespace cxxbus
     std::shared_ptr<boost::asio::io_context> ioContext{std::make_shared<boost::asio::io_context>()};
     m_state = std::shared_ptr<InternalState>(new InternalState{
         .ioContext = ioContext,
-        .replyChannels =
-            std::map<uint32_t,
-                     boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>{},
+        .replyChannels = {},
         .onIncomingSignal = {},
         .messageFilters = {},
         .messageFilterID = 0,
@@ -208,6 +206,13 @@ namespace cxxbus
     if (wellKnownName.has_value())
     {
       m_state->wellKnownNames->push_back(*wellKnownName);
+    }
+
+    for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
+    {
+      m_state->replyChannels.emplace_back(
+          boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>{*m_state->strand, 1},
+          true);
     }
 
     m_state->workGuard =
@@ -495,7 +500,9 @@ namespace cxxbus
 
       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
       {
-        if (!state->replyChannels.contains(replySerial))
+        // This can only be set to 'true' if we didn't send a message with this serial first
+        // which should be impossible
+        if (state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].ready)
         {
           // It should not be possible to get a reply to a message we don't know
           LOG_FATAL(LOGGER,
@@ -505,7 +512,7 @@ namespace cxxbus
           throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
         }
 
-        chann = state->replyChannels[replySerial];
+        chann = &state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel;
       }
 
       co_await chann->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
@@ -609,18 +616,17 @@ namespace cxxbus
   boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> replyChannel{
-        m_state->socket->get_executor(), 1};
-
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
+    uint32_t const serial = (*m_state->serial)++;
+    ChannelInfo& channInfo{m_state->replyChannels[serial % CXX_BUS_MAX_CONCURRENT_MESSAGES]};
 
     if (expectsReply)
     {
-      m_state->replyChannels[*m_state->serial] = &replyChannel;
+      channInfo.ready = false;
     }
 
     // Write our actual message
-    co_await boost::asio::async_write(*m_state->socket, boost::asio::buffer(message.Serialize((*m_state->serial)++)),
+    co_await boost::asio::async_write(*m_state->socket, boost::asio::buffer(message.Serialize(serial)),
                                       boost::asio::use_awaitable);
 
     LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", message.GetInfo(), *m_state->serial);
@@ -632,10 +638,8 @@ namespace cxxbus
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
-    IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
-    {
-      m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
-    }
+    IncomingDBusMessage reply = co_await channInfo.channel.async_receive(boost::asio::use_awaitable);
+    channInfo.ready = true;
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
     {

@@ -48,6 +48,8 @@
 
 namespace cxxbus
 {
+#define CXX_BUS_MAX_CONCURRENT_MESSAGES 256
+
   enum class MessageHandled
   {
     YES,
@@ -67,6 +69,12 @@ namespace cxxbus
       bool executeOnUserContext;
     };
 
+    struct ChannelInfo
+    {
+      boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> channel;
+      bool ready;
+    };
+
     struct DontHopTag
     {
     };
@@ -78,8 +86,9 @@ namespace cxxbus
       std::shared_ptr<boost::asio::io_context> ioContext;
 
       // Store channels to make our 'SendMessage' be awaitable
-      std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
-          replyChannels;
+      // std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
+      //     replyChannels;
+      std::vector<ChannelInfo> replyChannels;
 
       std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>> onIncomingSignal;
       std::unordered_map<uint32_t, std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)>>
