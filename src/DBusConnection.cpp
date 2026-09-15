@@ -506,7 +506,6 @@ namespace cxxbus
 
       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
       {
-        std::unique_lock<std::mutex> lock{*state->mutex};
         if (!state->replyChannels.contains(replySerial))
         {
           // It should not be possible to get a reply to a message we don't know
@@ -666,7 +665,6 @@ namespace cxxbus
 
     if (expectsReply)
     {
-      std::unique_lock<std::mutex> lock{*m_state->mutex};
       m_state->replyChannels[*m_state->serial] = &replyChannel;
     }
 
@@ -685,7 +683,6 @@ namespace cxxbus
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
     IncomingDBusMessage reply = co_await replyChannel.async_receive(boost::asio::use_awaitable);
     {
-      std::unique_lock<std::mutex> lock{*m_state->mutex};
       m_state->replyChannels.erase(reply.GetHeader().GetReplySerial().value());
     }
 
