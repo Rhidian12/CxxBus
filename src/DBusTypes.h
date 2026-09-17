@@ -127,17 +127,12 @@ namespace cxxbus
     ObjectPath() = default;
     ObjectPath(std::string path);
 
-    uint32_t size() const
-    {
-      return m_path.size();
-    }
+    uint32_t size() const;
 
-    explicit operator std::string() const
-    {
-      return m_path;
-    }
+    explicit operator std::string() const;
 
     std::string const& GetPath() const;
+    char const* data() const;
 
     bool Empty() const;
 
@@ -159,6 +154,7 @@ namespace cxxbus
     // Get the alignment of the contained signature
     uint8_t GetAlignmentOfSignature() const;
     bool Empty() const;
+    char const* data() const;
 
     auto operator<=>(Signature const&) const noexcept = default;
     bool operator==(Signature const&) const = default;
@@ -257,6 +253,7 @@ namespace cxxbus
     uint32_t size() const;
     explicit operator std::string() const;
     bool empty() const;
+    char const* data() const;
 
     auto operator<=>(DBusInterfaceName const&) const noexcept = default;
     bool operator==(DBusInterfaceName const&) const = default;

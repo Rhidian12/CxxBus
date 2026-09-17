@@ -101,10 +101,21 @@ namespace cxxbus
     void (*marshalDataFunc)(void const*, std::vector<byte>&);
   };
 
-  template <typename T>
+  template <typename T, typename TOVerride = std::remove_cvref_t<T>>
   inline static constexpr VariantVTable vTableInstance{
       .marshalDataFunc = [](void const* data, std::vector<byte>& dbusType)
-      { MarshalDBusTypeImpl(*static_cast<std::remove_reference_t<T> const*>(data), dbusType); }};
+      {
+        if constexpr (std::is_pointer_v<std::remove_cvref_t<T>>)
+        {
+          TOVerride castData{static_cast<std::remove_reference_t<T>>(data)};
+          MarshalDBusTypeImpl(castData, dbusType);
+        }
+        else
+        {
+          TOVerride const* castData{static_cast<std::remove_reference_t<T> const*>(data)};
+          MarshalDBusTypeImpl(*castData, dbusType);
+        }
+      }};
 
   inline uint32_t RoundUp(uint32_t number, uint32_t multiple)
   {
@@ -232,16 +243,49 @@ namespace cxxbus
     static Variant Create(T&& value)
     {
       Variant variant;
-      if constexpr (std::is_trivially_copyable_v<std::decay_t<T>>)
+      if constexpr (std::is_trivially_copyable_v<std::remove_cvref_t<T>>)
       {
-        if (sizeof(std::decay_t<T>) <= SMALL_BUFFER_SIZE)
+        if (sizeof(std::remove_cvref_t<T>) <= SMALL_BUFFER_SIZE)
         {
           std::array<byte, SMALL_BUFFER_SIZE> buff{};
-          std::memcpy(buff.data(), &value, sizeof(T));
+          std::memcpy(buff.data(), &value, sizeof(std::remove_cvref_t<T>));
           variant.m_variantData.emplace<VariantData>(std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
-                                                     GetAlignmentOfDBusType<std::remove_cvref_t<T>>(),
-                                                     std::move(buff),  // [TODO]: Store data as raw byte array
+                                                     GetAlignmentOfDBusType<std::remove_cvref_t<T>>(), std::move(buff),
                                                      &vTableInstance<T>);
+
+          return variant;
+        }
+      }
+      else if constexpr (IsDBusBasicStringlikeType<T>)
+      {
+        uint32_t length{};
+        if constexpr (IsRawStringLiteral<T>)
+        {
+          // 'strlen()' is not safe, but we are depending on the user to pass null-terminated C strings if they pass C
+          // strings
+          length = strlen(value);
+        }
+        else
+        {
+          length = value.size();
+        }
+
+        // '- 1' because we need to store the null terminator
+        if (length <= SMALL_BUFFER_SIZE - 1)
+        {
+          std::array<byte, SMALL_BUFFER_SIZE> buff{};
+          if constexpr (IsRawStringLiteral<T>)
+          {
+            std::memcpy(buff.data(), value, length);
+          }
+          else
+          {
+            std::memcpy(buff.data(), value.data(), length);
+          }
+
+          variant.m_variantData.emplace<VariantData>(std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
+                                                     GetAlignmentOfDBusType<std::remove_cvref_t<T>>(), std::move(buff),
+                                                     &vTableInstance<char const*, std::remove_cvref_t<T>>);
 
           return variant;
         }
