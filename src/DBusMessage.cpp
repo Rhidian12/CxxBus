@@ -211,10 +211,18 @@ namespace cxxbus
     }
   }  // namespace
 
-  DBusMessage DBusMessage::Method(std::string method)
+  DBusMessage DBusMessage::Method(std::string&& method)
   {
     DBusMessage message;
     message.m_method = std::move(method);
+    message.m_messageType = DBusMessageType::METHOD_CALL;
+    return message;
+  }
+
+  DBusMessage DBusMessage::Method(std::string const& method)
+  {
+    DBusMessage message;
+    message.m_method = method;
     message.m_messageType = DBusMessageType::METHOD_CALL;
     return message;
   }

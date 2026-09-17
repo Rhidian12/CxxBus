@@ -58,12 +58,14 @@ namespace cxxbus
 #endif
   }
 
-  inline void AddPaddingToSize(uint32_t& size, uint8_t alignment)
+  inline uint32_t AddPaddingToSize(uint32_t& size, uint8_t alignment)
   {
     uint32_t const result{size % alignment};
-    if (result == 0) return;
+    if (result == 0) return 0;
 
     size += alignment - result;
+
+    return alignment - result;
   }
 
   inline void SkipPadding(uint32_t& arrPointer, uint8_t alignment)
@@ -1214,7 +1216,7 @@ namespace cxxbus
 
   template <IsDBusType T>
     requires(!IsRawStringLiteral<std::decay_t<T>>)
-  T UnmarshalDBusType(std::vector<byte> dbusType, std::string const& signature)
+  T UnmarshalDBusType(std::vector<byte> const& dbusType, std::string const& signature)
   {
     uint32_t arrPointer{};
     T value{UnmarshalDBusType<T>(dbusType, signature, arrPointer)};

@@ -581,7 +581,7 @@ namespace cxxbus
               {
                 for (auto const& handler : handlers)
                 {
-                  co_await handler(std::move(message));
+                  co_await handler(message);
                 }
               }
             },
@@ -618,6 +618,8 @@ namespace cxxbus
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
     uint32_t const serial = (*m_state->serial)++;
+    // [TODO]: Logic doesnt fully make sense what if 1 not sent but all other messages are sent and we loop back around
+    // to 1?
     ChannelInfo& channInfo{m_state->replyChannels[serial % CXX_BUS_MAX_CONCURRENT_MESSAGES]};
 
     if (expectsReply)
@@ -662,7 +664,7 @@ namespace cxxbus
   boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessageImpl(DBusMessage message)
   {
     // Wait until our Connnection is ready
-    if (!m_state->connectionReady.load())
+    if (!m_state->connectionReady.load()) [[unlikely]]
     {
       LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;

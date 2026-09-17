@@ -5,6 +5,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
 
+#include "DBus.h"
 #include "DBusConnection.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
@@ -32,39 +33,34 @@ namespace cxxbus
       {
         rawFullReply.clear();
 
+        // Read in the set 12 bytes of the DBus header + the 4 bytes of the following header field array
         co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
                                          boost::asio::transfer_exactly(FIRST_HEADER_PART_SIZE),
                                          boost::asio::use_awaitable);
 
-        DBusMessageHeader messageHeader{rawFullReply};
+        auto headerData =
+            UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
+                rawFullReply, "yyyyuuu");
+        uint32_t const messageLength = headerData.GetType<4>();
+        uint32_t const headerFieldArrLength = headerData.GetType<6>();
+        uint32_t const serial = headerData.GetType<5>();
+        DBusMessageType const messageType = static_cast<DBusMessageType>(headerData.GetType<1>());
 
+        // Now, read the rest of the message, this is the array length + padding + messageLength
+        uint32_t size{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
+        uint32_t const nrOfPaddingBytes = AddPaddingToSize(size, DBUS_MESSAGE_BODY_ALIGNMENT);
         co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
-                                         boost::asio::transfer_exactly(sizeof(uint32_t)), boost::asio::use_awaitable);
-
-        messageHeader.ParseHeaderFieldLength(
-            std::span<byte>{rawFullReply.begin() + FIRST_HEADER_PART_SIZE, rawFullReply.end()});
-
-        uint32_t const headerFieldLength = messageHeader.GetHeaderFieldsLength();
-        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
-                                         boost::asio::transfer_exactly(headerFieldLength), boost::asio::use_awaitable);
-
-        uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
-        messageHeader.ParseRemainderOfHeader(rawFullReply, arrPointer);
-
-        uint32_t const oldArrPointer{arrPointer};
-        AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
-        uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
-
-        co_await boost::asio::async_read(
-            *state->socket, boost::asio::dynamic_buffer(rawFullReply),
-            boost::asio::transfer_exactly(nrOfPaddingBytes + messageHeader.GetMessageLength()),
-            boost::asio::use_awaitable);
+                                         boost::asio::transfer_exactly(size - FIRST_HEADER_PART_SIZE + messageLength),
+                                         boost::asio::use_awaitable);
 
         // Skip over the padding, we don't care about it
         IncomingDBusMessage message{
-            std::move(messageHeader),
-            std::ranges::to<std::vector>(rawFullReply | std::views::drop(FIRST_HEADER_PART_SIZE + sizeof(uint32_t) +
-                                                                         headerFieldLength + nrOfPaddingBytes))};
+            DBusMessageHeader{
+                std::span<byte const>{rawFullReply.begin(),
+                                      rawFullReply.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
+                serial, messageType, headerFieldArrLength, messageLength},
+            std::ranges::to<std::vector>(
+                rawFullReply | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
         co_await HandleReadMessage(std::move(message));
       }
       catch (boost::system::system_error const& ex)

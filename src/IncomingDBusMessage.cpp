@@ -22,6 +22,8 @@
 
 #include "IncomingDBusMessage.h"
 
+#include <sys/types.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -39,54 +41,59 @@ namespace cxxbus
 {
   namespace
   {
-    DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> data)
+    // DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> data)
+    // {
+    //   // In this function we parse everything up until the array of variants, BUT INCLUDING the length of the array
+    //   of
+    //   // variants That way, we know how many bytes to read in always (16 at first, followed by the length of the
+    //   header
+    //   // fields, followed by padding + length of message)
+    //
+    //   // Signature of a DBus Header is yyyyuua(yv)
+    //   // y = byte
+    //   // u = uint32_t
+    //   // a = array
+    //   // v = variant
+    //
+    //   // 1st byte is Endianness. ASCII 'l' for little-endian, 'B' for big-endian
+    //   // 2nd byte is message type
+    //   // 3rd byte is bitwise-OR flags
+    //   // 4th byte is major protocol version, is always 1
+    //   // 1st uint32_t is length in bytes of the message body, starting from the end of the header
+    //   // 2nd uint32_t is the serial of this message, used as a cookie by the sender to identify the reply
+    //   correspending
+    //   // to this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message
+    //   // type specifies which fields are required
+    //
+    //   if (data.size() != FIRST_HEADER_PART_SIZE)
+    //   {
+    //     throw DBusMalformedInputError{std::format("Incoming DBus header should be {} bytes, it is {} bytes instead",
+    //                                               FIRST_HEADER_PART_SIZE, data.size())};
+    //   }
+    //
+    //   auto header = UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>(
+    //       data, "yyyyuu");
+    //
+    //   return {.serial = header.GetType<5>(),
+    //           .replySerial = 0,
+    //           .messageType = static_cast<DBusMessageType>(header.GetType<1>()),
+    //           .objectPath = {},
+    //           .interface = {},
+    //           .member = {},
+    //           .errorName = std::nullopt,
+    //           .signature = std::nullopt,
+    //           .sender = std::nullopt,
+    //           .destination = std::nullopt,
+    //           .messageLength = header.GetType<4>(),
+    //           .headerFieldLength = 0,
+    //           .headerFields = {}};
+    // }
+
+    DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> dbusMessage, uint32_t serial,
+                                                     DBusMessageType messageType, uint32_t headerFieldLength,
+                                                     uint32_t messageLength)
     {
-      // In this function we parse everything up until the array of variants, BUT INCLUDING the length of the array of
-      // variants That way, we know how many bytes to read in always (16 at first, followed by the length of the header
-      // fields, followed by padding + length of message)
-
-      // Signature of a DBus Header is yyyyuua(yv)
-      // y = byte
-      // u = uint32_t
-      // a = array
-      // v = variant
-
-      // 1st byte is Endianness. ASCII 'l' for little-endian, 'B' for big-endian
-      // 2nd byte is message type
-      // 3rd byte is bitwise-OR flags
-      // 4th byte is major protocol version, is always 1
-      // 1st uint32_t is length in bytes of the message body, starting from the end of the header
-      // 2nd uint32_t is the serial of this message, used as a cookie by the sender to identify the reply correspending
-      // to this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message
-      // type specifies which fields are required
-
-      if (data.size() != FIRST_HEADER_PART_SIZE)
-      {
-        throw DBusMalformedInputError{std::format("Incoming DBus header should be {} bytes, it is {} bytes instead",
-                                                  FIRST_HEADER_PART_SIZE, data.size())};
-      }
-
-      auto header = UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>(
-          data, "yyyyuu");
-
-      return {.serial = header.GetType<5>(),
-              .replySerial = 0,
-              .messageType = static_cast<DBusMessageType>(header.GetType<1>()),
-              .objectPath = {},
-              .interface = {},
-              .member = {},
-              .errorName = std::nullopt,
-              .signature = std::nullopt,
-              .sender = std::nullopt,
-              .destination = std::nullopt,
-              .messageLength = header.GetType<4>(),
-              .headerFieldLength = 0,
-              .headerFields = {}};
-    }
-
-    void UnmarshalDBusHeader(std::span<byte const> dbusMessage, DBusMessageHeader::ReplyData& data,
-                             uint32_t& arrPointer)
-    {
+      uint32_t arrPointer{FIRST_HEADER_PART_SIZE - sizeof(uint32_t)};
       auto headerFields =
           UnmarshalDBusType<std::vector<std::tuple<uint8_t, Variant>>>(dbusMessage, "a(yv)", arrPointer);
 
@@ -105,7 +112,7 @@ namespace cxxbus
       if (signatureIt == headerFieldData.cend())
       {
         // No signature provided, so this means our message MUST be empty
-        if (data.messageLength != 0)
+        if (messageLength != 0) [[unlikely]]
         {
           throw DBusMalformedInputError{
               "Incoming DBus message did not specify a signature while providing a non-zero body."};
@@ -120,7 +127,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::REPLY_SERIAL; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'REPLY_SERIAL' header field"};
         }
@@ -134,7 +141,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::PATH; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'PATH' header field"};
         }
@@ -148,7 +155,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::INTERFACE; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'INTERFACE' header field"};
         }
@@ -162,7 +169,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::MEMBER; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'MEMBER' header field"};
         }
@@ -176,7 +183,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::SENDER; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'SENDER' header field"};
         }
@@ -190,7 +197,7 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::DESTINATION; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'DESTINATION' header field"};
         }
@@ -204,39 +211,45 @@ namespace cxxbus
         auto const requiredHeaderFieldIt = std::ranges::find_if(
             HEADER_FIELDS, [](HeaderField const& field) { return field.decimalCode == HeaderFieldCode::ERROR_NAME; });
         assert(requiredHeaderFieldIt != std::ranges::end(HEADER_FIELDS));
-        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, data.messageType))
+        if (std::ranges::contains(requiredHeaderFieldIt->requiredMessageType, messageType))
         {
           throw DBusMalformedInputError{"Incoming DBus message is missing the required 'ERROR_NAME' header field"};
         }
       }
 
-      data.errorName = errorNameIt == headerFieldData.cend()
-                           ? std::nullopt
-                           : std::optional{errorNameIt->data.UnmarshalData<std::string>()};
-      data.destination = destinationIt == headerFieldData.cend()
-                             ? std::nullopt
-                             : std::optional{destinationIt->data.UnmarshalData<std::string>()};
-      data.sender = senderIt == headerFieldData.cend() ? std::nullopt
-                                                       : std::optional{senderIt->data.UnmarshalData<std::string>()};
-      data.objectPath = objectPathIt == headerFieldData.cend()
-                            ? std::nullopt
-                            : std::optional{objectPathIt->data.UnmarshalData<ObjectPath>()};
-      data.interface = interfaceIt == headerFieldData.cend()
-                           ? std::nullopt
-                           : std::optional{interfaceIt->data.UnmarshalData<DBusInterfaceName>()};
-      data.member = memberIt == headerFieldData.cend() ? std::nullopt
-                                                       : std::optional{memberIt->data.UnmarshalData<std::string>()};
-      data.replySerial =
-          serialIt == headerFieldData.cend() ? std::nullopt : std::optional{serialIt->data.UnmarshalData<uint32_t>()};
-      data.signature = signatureIt == headerFieldData.cend()
-                           ? std::nullopt
-                           : std::optional{signatureIt->data.UnmarshalData<Signature>()};
-      data.headerFields = headerFieldData;  // std::move is signficantly slower here...
+      return {.serial = serial,
+              .replySerial = serialIt == headerFieldData.cend()
+                                 ? std::nullopt
+                                 : std::optional{serialIt->data.UnmarshalData<uint32_t>()},
+              .messageType = messageType,
+              .objectPath = objectPathIt == headerFieldData.cend()
+                                ? std::nullopt
+                                : std::optional{objectPathIt->data.UnmarshalData<ObjectPath>()},
+              .interface = interfaceIt == headerFieldData.cend()
+                               ? std::nullopt
+                               : std::optional{interfaceIt->data.UnmarshalData<DBusInterfaceName>()},
+              .member = memberIt == headerFieldData.cend() ? std::nullopt
+                                                           : std::optional{memberIt->data.UnmarshalData<std::string>()},
+              .errorName = errorNameIt == headerFieldData.cend()
+                               ? std::nullopt
+                               : std::optional{errorNameIt->data.UnmarshalData<std::string>()},
+              .signature = signatureIt == headerFieldData.cend()
+                               ? std::nullopt
+                               : std::optional{signatureIt->data.UnmarshalData<Signature>()},
+              .sender = senderIt == headerFieldData.cend() ? std::nullopt
+                                                           : std::optional{senderIt->data.UnmarshalData<std::string>()},
+              .destination = senderIt == headerFieldData.cend()
+                                 ? std::nullopt
+                                 : std::optional{senderIt->data.UnmarshalData<std::string>()},
+              .messageLength = messageLength,
+              .headerFieldLength = headerFieldLength,
+              .headerFields = std::move(headerFieldData)};
     }
   }  // namespace
 
-  DBusMessageHeader::DBusMessageHeader(std::span<byte const> data)
-    : m_data(UnmarshalDBusHeader(std::move(data)))
+  DBusMessageHeader::DBusMessageHeader(std::span<byte const> data, uint32_t serial, DBusMessageType messageType,
+                                       uint32_t headerFieldLength, uint32_t messageLength)
+    : m_data(UnmarshalDBusHeader(data, serial, messageType, headerFieldLength, messageLength))
   {
   }
 
@@ -298,16 +311,6 @@ namespace cxxbus
   std::optional<std::string> const& DBusMessageHeader::GetErrorName() const
   {
     return m_data.errorName;
-  }
-
-  void DBusMessageHeader::ParseHeaderFieldLength(std::span<byte const> data)
-  {
-    m_data.headerFieldLength = UnmarshalDBusType<uint32_t>(std::move(data), "u");
-  }
-
-  void DBusMessageHeader::ParseRemainderOfHeader(std::span<byte const> data, uint32_t& arrPointer)
-  {
-    UnmarshalDBusHeader(data, m_data, arrPointer);
   }
 
   IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
