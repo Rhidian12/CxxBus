@@ -58,7 +58,7 @@ jobs:
       run: sudo apt-get install dbus
 
     - name: Install SDBus
-      run: sudo apt install libsdbus-c++-dev libsdbus-c++-bin
+      run: sudo apt install libsdbus-c++-bin libsdbus-c++-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
