@@ -80,7 +80,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DSANITIZERS=1
         -DCXXBUS_DEV=1
-        -DCMAKE_CXX_FLAGS="-DGITHUB_ACTIONS=1"
+        -DCMAKE_CXX_FLAGS="-DGITHUB_ACTIONS=1 -DCXX_BUS_LOGLEVEL=TRACE"
         -S ${{ github.workspace }}
         -G Ninja
 
