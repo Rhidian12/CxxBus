@@ -81,7 +81,11 @@ TEST_F(MarshalTestSuite, MarshalBigString)
   std::vector<byte> expectedData{
       0x10, 0x27, 0x00, 0x00  // Length = 10'000 = 0x2710
   };
+#if __cpp_lib_containers_ranges
   expectedData.append_range(str);
+#else
+  expectedData.insert(expectedData.end(), str.begin(), str.end());
+#endif
   expectedData.push_back('\0');
 
   EXPECT_EQ(MarshalDBusType(str), expectedData);
