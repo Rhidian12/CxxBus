@@ -57,6 +57,9 @@ jobs:
     - name: Install DBus
       run: sudo apt-get install dbus
 
+    - name: Install SDBus dependencies
+      run: sudo apt-get update && sudo apt-get install -y libsystemd-dev pkg-config
+
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
       id: strings
