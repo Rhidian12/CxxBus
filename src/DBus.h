@@ -368,21 +368,13 @@ namespace cxxbus
   class FastVariant
   {
    private:
-    struct VariantData
-    {
-      Signature signature;
-      uint8_t dataAlignment;
-      std::span<byte const> data;
-      VariantVTable const* vTable;
-    };
-
     struct DeserializedVariantData
     {
       Signature signature;
       std::span<byte const> data;
     };
 
-    std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
+    std::variant<DeserializedVariantData, std::monostate> m_variantData;
 
    public:
     FastVariant()
@@ -399,12 +391,7 @@ namespace cxxbus
     FastVariant(FastVariant const& other)
       : m_variantData(std::monostate{})
     {
-      if (std::holds_alternative<VariantData>(other.m_variantData))
-      {
-        VariantData const& data = std::get<VariantData>(other.m_variantData);
-        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
-      }
-      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
       {
         DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
         m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
@@ -423,12 +410,7 @@ namespace cxxbus
 
     FastVariant& operator=(FastVariant const& other)
     {
-      if (std::holds_alternative<VariantData>(other.m_variantData))
-      {
-        VariantData const& data = std::get<VariantData>(other.m_variantData);
-        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
-      }
-      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
       {
         DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
         m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
@@ -439,11 +421,7 @@ namespace cxxbus
 
     Signature const& GetSignature() const
     {
-      if (std::holds_alternative<VariantData>(m_variantData))
-      {
-        return std::get<VariantData>(m_variantData).signature;
-      }
-      else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+      if (std::holds_alternative<DeserializedVariantData>(m_variantData))
       {
         return std::get<DeserializedVariantData>(m_variantData).signature;
       }
@@ -454,11 +432,7 @@ namespace cxxbus
     }
     uint8_t GetDataAlignment() const
     {
-      if (std::holds_alternative<VariantData>(m_variantData))
-      {
-        return std::get<VariantData>(m_variantData).dataAlignment;
-      }
-      else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+      if (std::holds_alternative<DeserializedVariantData>(m_variantData))
       {
         return 1;  // Deserialized data alignment is 1
       }
@@ -466,23 +440,6 @@ namespace cxxbus
       {
         throw std::runtime_error{"Variant is in an invalid state"};
       }
-    }
-
-    void MarshalData(std::vector<byte>& dbusType) const
-    {
-      if (!std::holds_alternative<VariantData>(m_variantData))
-      {
-        throw std::runtime_error{"Cannot marshal a deserialized variant"};
-      }
-
-      VariantData const& data = std::get<VariantData>(m_variantData);
-
-      // We marshal a variant by marshalling its signature followed by the data (with padding of course)
-      // Add signature + padding to data type
-      MarshalDBusTypeImpl(data.signature, dbusType);
-      ApplyPadding(dbusType, data.dataAlignment);
-
-      data.vTable->marshalDataFunc(data.data.data(), dbusType);
     }
 
     template <IsDBusType T>
