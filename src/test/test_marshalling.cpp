@@ -495,7 +495,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfByte)
 {
   // Signature "y" is 3 bytes (len=1, 'y', NUL). BYTE needs no
   // alignment, so the value follows immediately with no padding.
-  EXPECT_EQ(MarshalDBusType(Variant(static_cast<uint8_t>(0x07))),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(static_cast<uint8_t>(0x07))),
             (std::vector<byte>{0x01, 'y', 0x00,   // signature "y"
                                 0x07}));           // value
 }
@@ -505,7 +505,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfUint32)
   // Signature "u" is 3 bytes (len=1, 'u', NUL), landing us at offset
   // 3. UINT32 needs 4-byte alignment, so 1 padding byte is inserted
   // before the value.
-  EXPECT_EQ(MarshalDBusType(Variant(static_cast<uint32_t>(42))),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(static_cast<uint32_t>(42))),
             (std::vector<byte>{0x01, 'u', 0x00,         // signature "u"
                                 0x00,                     // pad to 4-byte boundary
                                 0x2A, 0x00, 0x00, 0x00})); // value = 42
@@ -516,7 +516,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfDouble)
   // Signature "d" is 3 bytes, landing at offset 3. DOUBLE needs
   // 8-byte alignment, so 5 padding bytes are inserted before the
   // value.
-  EXPECT_EQ(MarshalDBusType(Variant(2.5)),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(2.5)),
             (std::vector<byte>{
                 0x01, 'd', 0x00,                          // signature "d"
                 0x00, 0x00, 0x00, 0x00, 0x00,              // pad to 8-byte boundary
@@ -530,7 +530,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfString)
   // 3. STRING's length field is a UINT32, which needs 4-byte
   // alignment -- offset 3 is NOT a multiple of 4, so 1 padding byte
   // is required before the string's own length field.
-  EXPECT_EQ(MarshalDBusType(Variant(std::string("Hi!"))),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(std::string("Hi!"))),
             (std::vector<byte>{
                 0x01, 's', 0x00,                    // signature "s"
                 0x00,                                // pad to 4-byte boundary
@@ -540,7 +540,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfString)
             }));
 
   // Make sure that string-literals can also be used
-  EXPECT_EQ(MarshalDBusType(Variant("Hi!")),
+  EXPECT_EQ(MarshalDBusType(Variant::Create("Hi!")),
             (std::vector<byte>{
                 0x01, 's', 0x00,                    // signature "s"
                 0x00,                                // pad to 4-byte boundary
@@ -554,7 +554,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfEmptyString)
 {
   // Same "s" signature as above -- same 1-byte pad before the length
   // field, regardless of the string's own content being empty.
-  EXPECT_EQ(MarshalDBusType(Variant(std::string(""))),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(std::string(""))),
             (std::vector<byte>{
                 0x01, 's', 0x00,          // signature "s"
                 0x00,                     // pad to 4-byte boundary
@@ -568,7 +568,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfArrayOfUint32)
   // Signature "au" is 4 bytes (len=2, 'a', 'u', NUL), landing us at
   // offset 4 -- already 4-byte aligned for the array's own length
   // field, so no extra padding is needed before it.
-  EXPECT_EQ(MarshalDBusType(Variant(std::vector<uint32_t>{1, 2})),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(std::vector<uint32_t>{1, 2})),
             (std::vector<byte>{
                 0x02, 'a', 'u', 0x00,               // signature "au"
                 0x08, 0x00, 0x00, 0x00,              // array byte length = 8
@@ -583,7 +583,7 @@ TEST_F(MarshalTestSuite, MarshalVariantOfStruct)
   // landing us at offset 6. STRUCT needs 8-byte alignment, so 2
   // padding bytes are inserted before the struct's fields begin.
   auto data = MarshalDBusType(
-      Variant(std::make_tuple(static_cast<uint8_t>(0x01), static_cast<uint32_t>(0x11223344))));
+      Variant::Create(std::make_tuple(static_cast<uint8_t>(0x01), static_cast<uint32_t>(0x11223344))));
   EXPECT_EQ(data,
             (std::vector<byte>{
                 0x04, '(', 'y', 'u', ')', 0x00,   // signature "(yu)"
@@ -598,7 +598,7 @@ TEST_F(MarshalTestSuite, MarshalNestedVariant)
   // A variant holding another variant. Outer signature "v" is 3
   // bytes; VARIANT has no alignment requirement of its own, so the
   // inner variant follows immediately with no padding.
-  EXPECT_EQ(MarshalDBusType(Variant(in_place, Variant(static_cast<uint8_t>(0x07)))),
+  EXPECT_EQ(MarshalDBusType(Variant::Create(Variant::Create(static_cast<uint8_t>(0x07)))),
             (std::vector<byte>{
                 0x01, 'v', 0x00,   // outer signature "v"
                 0x01, 'y', 0x00,   // inner signature "y"
@@ -621,7 +621,7 @@ TEST_F(MarshalTestSuite, MarshalStructContainingVariantAlignsValueToBufferOffset
   //                bytes are needed before the contained uint32_t
   //   offset 8-11: the uint32_t value
   auto data = MarshalDBusType(std::make_tuple(static_cast<uint8_t>(0xAA), static_cast<uint8_t>(0xBB),
-                                               Variant(static_cast<uint32_t>(0x11223344))));
+                                               Variant::Create(static_cast<uint32_t>(0x11223344))));
   EXPECT_EQ(data,
             (std::vector<byte>{
                 0xAA,                    // byte 1

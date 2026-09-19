@@ -127,17 +127,12 @@ namespace cxxbus
     ObjectPath() = default;
     ObjectPath(std::string path);
 
-    uint32_t size() const
-    {
-      return m_path.size();
-    }
+    uint32_t size() const;
 
-    explicit operator std::string() const
-    {
-      return m_path;
-    }
+    explicit operator std::string() const;
 
     std::string const& GetPath() const;
+    char const* data() const;
 
     bool Empty() const;
 
@@ -153,12 +148,13 @@ namespace cxxbus
    public:
     Signature(std::string signature);
 
-    uint32_t Size() const;
+    uint32_t size() const;
     explicit operator std::string() const;
     std::string const& GetSignature() const;
     // Get the alignment of the contained signature
     uint8_t GetAlignmentOfSignature() const;
     bool Empty() const;
+    char const* data() const;
 
     auto operator<=>(Signature const&) const noexcept = default;
     bool operator==(Signature const&) const = default;
@@ -190,7 +186,7 @@ namespace cxxbus
     }
 
     template <size_t I>
-    auto GetType() const
+    auto const& GetType() const
     {
       return std::get<I>(m_types);
     }
@@ -257,6 +253,7 @@ namespace cxxbus
     uint32_t size() const;
     explicit operator std::string() const;
     bool empty() const;
+    char const* data() const;
 
     auto operator<=>(DBusInterfaceName const&) const noexcept = default;
     bool operator==(DBusInterfaceName const&) const = default;
@@ -314,7 +311,8 @@ namespace cxxbus
   // this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message type
   // specifies which fields are required Here we keep track of the set starting size of any DBus message: The 4 bytes,
   // the 2 u32's. We use this data to parse the DBus Message piece-by-piece
-  inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 2;
+  // We also read in the uint32_t of the array already
+  inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 3;
 
   // Alignment boundary of the DBus Message Body (not the Header)
   inline static uint8_t constexpr DBUS_MESSAGE_BODY_ALIGNMENT = 8;

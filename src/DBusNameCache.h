@@ -24,6 +24,7 @@
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
+#include <memory>
 #include <set>
 #include <unordered_map>
 
@@ -32,9 +33,8 @@
 namespace cxxbus
 {
   class DBusConnection;
-  class SyncDBusConnection;
 
-  class DBusNameCache
+  class DBusNameCache : public std::enable_shared_from_this<DBusNameCache>
   {
    private:
     DBusConnection& m_conn;
@@ -46,7 +46,7 @@ namespace cxxbus
    public:
     DBusNameCache(DBusConnection& conn);
 
-    boost::asio::awaitable<void> SubscribeToNameChanges(boost::asio::io_context& ioContext);
+    boost::asio::awaitable<void> SubscribeToNameChanges();
 
     // Returns a list of well-known names associated with the given unique connection name.
     // Uses `std::string` instead of `DBusUniqueConnectionName` as parameter type because the sender of a message is not

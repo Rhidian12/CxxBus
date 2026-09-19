@@ -48,20 +48,24 @@ namespace cxxbus
   {
   }
 
-  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges(boost::asio::io_context& ioContext)
+  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
   {
+    std::shared_ptr<DBusNameCache> self = shared_from_this();
     co_await m_conn.AddMatchRule(
         DBusMatchRule::Create()
             .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
             .Path(ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Member("NameOwnerChanged"),
-        [this](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        [self = std::weak_ptr{self}](IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
-          OnNameOwnerChanged(std::move(message));
+          if (!self.expired())
+          {
+            self.lock()->OnNameOwnerChanged(std::move(message));
+          }
           co_return;
         },
-        ioContext);
+        false);
   }
 
   void DBusNameCache::OnNameOwnerChanged(IncomingDBusMessage message)

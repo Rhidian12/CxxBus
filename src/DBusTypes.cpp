@@ -135,9 +135,24 @@ namespace cxxbus
     m_path = std::move(path);
   }
 
+  uint32_t ObjectPath::size() const
+  {
+    return m_path.size();
+  }
+
+  ObjectPath::operator std::string() const
+  {
+    return m_path;
+  }
+
   std::string const& ObjectPath::GetPath() const
   {
     return m_path;
+  }
+
+  char const* ObjectPath::data() const
+  {
+    return m_path.data();
   }
 
   bool ObjectPath::operator==(std::string const& str) const noexcept
@@ -150,7 +165,7 @@ namespace cxxbus
   {
   }
 
-  uint32_t Signature::Size() const
+  uint32_t Signature::size() const
   {
     return m_signature.size();
   }
@@ -174,6 +189,11 @@ namespace cxxbus
   bool Signature::Empty() const
   {
     return m_signature.empty();
+  }
+
+  char const* Signature::data() const
+  {
+    return m_signature.data();
   }
 
   bool Signature::operator==(std::string const& str) const
@@ -272,6 +292,11 @@ namespace cxxbus
   bool DBusInterfaceName::empty() const
   {
     return m_name.empty();
+  }
+
+  char const* DBusInterfaceName::data() const
+  {
+    return m_name.data();
   }
 
   DBusInterfaceName::operator std::string() const

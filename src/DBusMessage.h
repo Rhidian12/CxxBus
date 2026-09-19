@@ -59,15 +59,20 @@ namespace cxxbus
    public:
     DBusMessage() = default;
 
-    static DBusMessage Method(std::string method);
+    static DBusMessage Method(std::string const& method);
+    static DBusMessage Method(std::string&& method);
     static DBusMessage Reply(IncomingDBusMessage const& incomingMessage);
-    static DBusMessage Signal(std::string signal);
+    static DBusMessage Signal(std::string const& signal);
+    static DBusMessage Signal(std::string&& signal);
     static DBusMessage Error(IncomingDBusMessage const& incomingMessage, std::string errorName,
                              std::string errorMessage);
 
-    DBusMessage& Path(ObjectPath path);
-    DBusMessage& Interface(DBusInterfaceName interface);
-    DBusMessage& Destination(std::string destination);
+    DBusMessage& Path(ObjectPath&& path);
+    DBusMessage& Path(ObjectPath const& path);
+    DBusMessage& Interface(DBusInterfaceName&& interface);
+    DBusMessage& Interface(DBusInterfaceName const& interface);
+    DBusMessage& Destination(std::string&& destination);
+    DBusMessage& Destination(std::string const& destination);
     DBusMessage& Flag(DBusMessageFlags flag);
     template <typename T>
     DBusMessage& Parameter(T&& value)

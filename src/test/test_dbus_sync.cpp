@@ -12,6 +12,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <functional>
 #include <memory>
+#include <thread>
 
 #include "src/DBusConnection.h"
 #include "src/DBusMatchRule.h"
@@ -53,11 +54,13 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto threadID = std::this_thread::get_id();
     auto reply = conn->SendMessageSync(DBusMessage::Method("Introspect")
                                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                            .Destination("org.freedesktop.DBus"));
 
+    EXPECT_EQ(threadID, std::this_thread::get_id());
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
     EXPECT_TRUE(reply.HasArguments());
@@ -404,23 +407,27 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
                                           .Member("NameOwnerChanged")
                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                           .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
-    conn->AddMatchRuleSync(extensiveRule,
-                           [&extensiveMatchRuleTriggered, chann](IncomingDBusMessage)
-                           {
-                             LOG_INFO(LOGGER, "Extensive match rule was triggered");
-                             extensiveMatchRuleTriggered = true;
-                             chann->async_send(boost::system::error_code{}, boost::asio::detached);
-                           });
+    conn->AddMatchRuleSync(
+        extensiveRule,
+        [&extensiveMatchRuleTriggered, chann](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          LOG_INFO(LOGGER, "Extensive match rule was triggered");
+          extensiveMatchRuleTriggered = true;
+          chann->async_send(boost::system::error_code{}, boost::asio::detached);
+          co_return;
+        });
 
     LOG_DEBUG(LOGGER, "Adding simple match rule");
     DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
-    conn->AddMatchRuleSync(simpleRule,
-                           [&simpleMatchRuleTriggered, chann2](IncomingDBusMessage)
-                           {
-                             LOG_INFO(LOGGER, "Simple match rule was triggered");
-                             simpleMatchRuleTriggered = true;
-                             chann2->async_send(boost::system::error_code{}, boost::asio::detached);
-                           });
+    conn->AddMatchRuleSync(
+        simpleRule,
+        [&simpleMatchRuleTriggered, chann2](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          LOG_INFO(LOGGER, "Simple match rule was triggered");
+          simpleMatchRuleTriggered = true;
+          chann2->async_send(boost::system::error_code{}, boost::asio::detached);
+          co_return;
+        });
 
     auto reply = conn->SendMessageSync(DBusMessage::Method("RequestName")
                                            .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -430,12 +437,13 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
                                                DBusWellKnownName{"com.dbus.CxxTest2"}, static_cast<uint32_t>(0x1)}));
     LOG_INFO(LOGGER, "Finished request name call: {}", reply.Get<uint32_t>());
 
-    co_await chann->async_receive(boost::asio::use_awaitable);
     co_await chann2->async_receive(boost::asio::use_awaitable);
+    co_await chann->async_receive(boost::asio::use_awaitable);
 
     EXPECT_TRUE(extensiveMatchRuleTriggered);
     EXPECT_TRUE(simpleMatchRuleTriggered);
 
+    LOG_DEBUG(LOGGER, "Removing Match Rules");
     EXPECT_NO_THROW(conn->RemoveMatchRuleSync(extensiveRule));
     EXPECT_NO_THROW(conn->RemoveMatchRuleSync(simpleRule));
 
@@ -485,7 +493,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
 
     conn2->AddMatchRuleSync(DBusMatchRule::Create().Member("SignalEmitted"),
-                            [signalEmitted, chann](IncomingDBusMessage msg)
+                            [signalEmitted, chann](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
                             {
                               LOG_INFO(LOGGER, "Received emitted signal");
                               *signalEmitted = true;
@@ -493,6 +501,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
                                   (msg.Get<std::tuple<std::string, int, double, std::string>>()),
                                   (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
                               chann->async_send(boost::system::error_code{}, boost::asio::detached);
+                              co_return;
                             });
 
     conn->SendMessageNoReplySync(
@@ -520,14 +529,15 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
     auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
     std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
 
-    auto work = [messageReceived, ioService2, conn2]()
+    auto work = [messageReceived, ioService2, &conn2]()
     {
-      conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2"},
-                                       [conn2, messageReceived](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
-                                       {
-                                         *messageReceived = true;
-                                         co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
-                                       });
+      conn2->RegisterObjectPathHandlerSync(
+          ObjectPath{"/com/dbus/CxxTest2"},
+          [&conn2, messageReceived](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+          {
+            *messageReceived = true;
+            co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
+          });
 
       ioService2->run();
     };
@@ -540,10 +550,6 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
     t.join();
 
     EXPECT_TRUE(messageReceived);
-
-    // conn->CloseSync();
-    // conn2->CloseSync();
-
     co_return;
   };
 }

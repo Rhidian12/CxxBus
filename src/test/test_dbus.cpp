@@ -93,7 +93,7 @@ TEST_F(DBusConnectionTestSuite, TestDetectingLostConnectionToDBusDaemon)
     EXPECT_TRUE(conn->IsConnected());
 
     bool disconnected{false};
-    conn->OnDisconnected([&disconnected]() { disconnected = true; });
+    co_await conn->OnDisconnected([&disconnected]() { disconnected = true; });
 
     // Simulate the dbus-daemon dying/killing our connection, without needing to spawn and kill a
     // real dbus-daemon process.
@@ -118,6 +118,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
                                                 .Path(ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                                 .Destination("org.freedesktop.DBus"));
+    LOG_INFO(LOGGER, "SENT MESSAGE");
 
     EXPECT_TRUE(reply.GetHeader().GetSignature().has_value());
     EXPECT_EQ(reply.GetHeader().GetSignature().value(), Signature("s"));
@@ -455,21 +456,23 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                           .Member("NameOwnerChanged")
                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                           .Sender(DBusWellKnownName{"org.freedesktop.DBus"})};
-    co_await conn->AddMatchRule(extensiveRule,
-                                [&extensiveMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
-                                {
-                                  extensiveMatchRuleTriggered = true;
-                                  co_return;
-                                });
+    co_await conn->AddMatchRule(
+        extensiveRule,
+        [&extensiveMatchRuleTriggered](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          extensiveMatchRuleTriggered = true;
+          co_return;
+        });
 
     DBusMatchRule const simpleRule{DBusMatchRule::Create().Member("NameOwnerChanged")};
     co_await conn->AddMatchRule(simpleRule,
-                                [&simpleMatchRuleTriggered](IncomingDBusMessage) -> boost::asio::awaitable<void>
+                                [&simpleMatchRuleTriggered](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
                                 {
                                   simpleMatchRuleTriggered = true;
                                   co_return;
                                 });
 
+    LOG_DEBUG(LOGGER, "Sending message to trigger NameOwnerChanged signal");
     co_await conn->SendMessage(DBusMessage::Method("RequestName")
                                    .Path(ObjectPath{"/org/freedesktop/DBus"})
                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
@@ -479,6 +482,8 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
 
     EXPECT_TRUE(extensiveMatchRuleTriggered);
     EXPECT_TRUE(simpleMatchRuleTriggered);
+
+    LOG_TRACE(LOGGER, "Removing match rules");
 
     EXPECT_NO_THROW(co_await conn->RemoveMatchRule(extensiveRule));
     EXPECT_NO_THROW(co_await conn->RemoveMatchRule(simpleRule));
@@ -523,7 +528,7 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     LOG_INFO(LOGGER, "Making second connection");
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
-    conn2->ReceiveIncomingMessages(
+    co_await conn2->ReceiveIncomingMessages(
         [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
@@ -531,13 +536,14 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
         });
 
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/dbus/CxxTest2/Method"},
-                                     [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
-                                     {
-                                       LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
-                                       co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
-                                           MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
-                                     });
+    co_await conn2->RegisterObjectPathHandler(
+        ObjectPath{"/com/dbus/CxxTest2/Method"},
+        [conn2](IncomingDBusMessage const& message) -> boost::asio::awaitable<void>
+        {
+          LOG_TRACE(LOGGER, "Connection2 received the Method call. Returning a reply");
+          co_await conn2->SendMessageNoReply(DBusMessage::Reply(message).Parameter(
+              MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+        });
 
     LOG_DEBUG(LOGGER, "Sending a message from connection1 to connection2");
     EXPECT_THROW(
@@ -579,7 +585,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
     bool signalEmitted{};
     co_await conn2->AddMatchRule(
         DBusMatchRule::Create().Member("SignalEmitted"),
-        [&signalEmitted, chann, this](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        [&signalEmitted, chann, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
           LOG_INFO(LOGGER, "Received emitted signal");
           signalEmitted = true;
@@ -649,8 +655,8 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     int nrOfCalls{};
-    uint32_t const id = conn2->RegisterMessageFilter(
-        [&nrOfCalls, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<MessageHandled>
+    uint32_t const id = co_await conn2->RegisterMessageFilter(
+        [&nrOfCalls, conn2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<MessageHandled>
         {
           LOG_INFO(LOGGER, "Message filter called for message with member '{}'",
                    msg.GetHeader().GetMember().value_or(""));
@@ -669,9 +675,9 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 2)};
 
     bool objectPathHandlerCalled{};
-    conn2->RegisterObjectPathHandler(
+    co_await conn2->RegisterObjectPathHandler(
         ObjectPath{"/com/dbus/CxxTest2/Foo"},
-        [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+        [chann, &objectPathHandlerCalled, conn2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
           LOG_INFO(LOGGER, "Object path handler called");
           objectPathHandlerCalled = !objectPathHandlerCalled;
@@ -690,7 +696,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
     EXPECT_TRUE(objectPathHandlerCalled);
     EXPECT_EQ(nrOfCalls, 2);
 
-    conn2->UnregisterMessageFilter(id);
+    co_await conn2->UnregisterMessageFilter(id);
     co_await conn->SendMessage(
         DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
 
@@ -750,8 +756,8 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
-    conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage msg)
-                                     { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
+    co_await conn2->RegisterObjectPathHandler(ObjectPath{"/com/test/cxxbus"}, [conn2](IncomingDBusMessage const& msg)
+                                              { return conn2->SendMessageNoReply(DBusMessage::Reply(msg)); });
 
     std::string str{};
     for (int i{}; i < 10'000; ++i)

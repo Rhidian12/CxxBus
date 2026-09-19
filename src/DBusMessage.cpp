@@ -97,7 +97,7 @@ namespace cxxbus
 
       for (HeaderField const& headerField : requiredHeaderFields)
       {
-        std::optional<Variant> variant{std::nullopt};
+        Variant variant{};
         switch (headerField.decimalCode)
         {
           case HeaderFieldCode::NONE:
@@ -115,7 +115,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("replySerial is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{replySerial.value()};
+            variant = Variant::Create(replySerial.value());
             break;
           case HeaderFieldCode::ERROR_NAME:
             if (!errorName.has_value() || errorName->empty())
@@ -123,7 +123,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("ErrorName is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{errorName.value()};
+            variant = Variant::Create(errorName.value());
             break;
           case HeaderFieldCode::PATH:
             if (!objectPath.has_value() || objectPath->Empty())
@@ -131,7 +131,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Path is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*objectPath};
+            variant = Variant::Create(*objectPath);
             break;
           case HeaderFieldCode::INTERFACE:
             if (!interface.has_value() || interface->empty())
@@ -139,7 +139,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Interface is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*interface};
+            variant = Variant::Create(*interface);
             break;
           case HeaderFieldCode::MEMBER:
             if (!method.has_value() || method->empty())
@@ -147,7 +147,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Method is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*method};
+            variant = Variant::Create(*method);
             break;
           case HeaderFieldCode::SIGNATURE:
             if (!signature.has_value() || signature->Empty())
@@ -155,11 +155,11 @@ namespace cxxbus
               throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body",
                                                        magic_enum::enum_name(msgType))};
             }
-            variant = Variant{*signature};
+            variant = Variant::Create(*signature);
             break;
         }
 
-        headerFields.push_back(std::make_tuple(static_cast<uint8_t>(headerField.decimalCode), *variant));
+        headerFields.push_back(std::make_tuple(static_cast<uint8_t>(headerField.decimalCode), variant));
       }
 
       // Interface is often optional, but if provided, use it
@@ -169,13 +169,13 @@ namespace cxxbus
               headerFields.cend())
       {
         headerFields.push_back(
-            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::INTERFACE), Variant{interface.value()}));
+            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::INTERFACE), Variant::Create(interface.value())));
       }
 
       if (destination.has_value() && !destination->empty())
       {
         headerFields.push_back(
-            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION), Variant{destination.value()}));
+            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION), Variant::Create(destination.value())));
       }
 
       std::ranges::sort(headerFields, [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
@@ -211,10 +211,18 @@ namespace cxxbus
     }
   }  // namespace
 
-  DBusMessage DBusMessage::Method(std::string method)
+  DBusMessage DBusMessage::Method(std::string&& method)
   {
     DBusMessage message;
     message.m_method = std::move(method);
+    message.m_messageType = DBusMessageType::METHOD_CALL;
+    return message;
+  }
+
+  DBusMessage DBusMessage::Method(std::string const& method)
+  {
+    DBusMessage message;
+    message.m_method = method;
     message.m_messageType = DBusMessageType::METHOD_CALL;
     return message;
   }
@@ -228,7 +236,15 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage DBusMessage::Signal(std::string signal)
+  DBusMessage DBusMessage::Signal(std::string const& signal)
+  {
+    DBusMessage message;
+    message.m_method = signal;
+    message.m_messageType = DBusMessageType::SIGNAL;
+    return message;
+  }
+
+  DBusMessage DBusMessage::Signal(std::string&& signal)
   {
     DBusMessage message;
     message.m_method = std::move(signal);
@@ -249,21 +265,39 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage& DBusMessage::Path(ObjectPath path)
+  DBusMessage& DBusMessage::Path(ObjectPath&& path)
   {
     m_path = std::move(path);
     return *this;
   }
 
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName interface)
+  DBusMessage& DBusMessage::Path(ObjectPath const& path)
+  {
+    m_path = path;
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Interface(DBusInterfaceName&& interface)
   {
     m_interface = std::move(interface);
     return *this;
   }
 
-  DBusMessage& DBusMessage::Destination(std::string destination)
+  DBusMessage& DBusMessage::Interface(DBusInterfaceName const& interface)
+  {
+    m_interface = interface;
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Destination(std::string&& destination)
   {
     m_destination = std::move(destination);
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Destination(std::string const& destination)
+  {
+    m_destination = destination;
     return *this;
   }
 

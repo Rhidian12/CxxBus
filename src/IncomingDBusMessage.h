@@ -64,7 +64,8 @@ namespace cxxbus
 
    public:
     DBusMessageHeader() = default;
-    DBusMessageHeader(std::vector<byte> data);
+    DBusMessageHeader(std::span<byte const> data, uint32_t serial, DBusMessageType messageType,
+                      uint32_t headerFieldLength, uint32_t messageLength);
 
     uint32_t GetSerial() const;
     std::optional<uint32_t> const& GetReplySerial() const;
@@ -79,9 +80,6 @@ namespace cxxbus
     std::optional<std::string> const& GetSender() const;
     std::optional<std::string> const& GetDestination() const;
     std::optional<std::string> const& GetErrorName() const;
-
-    void ParseHeaderFieldLength(std::vector<byte> data);
-    void ParseRemainderOfHeader(std::vector<byte> data, uint32_t& arrPointer);
 
     bool operator==(DBusMessageHeader const&) const noexcept = default;
   };

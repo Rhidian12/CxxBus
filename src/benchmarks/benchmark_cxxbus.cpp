@@ -23,14 +23,14 @@ static void BM_EmptyMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
-        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+    co_await serverConn->RegisterObjectPathHandler(
+        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
     for (auto _ : state)
     {
       co_await clientConn->SendMessage(
-          cxxbus::DBusMessage::Method(METHOD_NAME).Destination(WELL_KNOWN_NAME.GetName()).Path(OBJECT_PATH));
+          std::move(cxxbus::DBusMessage::Method(METHOD_NAME).Destination(WELL_KNOWN_NAME.GetName()).Path(OBJECT_PATH)));
     }
 
     co_await serverConn->Close();
@@ -50,8 +50,43 @@ static void BM_StringMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
-        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+    co_await serverConn->RegisterObjectPathHandler(
+        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
+
+    std::string str{};
+    for (int i{}; i < 100; ++i)
+    {
+      str.push_back(std::max(i % 127, 1));
+    }
+
+    for (auto _ : state)
+    {
+      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
+                                           .Destination(WELL_KNOWN_NAME.GetName())
+                                           .Path(OBJECT_PATH)
+                                           .Parameter(str));
+    }
+
+    co_await serverConn->Close();
+    co_await clientConn->Close();
+  };
+
+  boost::asio::co_spawn(ioContext, work(), boost::asio::detached);
+
+  ioContext.run();
+}
+
+static void BM_BigStringMessage(benchmark::State& state)
+{
+  boost::asio::io_context ioContext{};
+  auto work = [&ioContext, &state]() -> boost::asio::awaitable<void>
+  {
+    auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
+    auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
+
+    co_await serverConn->RegisterObjectPathHandler(
+        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
     std::string str{};
@@ -100,8 +135,8 @@ static void BM_NestedMapMessage(benchmark::State& state)
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
     auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
 
-    serverConn->RegisterObjectPathHandler(
-        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage msg) -> boost::asio::awaitable<void>
+    co_await serverConn->RegisterObjectPathHandler(
+        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
     for (auto _ : state)
@@ -122,5 +157,6 @@ static void BM_NestedMapMessage(benchmark::State& state)
 }
 
 BENCHMARK(BM_EmptyMessage);
-// BENCHMARK(BM_StringMessage);
-// BENCHMARK(BM_NestedMapMessage);
+BENCHMARK(BM_StringMessage);
+BENCHMARK(BM_BigStringMessage);
+BENCHMARK(BM_NestedMapMessage);
