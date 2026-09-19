@@ -48,14 +48,7 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-include("build-system/UnitTests.cmake")
-include("build-system/CreateBinary.cmake")
-
-enable_testing()
-
-include(FetchContent)
-
-if (CXXBUS_DEV)
+if(CXXBUS_DEV)
   FetchContent_Declare(
   sdbus-c++
   GIT_REPOSITORY https://github.com/Kistler-Group/sdbus-cpp.git
@@ -63,6 +56,13 @@ if (CXXBUS_DEV)
 )
   FetchContent_MakeAvailable(sdbus-c++)
 endif()
+
+include("build-system/UnitTests.cmake")
+include("build-system/CreateBinary.cmake")
+
+enable_testing()
+
+include(FetchContent)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
