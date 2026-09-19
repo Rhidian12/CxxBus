@@ -528,8 +528,9 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
             boost::asio::make_work_guard(*ioService2));
     auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
     std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
+    std::promise<void> ready;
 
-    auto work = [messageReceived, ioService2, &conn2]()
+    auto work = [messageReceived, ioService2, &conn2, &ready]()
     {
       conn2->RegisterObjectPathHandlerSync(
           ObjectPath{"/com/dbus/CxxTest2"},
@@ -539,17 +540,20 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
             co_return co_await conn2->SendMessageNoReply(DBusMessage::Reply(msg));
           });
 
+      ready.set_value();
+
       ioService2->run();
     };
 
     std::thread t{work};
+    ready.get_future().wait();
     conn->SendMessageSync(
         DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
 
     workGuard.reset();
     t.join();
 
-    EXPECT_TRUE(messageReceived);
+    EXPECT_TRUE(*messageReceived);
     co_return;
   };
 }
