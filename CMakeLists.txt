@@ -53,5 +53,16 @@ include("build-system/CreateBinary.cmake")
 
 enable_testing()
 
+if(CXXBUS_DEV)
+  include(FetchContent)
+
+  FetchContent_Declare(
+  sdbus-c++
+  GIT_REPOSITORY https://github.com/Kistler-Group/sdbus-cpp.git
+  GIT_TAG        v2.0.0
+)
+  FetchContent_MakeAvailable(sdbus-c++)
+endif()
+
 add_subdirectory(thirdparty)
 add_subdirectory(src)
