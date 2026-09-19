@@ -683,10 +683,18 @@ namespace cxxbus
     co_return reply.value();
   }
 
-  boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessage(DBusMessage message)
+  boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessage(DBusMessage&& message)
   {
     IncomingDBusMessage reply = co_await boost::asio::co_spawn(*m_state->strand, SendMessageImpl(std::move(message)),
                                                                boost::asio::use_awaitable);
+
+    co_return reply;
+  }
+
+  boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessage(DBusMessage const& message)
+  {
+    IncomingDBusMessage reply =
+        co_await boost::asio::co_spawn(*m_state->strand, SendMessageImpl(message), boost::asio::use_awaitable);
 
     co_return reply;
   }

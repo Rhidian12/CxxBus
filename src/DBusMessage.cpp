@@ -236,7 +236,15 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage DBusMessage::Signal(std::string signal)
+  DBusMessage DBusMessage::Signal(std::string const& signal)
+  {
+    DBusMessage message;
+    message.m_method = signal;
+    message.m_messageType = DBusMessageType::SIGNAL;
+    return message;
+  }
+
+  DBusMessage DBusMessage::Signal(std::string&& signal)
   {
     DBusMessage message;
     message.m_method = std::move(signal);
@@ -257,21 +265,39 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage& DBusMessage::Path(ObjectPath path)
+  DBusMessage& DBusMessage::Path(ObjectPath&& path)
   {
     m_path = std::move(path);
     return *this;
   }
 
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName interface)
+  DBusMessage& DBusMessage::Path(ObjectPath const& path)
+  {
+    m_path = path;
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Interface(DBusInterfaceName&& interface)
   {
     m_interface = std::move(interface);
     return *this;
   }
 
-  DBusMessage& DBusMessage::Destination(std::string destination)
+  DBusMessage& DBusMessage::Interface(DBusInterfaceName const& interface)
+  {
+    m_interface = interface;
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Destination(std::string&& destination)
   {
     m_destination = std::move(destination);
+    return *this;
+  }
+
+  DBusMessage& DBusMessage::Destination(std::string const& destination)
+  {
+    m_destination = destination;
     return *this;
   }
 

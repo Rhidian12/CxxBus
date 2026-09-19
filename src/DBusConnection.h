@@ -207,7 +207,8 @@ namespace cxxbus
                           std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback);
     void RemoveMatchRuleSync(DBusMatchRule rule);
 
-    boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage message);
+    boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage&& message);
+    boost::asio::awaitable<IncomingDBusMessage> SendMessage(DBusMessage const& message);
     boost::asio::awaitable<void> SendMessageNoReply(DBusMessage message);
 
     IncomingDBusMessage SendMessageSync(DBusMessage message);
