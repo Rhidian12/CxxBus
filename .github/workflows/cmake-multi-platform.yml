@@ -60,12 +60,6 @@ jobs:
     - name: Install SDBus
       run: sudo apt install libsdbus-c++-bin libsdbus-c++-dev
 
-    - name: Check sdbus-c++ version
-      run: |
-      sudo apt update
-      apt-cache policy libsdbus-c++-dev
-      apt-cache show libsdbus-c++-dev | grep -i version
-
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
       id: strings
