@@ -32,14 +32,6 @@ namespace cxxbus
   class DBusMessageHeader
   {
    public:
-    struct HeaderFieldReplyData
-    {
-      HeaderFieldCode code;
-      Variant data;
-
-      bool operator==(HeaderFieldReplyData const&) const noexcept = default;
-    };
-
     struct ReplyData
     {
       uint32_t serial;
@@ -54,7 +46,6 @@ namespace cxxbus
       std::optional<std::string> destination;
       uint32_t messageLength;
       uint32_t headerFieldLength;
-      std::vector<HeaderFieldReplyData> headerFields;
 
       bool operator==(ReplyData const&) const noexcept = default;
     };

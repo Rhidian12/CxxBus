@@ -365,6 +365,149 @@ namespace cxxbus
     }
   };
 
+  class FastVariant
+  {
+   private:
+    struct VariantData
+    {
+      Signature signature;
+      uint8_t dataAlignment;
+      std::span<byte const> data;
+      VariantVTable const* vTable;
+    };
+
+    struct DeserializedVariantData
+    {
+      Signature signature;
+      std::span<byte const> data;
+    };
+
+    std::variant<VariantData, DeserializedVariantData, std::monostate> m_variantData;
+
+   public:
+    FastVariant()
+      : m_variantData{std::monostate{}}
+    {
+    }
+
+    FastVariant(DeserializedVariantTag, Signature&& signature, std::span<byte const>&& data)
+      : m_variantData{std::monostate{}}
+    {
+      m_variantData.emplace<DeserializedVariantData>(std::move(signature), std::move(data));
+    }
+
+    FastVariant(FastVariant const& other)
+      : m_variantData(std::monostate{})
+    {
+      if (std::holds_alternative<VariantData>(other.m_variantData))
+      {
+        VariantData const& data = std::get<VariantData>(other.m_variantData);
+        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
+      }
+      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      {
+        DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
+        m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
+      }
+    }
+
+    FastVariant(FastVariant&& other) noexcept
+      : m_variantData(std::move(other.m_variantData))
+    {
+    }
+    FastVariant& operator=(FastVariant&& other) noexcept
+    {
+      m_variantData = std::move(other.m_variantData);
+      return *this;
+    }
+
+    FastVariant& operator=(FastVariant const& other)
+    {
+      if (std::holds_alternative<VariantData>(other.m_variantData))
+      {
+        VariantData const& data = std::get<VariantData>(other.m_variantData);
+        m_variantData.emplace<VariantData>(data.signature, data.dataAlignment, data.data, data.vTable);
+      }
+      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      {
+        DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
+        m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
+      }
+
+      return *this;
+    }
+
+    Signature const& GetSignature() const
+    {
+      if (std::holds_alternative<VariantData>(m_variantData))
+      {
+        return std::get<VariantData>(m_variantData).signature;
+      }
+      else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+      {
+        return std::get<DeserializedVariantData>(m_variantData).signature;
+      }
+      else
+      {
+        throw std::runtime_error{"Variant is in an invalid state"};
+      }
+    }
+    uint8_t GetDataAlignment() const
+    {
+      if (std::holds_alternative<VariantData>(m_variantData))
+      {
+        return std::get<VariantData>(m_variantData).dataAlignment;
+      }
+      else if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+      {
+        return 1;  // Deserialized data alignment is 1
+      }
+      else
+      {
+        throw std::runtime_error{"Variant is in an invalid state"};
+      }
+    }
+
+    void MarshalData(std::vector<byte>& dbusType) const
+    {
+      if (!std::holds_alternative<VariantData>(m_variantData))
+      {
+        throw std::runtime_error{"Cannot marshal a deserialized variant"};
+      }
+
+      VariantData const& data = std::get<VariantData>(m_variantData);
+
+      // We marshal a variant by marshalling its signature followed by the data (with padding of course)
+      // Add signature + padding to data type
+      MarshalDBusTypeImpl(data.signature, dbusType);
+      ApplyPadding(dbusType, data.dataAlignment);
+
+      data.vTable->marshalDataFunc(data.data.data(), dbusType);
+    }
+
+    template <IsDBusType T>
+    T UnmarshalData() const
+    {
+      if (!std::holds_alternative<DeserializedVariantData>(m_variantData))
+      {
+        throw VariantUnmarshalError{"Cannot unmarshal a non-deserialized variant"};
+      }
+
+      DeserializedVariantData const& data = std::get<DeserializedVariantData>(m_variantData);
+
+      if (std::string{GetTypeSignature<T>()} != data.signature)
+      {
+        throw VariantUnmarshalError{
+            std::format("Type signature mismatch when unmarshalling variant. Variant contains {} but we're trying to "
+                        "deserialize {}",
+                        data.signature.GetSignature(), std::string{GetTypeSignature<T>()})};
+      }
+
+      uint32_t arrPointer{};
+      return UnmarshalDBusTypeImpl<T>(data.data, arrPointer);
+    }
+  };
+
   inline uint32_t GetSizeOfDBusTypeBasedOnSignature(std::string const& signature, std::span<byte const> dbusType,
                                                     uint32_t& arrPointer)
   {
@@ -718,7 +861,7 @@ namespace cxxbus
     {
       MarshalDBusMap(value, dbusType);
     }
-    else if constexpr (IsDBusVariant<T>)
+    else if constexpr (IsDBusVariant<T> || IsDBusFastVariant<T>)
     {
       MarshalDBusVariant(value, dbusType);
     }
@@ -1077,22 +1220,30 @@ namespace cxxbus
     size_t const size = GetSizeOfDBusTypeBasedOnSignature(signature.GetSignature(), dbusType, arrPointer);
     T variant;
 
-    if (size > Variant::SMALL_BUFFER_SIZE)
+    if constexpr (IsDBusFastVariant<T>)
     {
-#if __cpp_lib_ranges_to_container
-      variant =
-          T{deserialized_variant_tag, std::move(signature),
-            std::move(std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) | std::views::take(size)))};
-#else
       variant = T{deserialized_variant_tag, std::move(signature),
-                  std::vector<byte>(dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size)};
-#endif
+                  std::span<byte const>{dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size}};
     }
     else
     {
-      std::array<byte, Variant::SMALL_BUFFER_SIZE> arr;
-      std::memcpy(arr.data(), dbusType.data() + arrPointer, size);
-      variant = T{deserialized_variant_tag, std::move(signature), std::move(arr)};
+      if (size > Variant::SMALL_BUFFER_SIZE)
+      {
+#if __cpp_lib_ranges_to_container
+        variant = T{
+            deserialized_variant_tag, std::move(signature),
+            std::move(std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) | std::views::take(size)))};
+#else
+        variant = T{deserialized_variant_tag, std::move(signature),
+                    std::vector<byte>(dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size)};
+#endif
+      }
+      else
+      {
+        std::array<byte, Variant::SMALL_BUFFER_SIZE> arr;
+        std::memcpy(arr.data(), dbusType.data() + arrPointer, size);
+        variant = T{deserialized_variant_tag, std::move(signature), std::move(arr)};
+      }
     }
 
     arrPointer += size;

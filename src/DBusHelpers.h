@@ -269,7 +269,7 @@ namespace cxxbus
       {
         return 8;
       }
-      else if (std::is_same_v<T, Variant>)
+      else if (IsDBusVariant<T>)
       {
         return 1;  // Alignment of Signature
       }
