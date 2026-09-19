@@ -37,6 +37,7 @@ namespace cxxbus
   class ObjectPath;
   class DBusInterfaceName;
   class Variant;
+  class FastVariant;
   template <typename... Ts>
   class MultipleCompleteTypes;
 
@@ -103,7 +104,10 @@ namespace cxxbus
   concept IsDBusStruct = IsSpecialisation<T, std::tuple>;
 
   template <typename T>
-  concept IsDBusVariant = std::is_same_v<T, Variant>;
+  concept IsDBusVariant = std::is_same_v<T, Variant> || std::is_same_v<T, FastVariant>;
+
+  template <typename T>
+  concept IsDBusFastVariant = std::is_same_v<T, FastVariant>;
 
   template <typename T>
   concept IsDBusMap = IsSpecialisation<T, std::map>;

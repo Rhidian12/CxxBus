@@ -24,7 +24,6 @@
 
 #include <unistd.h>
 
-#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
@@ -97,24 +96,23 @@ namespace cxxbus
 
       boost::signals2::signal<void()> onDisconnected;
 
-      std::atomic_bool connectionReady;
+      bool connectionReady;
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
-      std::shared_ptr<boost::asio::strand<typename boost::asio::io_context::executor_type>> strand;
-      std::shared_ptr<boost::asio::local::stream_protocol::socket> socket;
-      std::shared_ptr<DBusUniqueConnectionName> uniqueConnection;
-      std::shared_ptr<std::vector<DBusWellKnownName>> wellKnownNames;
-      std::shared_ptr<uint32_t> serial;
-      std::shared_ptr<uint32_t> subscriptionCounter;
-      std::shared_ptr<std::unordered_map<uint32_t, MatchRuleInfo>> matchRules;
+      boost::asio::strand<typename boost::asio::io_context::executor_type> strand;
+      boost::asio::local::stream_protocol::socket socket;
+      std::optional<DBusUniqueConnectionName> uniqueConnection;
+      std::vector<DBusWellKnownName> wellKnownNames;
+      uint32_t serial;
+      std::vector<MatchRuleInfo> matchRules;
       std::shared_ptr<DBusNameCache> nameCache;
-      std::shared_ptr<std::unordered_map<
-          std::string, std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>>>>
+      std::unordered_map<std::string,
+                         std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>>>
           objectPathHandlers;
 
       // Thread Info
-      std::shared_ptr<std::mutex> mutex;
+      std::mutex mutex;
       std::unique_ptr<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>> workGuard;
       std::shared_ptr<std::thread> ioThread;
 
@@ -131,7 +129,7 @@ namespace cxxbus
     boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
-    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
+    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage&& message);
 
     boost::asio::awaitable<void> CloseData();
     void CloseDataSync();
@@ -143,8 +141,7 @@ namespace cxxbus
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
-    boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage message);
-    std::optional<IncomingDBusMessage> SendMessageInternalSync(DBusMessage message);
+    boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage&& message);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessageImpl(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReplyImpl(DBusMessage message);

@@ -133,6 +133,7 @@ namespace cxxbus
 
     std::string const& GetPath() const;
     char const* data() const;
+    bool contains(char c) const;
 
     bool Empty() const;
 
@@ -155,6 +156,7 @@ namespace cxxbus
     uint8_t GetAlignmentOfSignature() const;
     bool Empty() const;
     char const* data() const;
+    bool contains(char c) const;
 
     auto operator<=>(Signature const&) const noexcept = default;
     bool operator==(Signature const&) const = default;
@@ -219,6 +221,8 @@ namespace cxxbus
     uint32_t size() const;
     bool empty() const;
     explicit operator std::string() const;
+    char const* data() const;
+    bool contains(char c) const;
 
     auto operator<=>(DBusUniqueConnectionName const&) const noexcept = default;
   };
@@ -236,6 +240,8 @@ namespace cxxbus
     uint32_t size() const;
     bool empty() const;
     explicit operator std::string() const;
+    char const* data() const;
+    bool contains(char c) const;
 
     auto operator<=>(DBusWellKnownName const&) const noexcept = default;
   };
@@ -254,6 +260,7 @@ namespace cxxbus
     explicit operator std::string() const;
     bool empty() const;
     char const* data() const;
+    bool contains(char c) const;
 
     auto operator<=>(DBusInterfaceName const&) const noexcept = default;
     bool operator==(DBusInterfaceName const&) const = default;

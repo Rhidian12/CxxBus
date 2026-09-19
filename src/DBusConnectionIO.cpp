@@ -34,7 +34,7 @@ namespace cxxbus
         rawFullReply.clear();
 
         // Read in the set 12 bytes of the DBus header + the 4 bytes of the following header field array
-        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
+        co_await boost::asio::async_read(state->socket, boost::asio::dynamic_buffer(rawFullReply),
                                          boost::asio::transfer_exactly(FIRST_HEADER_PART_SIZE),
                                          boost::asio::use_awaitable);
 
@@ -49,7 +49,7 @@ namespace cxxbus
         // Now, read the rest of the message, this is the array length + padding + messageLength
         uint32_t size{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
         uint32_t const nrOfPaddingBytes = AddPaddingToSize(size, DBUS_MESSAGE_BODY_ALIGNMENT);
-        co_await boost::asio::async_read(*state->socket, boost::asio::dynamic_buffer(rawFullReply),
+        co_await boost::asio::async_read(state->socket, boost::asio::dynamic_buffer(rawFullReply),
                                          boost::asio::transfer_exactly(size - FIRST_HEADER_PART_SIZE + messageLength),
                                          boost::asio::use_awaitable);
 
@@ -84,7 +84,7 @@ namespace cxxbus
         // Any other socket error (e.g. EOF, connection reset, broken pipe) means the connection to the dbus-daemon was
         // lost unexpectedly. Report it and handle the connection loss.
         LOG_ERROR(LOGGER, "Read loop lost connection to dbus-daemon: {}", ex.what());
-        boost::asio::co_spawn(*state->strand, HandleConnectionLost(), boost::asio::detached);
+        boost::asio::co_spawn(state->strand, HandleConnectionLost(), boost::asio::detached);
         break;
       }
       catch (std::exception const& ex)
