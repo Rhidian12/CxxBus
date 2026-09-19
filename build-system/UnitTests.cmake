@@ -43,7 +43,6 @@ function(define_test_or_benchmark)
     find_package(GTest REQUIRED)
   else()
     find_package(benchmark REQUIRED)
-    find_package(sdbus-c++ REQUIRED)
   endif()
 
   # Make the test sources a relative path for later usage
