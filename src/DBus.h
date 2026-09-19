@@ -614,7 +614,15 @@ namespace cxxbus
   template <IsDBusBasicStringlikeType T>
   void MarshalBasicStringlikeType(T const& value, std::vector<byte>& dbusType)
   {
-    std::string const str{value};
+    std::string_view str;
+    if constexpr (IsRawStringLiteral<T>)
+    {
+      str = value;
+    }
+    else
+    {
+      str = std::string_view{value.data(), value.size()};
+    }
 
     if (str.contains('\0')) [[unlikely]]
     {

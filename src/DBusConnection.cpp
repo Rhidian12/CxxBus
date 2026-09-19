@@ -237,7 +237,7 @@ namespace cxxbus
           m_state->onIncomingSignal.clear();
           m_state->objectPathHandlers->clear();
           m_state->shouldQuit = true;
-          m_state->connectionReady.store(false);
+          m_state->connectionReady = false;
 
           LOG_TRACE(LOGGER, "Closing socket");
           if (m_state->socket->is_open())
@@ -264,7 +264,7 @@ namespace cxxbus
 
     LOG_ERROR(LOGGER, "Connection to the dbus-daemon was lost unexpectedly");
 
-    m_state->connectionReady.store(false);
+    m_state->connectionReady = false;
     co_await Close(DONT_HOP);
     boost::asio::co_spawn(
         m_userIOContext,
@@ -286,7 +286,7 @@ namespace cxxbus
 
     LOG_TRACE(LOGGER, "Closing DBus Connection");
 
-    if (m_state->connectionReady.load())
+    if (m_state->connectionReady)
     {
       auto rules{*m_state->matchRules};
       for (auto const& [id, ruleInfo] : rules)
@@ -411,10 +411,10 @@ namespace cxxbus
 
     // Get our unique bus name
     std::optional<IncomingDBusMessage> reply =
-        co_await SendMessageInternal(DBusMessage::Method("Hello")
-                                         .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                         .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                         .Destination("org.freedesktop.DBus"));
+        co_await SendMessageInternal(std::move(DBusMessage::Method("Hello")
+                                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+                                                   .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                   .Destination("org.freedesktop.DBus")));
     if (reply.has_value())
     {
       m_state->uniqueConnection = std::make_shared<DBusUniqueConnectionName>(reply->Get<std::string>());
@@ -428,12 +428,12 @@ namespace cxxbus
     auto wellKnownNames{*m_state->wellKnownNames};
     for (DBusWellKnownName name : wellKnownNames)
     {
-      reply = co_await SendMessageInternal(
+      reply = co_await SendMessageInternal(std::move(
           DBusMessage::Method("RequestName")
               .Path(ObjectPath{"/org/freedesktop/DBus"})
               .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
               .Destination("org.freedesktop.DBus")
-              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}));
+              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)})));
 
       if (!reply.has_value())
       {
@@ -474,7 +474,7 @@ namespace cxxbus
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
 
-    m_state->connectionReady.store(true);
+    m_state->connectionReady = true;
     if (m_state->nrOfWaiters > 0)
     {
       co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
@@ -488,41 +488,38 @@ namespace cxxbus
     co_return;
   }
 
-  boost::asio::awaitable<void> DBusConnection::HandleReadMessage(IncomingDBusMessage message)
+  boost::asio::awaitable<void> DBusConnection::HandleReadMessage(IncomingDBusMessage&& message)
   {
     auto state = m_state;
+    DBusMessageHeader const& messageHeader = message.GetHeader();
 
     // We're dealing with a reply from a previously sent message
-    if (message.GetHeader().GetReplySerial().has_value())
+    if (messageHeader.GetReplySerial().has_value())
     {
-      uint32_t const replySerial{message.GetHeader().GetReplySerial().value()};
+      uint32_t const replySerial{messageHeader.GetReplySerial().value()};
       LOG_TRACE(LOGGER, "Received reply to message with serial '{}'. Reply: '{}'", replySerial, message.GetInfo());
 
-      boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* chann = nullptr;
+      // This can only be set to 'true' if we didn't send a message with this serial first
+      // which should be impossible
+      if (state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].ready)
       {
-        // This can only be set to 'true' if we didn't send a message with this serial first
-        // which should be impossible
-        if (state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].ready)
-        {
-          // It should not be possible to get a reply to a message we don't know
-          LOG_FATAL(LOGGER,
-                    "Received a reply with serial '{}' but we do not have the serial of "
-                    "the original message",
-                    replySerial);
-          throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
-        }
-
-        chann = &state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel;
+        // It should not be possible to get a reply to a message we don't know
+        LOG_FATAL(LOGGER,
+                  "Received a reply with serial '{}' but we do not have the serial of "
+                  "the original message",
+                  replySerial);
+        throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
       }
 
-      co_await chann->async_send(boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
+      co_await state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel.async_send(
+          boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
     }
     // Simply an incoming message
     else
     {
       LOG_TRACE(LOGGER, "Received incoming message '{}'", message.GetInfo());
 
-      if (message.GetHeader().GetMessageType() == DBusMessageType::SIGNAL)
+      if (messageHeader.GetMessageType() == DBusMessageType::SIGNAL)
       {
         LOG_TRACE(LOGGER, "Incoming message is signal, checking match rules");
 
@@ -555,10 +552,8 @@ namespace cxxbus
         co_return;
       }
 
-      std::string const path = message.GetHeader()
-                                   .GetObjectPath()
-                                   .transform([](ObjectPath const& path) { return path.GetPath(); })
-                                   .value_or("");
+      std::string const path =
+          messageHeader.GetObjectPath().transform([](ObjectPath const& path) { return path.GetPath(); }).value_or("");
 
       if (state->objectPathHandlers->contains(path))
       {
@@ -613,7 +608,7 @@ namespace cxxbus
     }
   }
 
-  boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage message)
+  boost::asio::awaitable<std::optional<IncomingDBusMessage>> DBusConnection::SendMessageInternal(DBusMessage&& message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
     bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
@@ -643,7 +638,7 @@ namespace cxxbus
     IncomingDBusMessage reply = co_await channInfo.channel.async_receive(boost::asio::use_awaitable);
     channInfo.ready = true;
 
-    if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR)
+    if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR) [[unlikely]]
     {
       // We got an error, so throw an error here
       if (!reply.GetHeader().GetErrorName().has_value())
@@ -664,7 +659,7 @@ namespace cxxbus
   boost::asio::awaitable<IncomingDBusMessage> DBusConnection::SendMessageImpl(DBusMessage message)
   {
     // Wait until our Connnection is ready
-    if (!m_state->connectionReady.load()) [[unlikely]]
+    if (!m_state->connectionReady) [[unlikely]]
     {
       LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
@@ -672,7 +667,7 @@ namespace cxxbus
     }
 
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message));
-    if (!reply.has_value())
+    if (!reply.has_value()) [[unlikely]]
     {
       LOG_TRACE(LOGGER, "SendMessage() should not be able to return without having received a reply");
       throw InternalError{
@@ -708,7 +703,7 @@ namespace cxxbus
   boost::asio::awaitable<void> DBusConnection::SendMessageNoReplyImpl(DBusMessage message)
   {
     // Wait until our Connnection is ready
-    if (!m_state->connectionReady.load())
+    if (!m_state->connectionReady)
     {
       LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
@@ -735,7 +730,7 @@ namespace cxxbus
   IncomingDBusMessage DBusConnection::SendMessageSync(DBusMessage message)
   {
     std::optional<IncomingDBusMessage> reply = WaitOnAsyncWork<std::optional<IncomingDBusMessage>>(
-        m_state->strand, [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg)); });
+        m_state->strand, [this, msg = std::move(message)]() mutable { return SendMessageInternal(std::move(msg)); });
 
     if (!reply.has_value())
     {
@@ -757,7 +752,7 @@ namespace cxxbus
     }
 
     std::ignore = WaitOnAsyncWork<std::optional<IncomingDBusMessage>>(
-        m_state->strand, [this, msg = std::move(message)]() { return SendMessageInternal(std::move(msg)); });
+        m_state->strand, [this, msg = std::move(message)]() mutable { return SendMessageInternal(std::move(msg)); });
   }
 
   boost::asio::awaitable<void> DBusConnection::AddMatchRuleImpl(
@@ -1075,7 +1070,7 @@ namespace cxxbus
 
   bool DBusConnection::IsConnected() const
   {
-    return m_state->connectionReady.load();
+    return m_state->connectionReady;
   }
 
   boost::asio::awaitable<boost::signals2::connection> DBusConnection::OnDisconnected(std::function<void()> callback)

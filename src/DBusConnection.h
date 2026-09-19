@@ -24,7 +24,6 @@
 
 #include <unistd.h>
 
-#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
@@ -97,7 +96,7 @@ namespace cxxbus
 
       boost::signals2::signal<void()> onDisconnected;
 
-      std::atomic_bool connectionReady;
+      bool connectionReady;
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
@@ -131,7 +130,7 @@ namespace cxxbus
     boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
-    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
+    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage&& message);
 
     boost::asio::awaitable<void> CloseData();
     void CloseDataSync();
@@ -143,8 +142,7 @@ namespace cxxbus
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
-    boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage message);
-    std::optional<IncomingDBusMessage> SendMessageInternalSync(DBusMessage message);
+    boost::asio::awaitable<std::optional<IncomingDBusMessage>> SendMessageInternal(DBusMessage&& message);
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessageImpl(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReplyImpl(DBusMessage message);

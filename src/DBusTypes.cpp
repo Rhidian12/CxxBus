@@ -155,6 +155,11 @@ namespace cxxbus
     return m_path.data();
   }
 
+  bool ObjectPath::contains(char c) const
+  {
+    return m_path.contains(c);
+  }
+
   bool ObjectPath::operator==(std::string const& str) const noexcept
   {
     return m_path == str;
@@ -194,6 +199,11 @@ namespace cxxbus
   char const* Signature::data() const
   {
     return m_signature.data();
+  }
+
+  bool Signature::contains(char c) const
+  {
+    return m_signature.contains(c);
   }
 
   bool Signature::operator==(std::string const& str) const
@@ -237,6 +247,16 @@ namespace cxxbus
     return m_name;
   }
 
+  char const* DBusUniqueConnectionName::data() const
+  {
+    return m_name.data();
+  }
+
+  bool DBusUniqueConnectionName::contains(char c) const
+  {
+    return m_name.contains(c);
+  }
+
   DBusWellKnownName::DBusWellKnownName(std::string wellKnownName)
     : m_name()
   {
@@ -268,6 +288,16 @@ namespace cxxbus
     return m_name;
   }
 
+  char const* DBusWellKnownName::data() const
+  {
+    return m_name.data();
+  }
+
+  bool DBusWellKnownName::contains(char c) const
+  {
+    return m_name.contains(c);
+  }
+
   DBusInterfaceName::DBusInterfaceName(std::string interfaceName)
     : m_name()
   {
@@ -297,6 +327,11 @@ namespace cxxbus
   char const* DBusInterfaceName::data() const
   {
     return m_name.data();
+  }
+
+  bool DBusInterfaceName::contains(char c) const
+  {
+    return m_name.contains(c);
   }
 
   DBusInterfaceName::operator std::string() const
