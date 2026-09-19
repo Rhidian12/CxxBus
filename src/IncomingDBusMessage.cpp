@@ -41,54 +41,6 @@ namespace cxxbus
 {
   namespace
   {
-    // DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> data)
-    // {
-    //   // In this function we parse everything up until the array of variants, BUT INCLUDING the length of the array
-    //   of
-    //   // variants That way, we know how many bytes to read in always (16 at first, followed by the length of the
-    //   header
-    //   // fields, followed by padding + length of message)
-    //
-    //   // Signature of a DBus Header is yyyyuua(yv)
-    //   // y = byte
-    //   // u = uint32_t
-    //   // a = array
-    //   // v = variant
-    //
-    //   // 1st byte is Endianness. ASCII 'l' for little-endian, 'B' for big-endian
-    //   // 2nd byte is message type
-    //   // 3rd byte is bitwise-OR flags
-    //   // 4th byte is major protocol version, is always 1
-    //   // 1st uint32_t is length in bytes of the message body, starting from the end of the header
-    //   // 2nd uint32_t is the serial of this message, used as a cookie by the sender to identify the reply
-    //   correspending
-    //   // to this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message
-    //   // type specifies which fields are required
-    //
-    //   if (data.size() != FIRST_HEADER_PART_SIZE)
-    //   {
-    //     throw DBusMalformedInputError{std::format("Incoming DBus header should be {} bytes, it is {} bytes instead",
-    //                                               FIRST_HEADER_PART_SIZE, data.size())};
-    //   }
-    //
-    //   auto header = UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>(
-    //       data, "yyyyuu");
-    //
-    //   return {.serial = header.GetType<5>(),
-    //           .replySerial = 0,
-    //           .messageType = static_cast<DBusMessageType>(header.GetType<1>()),
-    //           .objectPath = {},
-    //           .interface = {},
-    //           .member = {},
-    //           .errorName = std::nullopt,
-    //           .signature = std::nullopt,
-    //           .sender = std::nullopt,
-    //           .destination = std::nullopt,
-    //           .messageLength = header.GetType<4>(),
-    //           .headerFieldLength = 0,
-    //           .headerFields = {}};
-    // }
-
     DBusMessageHeader::ReplyData UnmarshalDBusHeader(std::span<byte const> dbusMessage, uint32_t serial,
                                                      DBusMessageType messageType, uint32_t headerFieldLength,
                                                      uint32_t messageLength)

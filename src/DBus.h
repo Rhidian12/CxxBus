@@ -124,94 +124,12 @@ namespace cxxbus
     return ((number + multiple - 1) / multiple) * multiple;
   }
 
-  template <typename T>
-  uint32_t GetNaiveSizeOfType(T const& val)
-  {
-    if constexpr (IsDBusBasicType<T>)
-    {
-      if constexpr (IsDBusBasicFixedType<T>)
-      {
-        if constexpr (std::is_same_v<T, bool>)
-        {
-          return sizeof(uint32_t);
-        }
-        else
-        {
-          return sizeof(T);
-        }
-      }
-      else if constexpr (IsDBusBasicStringlikeType<T>)
-      {
-        if constexpr (std::is_same_v<T, Signature>)
-        {
-          return sizeof(uint8_t) + val.size() + 1;
-        }
-        else
-        {
-          return sizeof(uint32_t) + val.size() + 1;
-        }
-      }
-      else if constexpr (IsDBusMultipleCompleteTypes<T>)
-      {
-        return [&val]<size_t... Is>(std::index_sequence<Is...>)
-        {
-          return (RoundUp(GetNaiveSizeOfType<std::tuple_element_t<Is, typename T::type>>(std::get<Is>(val.GetTypes())),
-                          GetAlignmentOfDBusType<std::tuple_element_t<Is, typename T::type>>()) +
-                  ...);
-        }(std::make_index_sequence<std::tuple_size_v<T>>{});
-      }
-    }
-    else if constexpr (IsDBusContainer<T>)
-    {
-      if constexpr (IsDBusArray<T>)
-      {
-        if (val.empty())
-        {
-          return sizeof(uint32_t);
-        }
-        else
-        {
-          return RoundUp(sizeof(uint32_t) + val.size() * GetNaiveSizeOfType<typename T::value_type>(val[0]),
-                         GetAlignmentOfDBusType<T>());
-        }
-      }
-      else if constexpr (IsDBusMap<T>)
-      {
-        if (val.empty())
-        {
-          return RoundUp(sizeof(uint32_t), GetAlignmentOfDBusType<T>());
-        }
-        else
-        {
-          return RoundUp(sizeof(uint32_t) +
-                             RoundUp(val.size() * GetNaiveSizeOfType<typename T::key_type>(val.begin()->first),
-                                     GetAlignmentOfDBusType<T>()) +
-                             RoundUp(val.size() * GetNaiveSizeOfType<typename T::mapped_type>(val.begin()->second),
-                                     GetAlignmentOfDBusType<T>()),
-                         GetAlignmentOfDBusType<T>());
-        }
-      }
-      else if constexpr (IsDBusStruct<T>)
-      {
-        return [&val]<size_t... Is>(std::index_sequence<Is...>)
-        {
-          return (
-              RoundUp(GetNaiveSizeOfType<std::tuple_element_t<Is, T>>(std::get<Is>(val)), GetAlignmentOfDBusType<T>()) +
-              ...);
-        }(std::make_index_sequence<std::tuple_size_v<T>>{});
-      }
-      else
-      {
-        static_assert(false, "Not supported");
-      }
-    }
-  }
-
   class Variant
   {
-   private:
+   public:
     inline constexpr static uint32_t SMALL_BUFFER_SIZE = 32;
 
+   private:
     struct VariantData
     {
       Signature signature;
@@ -228,7 +146,7 @@ namespace cxxbus
     struct DeserializedVariantData
     {
       Signature signature;
-      std::shared_ptr<std::vector<byte>> data;
+      std::variant<std::shared_ptr<std::vector<byte>>, std::array<byte, SMALL_BUFFER_SIZE>> data;
 
       auto operator<=>(DeserializedVariantData const&) const noexcept = default;
     };
@@ -300,10 +218,17 @@ namespace cxxbus
       return variant;
     }
 
-    Variant(DeserializedVariantTag, Signature signature, std::vector<byte> data)
-      : m_variantData{DeserializedVariantData{.signature = std::move(signature),
-                                              .data = std::make_shared<std::vector<byte>>(std::move(data))}}
+    Variant(DeserializedVariantTag, Signature&& signature, std::vector<byte>&& data)
+      : m_variantData{std::monostate{}}
     {
+      m_variantData.emplace<DeserializedVariantData>(std::move(signature),
+                                                     std::make_shared<std::vector<byte>>(std::move(data)));
+    }
+
+    Variant(DeserializedVariantTag, Signature&& signature, std::array<byte, SMALL_BUFFER_SIZE>&& data)
+      : m_variantData{std::monostate{}}
+    {
+      m_variantData.emplace<DeserializedVariantData>(std::move(signature), std::move(data));
     }
 
     Variant(Variant const& other)
@@ -422,7 +347,16 @@ namespace cxxbus
 
       uint32_t arrPointer{};
 
-      return UnmarshalDBusTypeImpl<T>(std::span<byte const>{*data.data}, arrPointer);
+      std::span<byte const> bytes;
+      if (std::holds_alternative<std::shared_ptr<std::vector<byte>>>(data.data))
+      {
+        bytes = *std::get<std::shared_ptr<std::vector<byte>>>(data.data);
+      }
+      else
+      {
+        bytes = std::get<std::array<byte, SMALL_BUFFER_SIZE>>(data.data);
+      }
+      return UnmarshalDBusTypeImpl<T>(bytes, arrPointer);
     }
 
     bool operator==(Variant const& other) const noexcept
@@ -1137,22 +1071,33 @@ namespace cxxbus
   template <IsDBusVariant T>
   T UnmarshalDBusVariant(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
-    Signature const signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
+    Signature signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
     SkipPadding(arrPointer, signature.GetAlignmentOfSignature());
 
     size_t const size = GetSizeOfDBusTypeBasedOnSignature(signature.GetSignature(), dbusType, arrPointer);
+    T variant;
 
+    if (size > Variant::SMALL_BUFFER_SIZE)
+    {
 #if __cpp_lib_ranges_to_container
-    T deserializedVariant{
-        deserialized_variant_tag, signature,
-        std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) | std::views::take(size))};
+      variant =
+          T{deserialized_variant_tag, std::move(signature),
+            std::move(std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) | std::views::take(size)))};
 #else
-    T deserializedVariant{deserialized_variant_tag, signature,
-                          std::vector<byte>(dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size)};
+      variant = T{deserialized_variant_tag, std::move(signature),
+                  std::vector<byte>(dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size)};
 #endif
+    }
+    else
+    {
+      std::array<byte, Variant::SMALL_BUFFER_SIZE> arr;
+      std::memcpy(arr.data(), dbusType.data() + arrPointer, size);
+      variant = T{deserialized_variant_tag, std::move(signature), std::move(arr)};
+    }
+
     arrPointer += size;
 
-    return deserializedVariant;
+    return variant;
   }
 
   template <IsDBusContainer T>
