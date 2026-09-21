@@ -15,15 +15,12 @@ target_precompile_headers(pch-target  PRIVATE <format>
                                       PRIVATE <vector>)
 
 add_library(cxxbus-lib  DBus.cpp
-                        DBusConnection.cpp
-                        DBusConnectionIO.cpp
                         DBusHelpers.cpp
                         DBusMessage.cpp
                         IncomingDBusMessage.cpp
                         DBusTypes.cpp
                         Log.cpp
-                        DBusMatchRule.cpp
-                        DBusNameCache.cpp)
+                        DBusMatchRule.cpp)
 
 target_include_directories(cxxbus-lib PUBLIC ${thirdparty-include-dir})
 target_link_libraries(cxxbus-lib PRIVATE pch-target)

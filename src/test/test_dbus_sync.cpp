@@ -23,8 +23,6 @@
 
 using namespace cxxbus;
 
-Logger const LOGGER{.logLevel = LogLevel::TRACE};
-
 struct SyncDBusConnectionTestSuite : ::testing::Test
 {
  public:
@@ -53,7 +51,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto threadID = std::this_thread::get_id();
     auto reply = conn->SendMessageSync(DBusMessage::Method("Introspect")
                                            .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -373,7 +372,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestMethodCall)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto reply = conn->SendMessageSync(DBusMessage::Method("NameHasOwner")
                                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
@@ -392,7 +392,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
 
     bool extensiveMatchRuleTriggered{};
     bool simpleMatchRuleTriggered{};
@@ -455,7 +456,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestGettingErrors)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     DBusMessage message{DBusMessage::Method("RequestName")
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                             .Path(ObjectPath{"/org/freedesktop/DBus"})
@@ -485,8 +487,10 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto conn2 = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     std::shared_ptr<bool> signalEmitted{std::make_shared<bool>()};
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
@@ -520,13 +524,15 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
 {
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
-    auto conn = DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn =
+        MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
 
     std::shared_ptr<boost::asio::io_context> ioService2{std::make_shared<boost::asio::io_context>()};
     auto workGuard =
         std::make_unique<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>>(
             boost::asio::make_work_guard(*ioService2));
-    auto conn2 = DBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
+    auto conn2 =
+        MultithreadedDBusConnection::CreateSync(*ioService2, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
     std::shared_ptr<bool> messageReceived = std::make_shared<bool>(false);
     std::promise<void> ready;
 

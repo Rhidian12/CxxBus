@@ -17,7 +17,7 @@ std::string const METHOD_NAME = "Benchmark";
 
 static void BM_EmptyMessage(benchmark::State& state)
 {
-  boost::asio::io_context ioContext{};
+  boost::asio::io_context ioContext{1};
   auto work = [&ioContext, &state]() -> boost::asio::awaitable<void>
   {
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);

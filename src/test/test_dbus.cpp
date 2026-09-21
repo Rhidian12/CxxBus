@@ -19,8 +19,6 @@
 
 using namespace cxxbus;
 
-Logger const LOGGER{.logLevel = LogLevel::TRACE};
-
 struct DBusConnectionTestSuite : ::testing::Test
 {
  public:
@@ -66,12 +64,15 @@ struct DBusConnectionTestSuite : ::testing::Test
                                                            .Destination("org.freedesktop.DBus")
                                                            .Parameter(std::string{"com.dbus.CxxTest2"})))
                            .Get<bool>());
+
+          co_await tempConn->Close();
         },
         [](std::exception_ptr e)
         {
           if (e) std::rethrow_exception(e);
         }));
 
+    LOG_TRACE(LOGGER, "Running IOService");
     ioService.run();
   }
 };
@@ -729,7 +730,7 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
   {
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
-    conn = DBusConnection::CreateDetached(
+    std::shared_ptr<MultithreadedDBusConnection> multiConn = MultithreadedDBusConnection::CreateDetached(
         ioService, DBusWellKnownName{"com.dbus.CxxTest"},
         [this, chann]() -> boost::asio::awaitable<void>
         {
@@ -744,8 +745,8 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
     co_await chann->async_receive(boost::asio::use_awaitable);
     LOG_DEBUG(LOGGER, "Detached connection is connected");
 
-    conn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
-    co_await conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
+    multiConn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
+    co_await multiConn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
   };
 }
 

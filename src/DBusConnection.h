@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <boost/asio.hpp>
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
@@ -55,10 +56,11 @@ namespace cxxbus
     NO
   };
 
-  class DBusConnection : public std::enable_shared_from_this<DBusConnection>
+  template <bool SingleThreaded /* = true */>
+  class DBusConnectionImpl : public std::enable_shared_from_this<DBusConnectionImpl<SingleThreaded>>
   {
    private:
-    friend class DBusNameCache;
+    friend class DBusNameCache<SingleThreaded>;
 
    public:
     struct MatchRuleInfo
@@ -100,13 +102,13 @@ namespace cxxbus
       boost::asio::experimental::channel<void(boost::system::error_code)> connectionCompleted;
       int nrOfWaiters;  // Number of coroutines waiting for the connection to be ready
 
-      boost::asio::strand<typename boost::asio::io_context::executor_type> strand;
+      std::unique_ptr<boost::asio::strand<typename boost::asio::io_context::executor_type>> strand;
       boost::asio::local::stream_protocol::socket socket;
       std::optional<DBusUniqueConnectionName> uniqueConnection;
       std::vector<DBusWellKnownName> wellKnownNames;
       uint32_t serial;
       std::vector<MatchRuleInfo> matchRules;
-      std::shared_ptr<DBusNameCache> nameCache;
+      std::shared_ptr<DBusNameCache<SingleThreaded>> nameCache;
       std::unordered_map<std::string,
                          std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>>>
           objectPathHandlers;
@@ -115,6 +117,8 @@ namespace cxxbus
       std::mutex mutex;
       std::unique_ptr<boost::asio::executor_work_guard<typename boost::asio::io_context::executor_type>> workGuard;
       std::shared_ptr<std::thread> ioThread;
+
+      boost::asio::any_io_executor activeContext;
 
       bool shouldQuit;
       boost::asio::experimental::channel<void(boost::system::error_code)> readLoopFinished;
@@ -125,19 +129,18 @@ namespace cxxbus
     boost::asio::io_context& m_userIOContext;
 
    private:
-    boost::asio::awaitable<void> AuthenticateDBusConnection();
+    boost::asio::awaitable<void> AuthenticateDBusConnectionImpl();
     boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
     boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage&& message);
 
     boost::asio::awaitable<void> CloseData();
-    void CloseDataSync();
 
     boost::asio::awaitable<void> HandleConnectionLost();
 
    private:
-    DBusConnection(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);
+    DBusConnectionImpl(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
@@ -169,17 +172,18 @@ namespace cxxbus
     boost::asio::awaitable<void> Close(DontHopTag);
 
    public:
-    ~DBusConnection();
+    ~DBusConnectionImpl();
     boost::asio::awaitable<void> Close();
     void CloseSync();
 
-    static boost::asio::awaitable<std::shared_ptr<DBusConnection>> Create(
+    static boost::asio::awaitable<std::shared_ptr<DBusConnectionImpl>> Create(
         boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName, BusType busType);
-    static std::shared_ptr<DBusConnection> CreateDetached(
+    static std::shared_ptr<DBusConnectionImpl> CreateDetached(
         boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName,
         std::function<boost::asio::awaitable<void>()> onConnectedCallback, BusType busType);
-    static std::shared_ptr<DBusConnection> CreateSync(boost::asio::io_context& ioService,
-                                                      std::optional<DBusWellKnownName> wellKnownName, BusType busType);
+    static std::shared_ptr<DBusConnectionImpl> CreateSync(boost::asio::io_context& ioService,
+                                                          std::optional<DBusWellKnownName> wellKnownName,
+                                                          BusType busType);
 
     // Receive messages on a specific object path
     boost::asio::awaitable<void> RegisterObjectPathHandler(
@@ -226,4 +230,9 @@ namespace cxxbus
     // This is a hack to simulate a connection loss for testing purposes
     void SimulateConnectionLoss();
   };
+
+  using DBusConnection = DBusConnectionImpl<true>;
+  using MultithreadedDBusConnection = DBusConnectionImpl<false>;
 }  // namespace cxxbus
+
+#include "DBusConnection.txx"

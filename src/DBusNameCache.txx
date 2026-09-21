@@ -20,37 +20,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include "DBusNameCache.h"
+#pragma once
 
 #include <boost/asio/awaitable.hpp>
-#include <functional>
-#include <variant>
+#include <memory>
 
-#include "DBusConnection.h"
 #include "DBusMatchRule.h"
+#include "DBusNameCache.h"
 #include "DBusTypes.h"
 #include "Log.h"
 
 namespace cxxbus
 {
-  namespace
-  {
-#ifndef CXX_BUS_LOGLEVEL
-#define CXX_BUS_LOGLEVEL ERROR
-#endif  // CXX_BUS_LOGLEVEL
-
-    Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
-  }  // namespace
-
-  DBusNameCache::DBusNameCache(DBusConnection& conn)
+  template <bool SingleThreaded>
+  DBusNameCache<SingleThreaded>::DBusNameCache(DBusConnectionImpl<SingleThreaded>& conn)
     : m_conn(conn)
     , m_wellKnownNames()
   {
   }
 
-  boost::asio::awaitable<void> DBusNameCache::SubscribeToNameChanges()
+  template <bool SingleThreaded>
+  boost::asio::awaitable<void> DBusNameCache<SingleThreaded>::SubscribeToNameChanges()
   {
-    std::shared_ptr<DBusNameCache> self = shared_from_this();
+    std::shared_ptr<DBusNameCache<SingleThreaded>> self = this->shared_from_this();
     co_await m_conn.AddMatchRule(
         DBusMatchRule::Create()
             .Sender(DBusWellKnownName{"org.freedesktop.DBus"})
@@ -68,7 +60,8 @@ namespace cxxbus
         false);
   }
 
-  void DBusNameCache::OnNameOwnerChanged(IncomingDBusMessage message)
+  template <bool SingleThreaded>
+  void DBusNameCache<SingleThreaded>::OnNameOwnerChanged(IncomingDBusMessage message)
   {
     MultipleCompleteTypes<std::string, std::string, std::string> const parameters{
         message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>()};
@@ -102,7 +95,8 @@ namespace cxxbus
     }
   }
 
-  std::vector<std::string> DBusNameCache::GetWellKnownNames(std::string const& uniqueName) const
+  template <bool SingleThreaded>
+  std::vector<std::string> DBusNameCache<SingleThreaded>::GetWellKnownNames(std::string const& uniqueName) const
   {
     // Add the uniqueName itself as it's a valid sender and we might not have gotten any other names so far
     // If we don't do this we might not be able to match signals from a sender that has no well-known name yet

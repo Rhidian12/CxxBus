@@ -61,4 +61,11 @@ namespace cxxbus
       LogImpl(wantedLogLevel, std::vformat(format, std::make_format_args(args...)));
     }
   };
+
+#ifndef CXX_BUS_LOGLEVEL
+#define CXX_BUS_LOGLEVEL ERROR
+#endif  // CXX_BUS_LOGLEVEL
+
+  static inline Logger constexpr LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
+
 }  // namespace cxxbus

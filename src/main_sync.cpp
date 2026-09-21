@@ -16,24 +16,20 @@
 
 using namespace cxxbus;
 
-namespace
-{
-  Logger const LOGGER{.logLevel = LogLevel::INFO};
-}
-
-void DBusSubscribeToSignal(std::shared_ptr<DBusConnection> conn)
+void DBusSubscribeToSignal(std::shared_ptr<DBusConnection<false>> conn)
 {
   conn->AddMatchRuleSync(DBusMatchRule::Create()
                              .Type(DBusMessageType::SIGNAL)
                              .Member("NameOwnerChanged")
                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Sender(DBusWellKnownName{"org.freedesktop.DBus"}),
-                         [](IncomingDBusMessage message)
+                         [](IncomingDBusMessage const& message) -> boost::asio::awaitable<void>
                          {
                            LOG_INFO(
                                LOGGER, "Received NameOwnerChanged signal. New Name: {}, Sender: {}",
                                message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>().GetType<2>(),
                                message.GetHeader().GetSender().value_or(""));
+                           co_return;
                          });
 
   IncomingDBusMessage reply =
@@ -62,8 +58,8 @@ int main()
       [&ioService]() -> boost::asio::awaitable<void>
       {
         LOG_INFO(LOGGER, "Running Sync Main");
-        std::shared_ptr<DBusConnection> conn{
-            DBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
+        std::shared_ptr<DBusConnection<false>> conn{
+            DBusConnection<false>::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
 
         DBusSubscribeToSignal(conn);
 

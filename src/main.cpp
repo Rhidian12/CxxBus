@@ -15,12 +15,7 @@
 
 using namespace cxxbus;
 
-namespace
-{
-  Logger const LOGGER{.logLevel = LogLevel::INFO};
-}
-
-boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
+boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection<true>> conn)
 {
   LOG_INFO(LOGGER, "Sending first message");
   co_await conn->SendMessage(DBusMessage::Method("EchoMethod")
@@ -44,11 +39,11 @@ boost::asio::awaitable<void> DBusEchoTest(std::shared_ptr<DBusConnection> conn)
                                  .Destination("com.example.Echo"));
 }
 
-boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnection> conn,
+boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnection<true>> conn,
                                                      boost::asio::io_context& ioService)
 {
-  conn->ReceiveIncomingMessages(
-      [](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+  co_await conn->ReceiveIncomingMessages(
+      [](IncomingDBusMessage const& message) -> boost::asio::awaitable<void>
       {
         DBusMessageHeader const& header = message.GetHeader();
         LOG_INFO(
@@ -67,7 +62,7 @@ boost::asio::awaitable<void> DBusReceiveMessagesTest(std::shared_ptr<DBusConnect
   co_return;
 }
 
-boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnection> conn,
+boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnection<true>> conn,
                                                    boost::asio::io_context& ioService)
 {
   co_await conn->AddMatchRule(
@@ -105,7 +100,7 @@ boost::asio::awaitable<void> DBusSubscribeToSignal(std::shared_ptr<DBusConnectio
   co_await timer.async_wait(boost::asio::use_awaitable);
 }
 
-boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> conn)
+boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection<true>> conn)
 {
   LOG_INFO(LOGGER, "Sending first message");
   try
@@ -124,8 +119,8 @@ boost::asio::awaitable<void> DBusGetErrorReply(std::shared_ptr<DBusConnection> c
 
 boost::asio::awaitable<void> AsyncMain(boost::asio::io_context& ioService)
 {
-  std::shared_ptr<DBusConnection> conn{
-      co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
+  std::shared_ptr<DBusConnection<true>> conn{
+      co_await DBusConnection<true>::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION)};
 
   // co_await DBusEchoTest(conn);
   // co_await DBusReceiveMessagesTest(conn, ioService);
