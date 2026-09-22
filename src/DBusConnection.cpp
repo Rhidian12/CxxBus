@@ -781,7 +781,8 @@ namespace cxxbus
       bool executeOnUserContext)
   {
     co_return co_await boost::asio::co_spawn(
-        m_state->strand, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext));
+        m_state->strand, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext),
+        boost::asio::use_awaitable);
   }
 
   boost::asio::awaitable<void> DBusConnection::AddMatchRule(
