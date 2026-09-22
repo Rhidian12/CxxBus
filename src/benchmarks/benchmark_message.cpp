@@ -19,27 +19,23 @@ static void BM_Message(benchmark::State& state)
 
   for (auto _ : state)
   {
-    DBusMessageHeader messageHeader{
-        std::ranges::to<std::vector>(rawMessage | std::views::take(FIRST_HEADER_PART_SIZE))};
+    auto headerData =
+        UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
+            std::ranges::to<std::vector>(rawMessage | std::views::take(FIRST_HEADER_PART_SIZE)), "yyyyuuu");
+    uint32_t const messageLength = headerData.GetType<4>();
+    uint32_t const headerFieldArrLength = headerData.GetType<6>();
+    uint32_t const serial = headerData.GetType<5>();
+    DBusMessageType const messageType = static_cast<DBusMessageType>(headerData.GetType<1>());
 
-    messageHeader.ParseHeaderFieldLength(std::ranges::to<std::vector>(
-        rawMessage | std::views::drop(FIRST_HEADER_PART_SIZE) | std::views::take(sizeof(uint32_t))));
+    uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
+    uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
-    uint32_t arrPointer{FIRST_HEADER_PART_SIZE};
-    messageHeader.ParseRemainderOfHeader(
-        std::ranges::to<std::vector>(rawMessage | std::views::take(FIRST_HEADER_PART_SIZE + sizeof(uint32_t) +
-                                                                   messageHeader.GetHeaderFieldsLength())),
-        arrPointer);
-
-    uint32_t const oldArrPointer{arrPointer};
-    AddPaddingToSize(arrPointer, DBUS_MESSAGE_BODY_ALIGNMENT);
-    uint32_t const nrOfPaddingBytes{arrPointer - oldArrPointer};
-
-    // Skip over the padding, we don't care about it
     IncomingDBusMessage incomingMessage{
-        std::move(messageHeader),
-        std::ranges::to<std::vector>(rawMessage |
-                                     std::views::drop(messageHeader.GetHeaderFieldsLength() + nrOfPaddingBytes))};
+        DBusMessageHeader{std::span<byte const>{rawMessage.begin(),
+                                                rawMessage.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
+                          serial, messageType, headerFieldArrLength, messageLength},
+        std::ranges::to<std::vector>(
+            rawMessage | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
   }
 }
 
