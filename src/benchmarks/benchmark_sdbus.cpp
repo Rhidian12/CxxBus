@@ -1,4 +1,5 @@
 #include <benchmark/benchmark.h>
+#include <sdbus-c++/Error.h>
 #include <sdbus-c++/IConnection.h>
 #include <sdbus-c++/IObject.h>
 #include <sdbus-c++/Message.h>
@@ -30,12 +31,16 @@ static void BM_SDBusEmptyMessage(benchmark::State& state)
   serverConn->enterEventLoopAsync();
 
   auto clientConn = sdbus::createSessionBusConnection();
+  clientConn->enterEventLoopAsync();
   auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   for (auto _ : state)
   {
     auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
-    proxy->callMethod(method);
+    std::promise<void> done;
+    auto future = done.get_future();
+    proxy->callMethodAsync(method, [&done](sdbus::MethodReply, std::optional<sdbus::Error>) { done.set_value(); });
+    future.wait();
   }
 
   serverConn->releaseName(SERVICE_NAME);
