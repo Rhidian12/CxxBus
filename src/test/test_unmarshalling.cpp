@@ -24,7 +24,7 @@ TEST_F(UnmarshalTestSuite, UnmarshalIntegers)
   EXPECT_EQ(UnmarshalDBusType<uint16_t>({0x34, 0x12}, "q"), 0x1234);
 
   EXPECT_EQ(UnmarshalDBusType<int32_t>({0x00, 0x00, 0x00, 0x80}, "i"), std::numeric_limits<int32_t>::min());
-  EXPECT_EQ(UnmarshalDBusType<int32_t>({0x2A, 0x00, 0x00, 0x80}, "i"), 42);
+  EXPECT_EQ(UnmarshalDBusType<int32_t>({0x2A, 0x00, 0x00, 0x00}, "i"), 42);
 
   EXPECT_EQ(UnmarshalDBusType<uint32_t>({0x2A, 0x00, 0x00, 0x00}, "u"), 42u);
 
