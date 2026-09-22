@@ -118,23 +118,3 @@ jobs:
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: dbus-run-session -- ${{ steps.strings.outputs.build-output-dir }}/bin/run_all_tests
-
-    - name: Configure CMake (Benchmark) 
-      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
-      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: >
-        rm -rf ${{ steps.strings.outputs.build-output-dir }} &&
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
-        -DCMAKE_C_COMPILER=/usr/bin/clang
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -DCXXBUS_DEV=1
-        -S ${{ github.workspace }}
-        -G Ninja
-
-    - name: Build (Benchmark)
-      # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --target run_all_benchmarks
-
-    - name: Benchmark
-      run: ${{ steps.strings.outputs.build-output-dir }}/bin/run_all_benchmarks 
