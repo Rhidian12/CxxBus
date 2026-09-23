@@ -25,6 +25,8 @@
 #include <unistd.h>
 
 #include <boost/asio.hpp>
+#include <boost/asio/any_completion_handler.hpp>
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
@@ -55,6 +57,55 @@ namespace cxxbus
     NO
   };
 
+  class OneshotChannel
+  {
+   private:
+    boost::asio::any_io_executor m_executor;
+    bool m_signalled;
+    boost::asio::any_completion_handler<void()> m_handler;
+
+   public:
+   public:
+    OneshotChannel(boost::asio::any_io_executor executor)
+      : m_executor(std::move(executor))
+      , m_signalled{}
+    {
+    }
+
+    template <typename CompletionToken>
+    auto async_wait(CompletionToken&& token)
+    {
+      return boost::asio::async_initiate<CompletionToken, void()>(
+          [this](auto handler)
+          {
+            if (m_signalled)
+            {
+              m_signalled = false;
+              auto executor = boost::asio::get_associated_executor(handler, m_executor);
+              boost::asio::post(executor, std::move(handler));
+            }
+            else
+            {
+              m_handler = [handler = std::move(handler)] mutable { handler(); };
+            }
+          },
+          token);
+    }
+
+    void async_notify()
+    {
+      if (m_handler)
+      {
+        auto handler = std::exchange(m_handler, nullptr);
+        boost::asio::post(m_executor, std::move(handler));
+      }
+      else
+      {
+        m_signalled = true;
+      }
+    }
+  };
+
   class DBusConnection : public std::enable_shared_from_this<DBusConnection>
   {
    private:
@@ -70,7 +121,9 @@ namespace cxxbus
 
     struct ChannelInfo
     {
-      boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> channel;
+      // boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> channel;
+      OneshotChannel channel;
+      IncomingDBusMessage message;
       bool ready;
     };
 

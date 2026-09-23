@@ -208,8 +208,9 @@ namespace cxxbus
     for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
     {
       m_state->replyChannels.emplace_back(
-          boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>{m_state->strand, 1},
-          true);
+          // boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>{m_state->strand,
+          // 1},
+          OneshotChannel{m_state->strand}, IncomingDBusMessage{}, true);
     }
 
     m_state->workGuard =
@@ -507,8 +508,10 @@ namespace cxxbus
         throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
       }
 
-      co_await state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel.async_send(
-          boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
+      state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].message = std::move(message);
+      state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel.async_notify();
+      // co_await state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel.async_send(
+      //     boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
     }
     // Simply an incoming message
     else
@@ -629,7 +632,9 @@ namespace cxxbus
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
-    IncomingDBusMessage reply = co_await channInfo.channel.async_receive(boost::asio::use_awaitable);
+    // IncomingDBusMessage reply = co_await channInfo.channel.async_receive(boost::asio::use_awaitable);
+    co_await channInfo.channel.async_wait(boost::asio::use_awaitable);
+    IncomingDBusMessage reply = std::move(channInfo.message);
     channInfo.ready = true;
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR) [[unlikely]]
