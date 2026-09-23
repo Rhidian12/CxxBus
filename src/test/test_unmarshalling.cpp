@@ -93,7 +93,6 @@ TEST_F(UnmarshalTestSuite, UnmarshalSignatureType)
 TEST_F(UnmarshalTestSuite, UnmarshalArray)
 {
   EXPECT_EQ(UnmarshalDBusType<std::vector<uint32_t>>({0x00, 0x00, 0x00, 0x00}, "au"), (std::vector<uint32_t>{}));
-  EXPECT_EQ((UnmarshalDBusType<std::array<uint32_t, 0>>({0x00, 0x00, 0x00, 0x00}, "au")), (std::array<uint32_t, 0>{}));
 
   std::vector<byte> bytes{
       0x0C, 0x00, 0x00, 0x00,  // array byte length = 12

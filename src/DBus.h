@@ -1004,7 +1004,7 @@ namespace cxxbus
   {
     uint32_t const arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
 
-    if (arrLength >= 2 << 26)
+    if (arrLength >= 2 << 26) [[unlikely]]
     {
       throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
     }
@@ -1013,22 +1013,28 @@ namespace cxxbus
     SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
 
     T vec{};
-
-    // It's pretty hard to calculate exactly how many elements are in the array, so just reserve some arbitrary amount
-    // of space [TODO]: Improve this
-    if constexpr (!detail::IsArray<T>::value)
+    if constexpr (IsDBusBasicFixedType<typename T::value_type>)
     {
-      vec.reserve(8);
-    }
+      if constexpr (detail::IsArray<T>::value)
+      {
+        if (arrLength / sizeof(typename T::value_type) > vec.size())
+        {
+          throw DBusDeserializationError{std::format(
+              "Trying to deserialize array with fixed length '{}' but received array has '{}' bytes too "
+              "many. Is your array the correct length?",
+              vec.size(), (arrLength / sizeof(typename T::value_type) - vec.size()) * sizeof(typename T::value_type))};
+        }
 
-    uint32_t index{};
+        if (arrLength / sizeof(typename T::value_type) < vec.size())
+        {
+          throw DBusDeserializationError{
+              std::format("Fully deserialized received array with '{}' elements, but the provided fixed array expects "
+                          "'{}' elements. Is your array the correct length?",
+                          arrLength / sizeof(typename T::value_type), vec.size())};
+        }
+      }
 
-    // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings
-    // until we reach the end of the array
-    uint32_t bytesRead{};
-    while (bytesRead < arrLength)
-    {
-      if (arrPointer >= dbusType.size())
+      if (arrPointer + arrLength > dbusType.size()) [[unlikely]]
       {
         throw DBusMalformedInputError{
             std::format("Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: "
@@ -1036,42 +1042,67 @@ namespace cxxbus
                         ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
       }
 
-      uint32_t oldPointer{arrPointer};
-      if constexpr (detail::IsArray<T>::value)
+      if constexpr (!detail::IsArray<T>::value)
       {
-        // First check if the user was correct about the fixed array's length
-        if (index >= vec.size())
+        vec.resize(arrLength / sizeof(typename T::value_type));
+      }
+      std::memcpy(vec.data(), dbusType.data() + arrPointer, arrLength);
+      arrPointer += arrLength;
+    }
+    else
+    {
+      uint32_t index{};
+
+      // Since the only thing we know for strings is how long the entire array is, we just keep unmarshalling strings
+      // until we reach the end of the array
+      uint32_t bytesRead{};
+      while (bytesRead < arrLength)
+      {
+        if (arrPointer >= dbusType.size()) [[unlikely]]
         {
-          throw DBusDeserializationError{
-              std::format("Trying to deserialize array with fixed length '{}' but received array has '{}' bytes too "
-                          "many. Is your array the correct length?",
-                          vec.size(), arrLength - bytesRead)};
+          throw DBusMalformedInputError{std::format(
+              "Trying to deserialize {} with a claimed {} byte length, but the incoming buffer (total size: "
+              "{}) has only {} bytes remaining",
+              ConstexprTypeName<T>(), arrLength, dbusType.size(), dbusType.size() - arrPointer)};
         }
 
-        vec[index++] = UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer);
-      }
-      else
-      {
-        vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
-      }
-      bytesRead += (arrPointer - oldPointer);
+        uint32_t oldPointer{arrPointer};
+        if constexpr (detail::IsArray<T>::value)
+        {
+          // First check if the user was correct about the fixed array's length
+          if (index >= vec.size())
+          {
+            throw DBusDeserializationError{
+                std::format("Trying to deserialize array with fixed length '{}' but received array has '{}' bytes too "
+                            "many. Is your array the correct length?",
+                            vec.size(), arrLength - bytesRead)};
+          }
 
-      if (bytesRead < arrLength)
-      {
-        oldPointer = arrPointer;
-        SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
-        bytesRead += arrPointer - oldPointer;  // Remove any potential padding
-      }
-    }
+          vec[index++] = UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer);
+        }
+        else
+        {
+          vec.push_back(UnmarshalDBusTypeImpl<typename T::value_type>(dbusType, arrPointer));
+        }
+        bytesRead += (arrPointer - oldPointer);
 
-    if constexpr (detail::IsArray<T>::value)
-    {
-      if (index < vec.size())
+        if (bytesRead < arrLength)
+        {
+          oldPointer = arrPointer;
+          SkipPadding(arrPointer, GetAlignmentOfDBusType<typename T::value_type>());
+          bytesRead += arrPointer - oldPointer;  // Remove any potential padding
+        }
+      }
+
+      if constexpr (detail::IsArray<T>::value)
       {
-        throw DBusDeserializationError{
-            std::format("Fully deserialized received array with '{}' elements, but the provided fixed array expects "
-                        "'{}' elements. Is your array the correct length?",
-                        index, vec.size())};
+        if (index < vec.size())
+        {
+          throw DBusDeserializationError{
+              std::format("Fully deserialized received array with '{}' elements, but the provided fixed array expects "
+                          "'{}' elements. Is your array the correct length?",
+                          index, vec.size())};
+        }
       }
     }
 
