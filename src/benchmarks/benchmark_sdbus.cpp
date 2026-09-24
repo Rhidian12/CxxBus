@@ -160,7 +160,7 @@ static void BM_SDBusNestedMapMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-BENCHMARK(BM_SDBusEmptyMessage);
+BENCHMARK(BM_SDBusEmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(BM_StringMessage);
 BENCHMARK(BM_SDBusBigStringMessage);
 BENCHMARK(BM_SDBusNestedMapMessage);

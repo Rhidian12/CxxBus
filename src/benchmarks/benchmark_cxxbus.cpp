@@ -156,7 +156,7 @@ static void BM_NestedMapMessage(benchmark::State& state)
   ioContext.run();
 }
 
-BENCHMARK(BM_EmptyMessage);
+BENCHMARK(BM_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(BM_StringMessage);
 BENCHMARK(BM_BigStringMessage);
 BENCHMARK(BM_NestedMapMessage);
