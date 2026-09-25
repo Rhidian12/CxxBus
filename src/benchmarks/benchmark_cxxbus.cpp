@@ -157,6 +157,6 @@ static void BM_NestedMapMessage(benchmark::State& state)
 }
 
 BENCHMARK(BM_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_StringMessage);
-BENCHMARK(BM_BigStringMessage);
-BENCHMARK(BM_NestedMapMessage);
+BENCHMARK(BM_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_NestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();

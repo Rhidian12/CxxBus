@@ -22,25 +22,20 @@ static void BM_SDBusEmptyMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
+  serverConn->enterEventLoopAsync();
 
   obj
       ->addVTable(sdbus::MethodVTableItem{
           METHOD_NAME, sdbus::Signature{""}, {}, {}, {}, [](sdbus::MethodCall call) { call.createReply().send(); }, {}})
       .forInterface(INTERFACE_NAME);
 
-  serverConn->enterEventLoopAsync();
-
   auto clientConn = sdbus::createSessionBusConnection();
-  clientConn->enterEventLoopAsync();
   auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   for (auto _ : state)
   {
     auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
-    std::promise<void> done;
-    auto future = done.get_future();
-    proxy->callMethodAsync(method, [&done](sdbus::MethodReply, std::optional<sdbus::Error>) { done.set_value(); });
-    future.wait();
+    proxy->callMethod(method);
   }
 
   serverConn->releaseName(SERVICE_NAME);
@@ -161,6 +156,6 @@ static void BM_SDBusNestedMapMessage(benchmark::State& state)
 }
 
 BENCHMARK(BM_SDBusEmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_StringMessage);
-BENCHMARK(BM_SDBusBigStringMessage);
-BENCHMARK(BM_SDBusNestedMapMessage);
+BENCHMARK(BM_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_SDBusBigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_SDBusNestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();

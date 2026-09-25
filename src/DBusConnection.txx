@@ -872,7 +872,7 @@ namespace cxxbus
   {
     if constexpr (SingleThreaded)
     {
-      co_await AddMatchRuleImpl(std::move(rule), std::move(callback));
+      co_await AddMatchRuleImpl(std::move(rule), std::move(callback), true);
     }
     else
     {
@@ -1211,7 +1211,7 @@ namespace cxxbus
       // Hard shutdown the socket, this should cause the HandleConnectionLost() function to get called
       boost::system::error_code ec;
       std::ignore = m_state->socket.shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
-      co_return;
+      return;
     }
   }
 
