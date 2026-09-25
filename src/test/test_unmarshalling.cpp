@@ -288,6 +288,21 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariant)
   };
   EXPECT_EQ(UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::vector<int32_t>>(),
             (std::vector<int32_t>{1, 2, 3}));
+
+  // Variant containing a map with 2 kv pairs: {1, 2} and {3, 4}
+  bytes = {
+      0x05, 'a',  '{',  'u',  'u', '}', 0x00,  // Signature
+      0x00,                                    // Padding to 4-byte boundary
+      0x10, 0x00, 0x00, 0x00,                  // array length = 16
+      0x00, 0x00, 0x00, 0x00,                  // pad to 8-byte boundary
+      0x01, 0x00, 0x00, 0x00,                  // Key u32 #1: 1
+      0x02, 0x00, 0x00, 0x00,                  // Value u32 #1: 2
+      0x03, 0x00, 0x00, 0x00,                  // Key u32 #2: 3
+      0x04, 0x00, 0x00, 0x00,                  // Value u32 #2: 4
+  };
+
+  EXPECT_EQ((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::map<uint32_t, uint32_t>>()),
+            (std::map<uint32_t, uint32_t>{{1, 2}, {3, 4}}));
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
