@@ -465,95 +465,6 @@ namespace cxxbus
     }
   };
 
-  inline uint32_t GetSizeOfDBusTypeBasedOnSignature(std::string const& signature, std::span<byte const> dbusType,
-                                                    uint32_t& arrPointer)
-  {
-    switch (static_cast<DBusTypeCodes>(signature[0]))
-    {
-      case DBusTypeCodes::BYTE:
-        return sizeof(uint8_t);
-      case DBusTypeCodes::BOOLEAN:
-        return sizeof(bool);  // [TODO]: Investigate, should this not be uint32_t?
-      case DBusTypeCodes::INT16:
-        return sizeof(int16_t);
-      case DBusTypeCodes::UINT16:
-        return sizeof(uint16_t);
-      case DBusTypeCodes::INT32:
-        return sizeof(int32_t);
-      case DBusTypeCodes::UINT32:
-        return sizeof(uint32_t);
-      case DBusTypeCodes::INT64:
-        return sizeof(int64_t);
-      case DBusTypeCodes::UINT64:
-        return sizeof(uint64_t);
-      case DBusTypeCodes::DOUBLE:
-        return sizeof(double);
-      case DBusTypeCodes::STRING:
-      case DBusTypeCodes::OBJECT_PATH:
-      {
-        // Length of string as u32 + actual length of string + '\0'
-        uint32_t const length = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
-        arrPointer -=
-            sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
-        return sizeof(uint32_t) + length + 1;
-      }
-      case DBusTypeCodes::SIGNATURE:
-      {
-        // Length of string as u8 + actual length of string + '\0'
-        uint8_t const length = UnmarshalDBusTypeImpl<uint8_t>(dbusType, arrPointer);
-        arrPointer -=
-            sizeof(uint8_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
-        return sizeof(uint8_t) + length + 1;
-      }
-      case DBusTypeCodes::ARRAY:
-      {
-        // Length of array data in bytes
-        uint32_t length = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
-
-        if (static_cast<DBusTypeCodes>(signature.at(1)) == DBusTypeCodes::DICT_BEGIN)
-        {
-          // Dictionary, we pad to 8-byte boundary, so we need to add padding to the size of the array data
-          AddPaddingToSize(length, 8);
-        }
-        else
-        {
-          AddPaddingToSize(length, GetAlignmentOfSignature(signature[1]));
-        }
-
-        arrPointer -=
-            sizeof(uint32_t);  // Move back the pointer so we can simply skip over it in the main Unmarshal function
-        return sizeof(uint32_t) + length;
-      }
-      case DBusTypeCodes::STRUCT_BEGIN:
-      {
-        uint32_t length = 0;
-        for (size_t i = 1; i < signature.size() - 1; ++i)
-        {
-          // [TODO]: This does not keep nested structs, arrays, maps, ... into account and is VERY fragile
-          length += GetSizeOfDBusTypeBasedOnSignature(std::string{signature[i]}, dbusType, arrPointer);
-          if (i < signature.size() - 2)
-          {
-            AddPaddingToSize(length, GetAlignmentOfSignature(signature[i + 1]));
-          }
-        }
-        return length;
-      }
-      case DBusTypeCodes::VARIANT:
-      {
-        // Variant = Signature + Padding + Size of data
-        Signature variantSignature = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
-        arrPointer -= sizeof(uint8_t) + variantSignature.size() +
-                      1;  // Move back the pointer so we can simply skip over it in the main Unmarshal function
-
-        uint32_t length = GetSizeOfDBusTypeBasedOnSignature(variantSignature.GetSignature(), dbusType, arrPointer);
-        AddPaddingToSize(length, variantSignature.GetAlignmentOfSignature());
-        return sizeof(uint8_t) + variantSignature.size() + 1 + length;
-      }
-      default:
-        throw std::runtime_error{"Unsupported type for size calculation based on signature"};
-    }
-  }
-
   constexpr HeaderField HEADER_FIELDS[] = {
       HeaderField{.decimalCode = HeaderFieldCode::INVALID,
                   .type = DBusTypeCodes::INVALID,
@@ -1046,7 +957,11 @@ namespace cxxbus
       {
         vec.resize(arrLength / sizeof(typename T::value_type));
       }
-      std::memcpy(vec.data(), dbusType.data() + arrPointer, arrLength);
+
+      if (arrLength > 0)
+      {
+        std::memcpy(vec.data(), dbusType.data() + arrPointer, arrLength);
+      }
       arrPointer += arrLength;
     }
     else
@@ -1211,38 +1126,113 @@ namespace cxxbus
   T UnmarshalDBusVariant(std::span<byte const> dbusType, uint32_t& arrPointer)
   {
     Signature signature{UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer)};
-    SkipPadding(arrPointer, signature.GetAlignmentOfSignature());
+    std::string sig{signature.GetSignature()};
+    uint32_t oldArrPointer{arrPointer};
+    SkipPadding(oldArrPointer, GetAlignmentOfSignature(sig[0]));
 
-    size_t const size = GetSizeOfDBusTypeBasedOnSignature(signature.GetSignature(), dbusType, arrPointer);
+    for (uint32_t i{}; i < sig.size(); ++i)
+    {
+      DBusTypeCodes typeCode = static_cast<DBusTypeCodes>(sig[i]);
+      if (typeCode != DBusTypeCodes::STRUCT_END && typeCode != DBusTypeCodes::DICT_END)
+      {
+        SkipPadding(arrPointer, GetAlignmentOfSignature(sig[i]));
+      }
+
+      if (IsDBusBasicFixedTypeCode(sig[i]))
+      {
+        uint32_t typeSize{GetAlignmentOfSignature(sig[i])};
+        arrPointer += typeSize;
+      }
+      else if (IsDBusBasicStringlikeTypeCode(sig[i]))
+      {
+        uint32_t strSize{};
+        if (typeCode == DBusTypeCodes::SIGNATURE)
+        {
+          // read u8, then skip the rest of the string
+          strSize = UnmarshalDBusTypeImpl<uint8_t>(dbusType, arrPointer);
+        }
+        else
+        {
+          // read u32, then skip the rest of the string
+          strSize = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
+        }
+        arrPointer += strSize + 1;
+      }
+      else
+      {
+        switch (typeCode)
+        {
+          case DBusTypeCodes::STRUCT_BEGIN:
+            break;  // Nothing special, just handle the types as they come in
+          case DBusTypeCodes::STRUCT_END:
+            break;  // Nothing special, just handle the types as they come in
+          case DBusTypeCodes::ARRAY:
+          {
+            // Read array size as u32 and skip the rest of the array
+            uint32_t arrSize = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
+            // We increment 'i' here to get our actual array element
+            SkipPadding(arrPointer, GetAlignmentOfSignature(sig[i + 1]));
+            arrPointer += arrSize;
+
+            if (static_cast<DBusTypeCodes>(sig[i + 1]) != DBusTypeCodes::DICT_BEGIN)
+            {
+              ++i;
+            }
+          }
+          break;
+          case DBusTypeCodes::DICT_BEGIN:
+            // Skip the signature until we get to DICT_END
+            while (static_cast<DBusTypeCodes>(sig[i]) != DBusTypeCodes::DICT_END && i < sig.size())
+            {
+              ++i;
+            }
+            break;
+          case DBusTypeCodes::DICT_END:
+            // ARRAY case takes care of dictionaries
+            break;
+          case DBusTypeCodes::VARIANT:
+          {
+            // Read the Signature
+            Signature tempSig = UnmarshalDBusTypeImpl<Signature>(dbusType, arrPointer);
+            // Add the signature to our signature here, just so we can parse it as well
+            sig.insert(i + 1, tempSig.GetSignature());
+          }
+          break;
+          default:
+            break;
+        }
+      }
+    }
+
+    uint32_t size{arrPointer - oldArrPointer};
+
     T variant;
 
     if constexpr (IsDBusFastVariant<T>)
     {
       variant = T{deserialized_variant_tag, std::move(signature),
-                  std::span<byte const>{dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size}};
+                  std::span<byte const>{dbusType.begin() + oldArrPointer, dbusType.begin() + oldArrPointer + size}};
     }
     else
     {
       if (size > Variant::SMALL_BUFFER_SIZE)
       {
 #if __cpp_lib_ranges_to_container
-        variant = T{
-            deserialized_variant_tag, std::move(signature),
-            std::move(std::ranges::to<std::vector>(dbusType | std::views::drop(arrPointer) | std::views::take(size)))};
+        variant = T{deserialized_variant_tag, std::move(signature),
+                    std::move(std::ranges::to<std::vector>(dbusType | std::views::drop(oldArrPointer) |
+                                                           std::views::take(size)))};
 #else
         variant = T{deserialized_variant_tag, std::move(signature),
-                    std::vector<byte>(dbusType.begin() + arrPointer, dbusType.begin() + arrPointer + size)};
+                    std::vector<byte>(dbusType.begin() + oldArrPointer, dbusType.begin() + oldArrPointer + size)};
 #endif
       }
       else
       {
         std::array<byte, Variant::SMALL_BUFFER_SIZE> arr;
-        std::memcpy(arr.data(), dbusType.data() + arrPointer, size);
+        std::memcpy(arr.data(), dbusType.data() + oldArrPointer, size);
         variant = T{deserialized_variant_tag, std::move(signature), std::move(arr)};
       }
     }
-
-    arrPointer += size;
 
     return variant;
   }

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "src/DBus.h"
 
 using namespace cxxbus;
@@ -258,6 +260,49 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariant)
   // Our variant contains a u32, but we're trying to unmarshal a 'std::string'
   bytes = {0x01, 'u', 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00};
   EXPECT_THROW((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::string>()), std::exception);
+
+  // Variant containing empty array
+  bytes = {
+      0x02, 'a',  'u',  0x00,  // Signature
+      0x00, 0x00, 0x00, 0x00   // empty array
+  };
+  EXPECT_EQ(UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::vector<uint32_t>>(), std::vector<uint32_t>{});
+
+  bytes = {
+      0x05, 'a',  '{',  'u',  'u', '}', 0x00,  // Signature
+      0x00,                                    // Padding to 4-byte boundary
+      0x00, 0x00, 0x00, 0x00,                  // array length = 0
+      0x00, 0x00, 0x00, 0x00,                  // pad to 8-byte boundary
+  };
+
+  EXPECT_EQ((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::map<uint32_t, uint32_t>>()),
+            (std::map<uint32_t, uint32_t>{}));
+
+  // Variant containing array with 3 i32's
+  bytes = {
+      0x02, 'a',  'i',  0x00,  // Signature
+      0x0C, 0x00, 0x00, 0x00,  // Array length = 12
+      0x01, 0x00, 0x00, 0x00,  // i32 = 1
+      0x02, 0x00, 0x00, 0x00,  // i32 = 2
+      0x03, 0x00, 0x00, 0x00,  // i32 = 3
+  };
+  EXPECT_EQ(UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::vector<int32_t>>(),
+            (std::vector<int32_t>{1, 2, 3}));
+
+  // Variant containing a map with 2 kv pairs: {1, 2} and {3, 4}
+  bytes = {
+      0x05, 'a',  '{',  'u',  'u', '}', 0x00,  // Signature
+      0x00,                                    // Padding to 4-byte boundary
+      0x10, 0x00, 0x00, 0x00,                  // array length = 16
+      0x00, 0x00, 0x00, 0x00,                  // pad to 8-byte boundary
+      0x01, 0x00, 0x00, 0x00,                  // Key u32 #1: 1
+      0x02, 0x00, 0x00, 0x00,                  // Value u32 #1: 2
+      0x03, 0x00, 0x00, 0x00,                  // Key u32 #2: 3
+      0x04, 0x00, 0x00, 0x00,                  // Value u32 #2: 4
+  };
+
+  EXPECT_EQ((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::map<uint32_t, uint32_t>>()),
+            (std::map<uint32_t, uint32_t>{{1, 2}, {3, 4}}));
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
@@ -273,6 +318,29 @@ TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
   auto inner = outer.UnmarshalData<Variant>();
   EXPECT_EQ(inner.GetSignature().GetSignature(), "y");
   EXPECT_EQ(inner.UnmarshalData<uint8_t>(), 0x07);
+}
+
+TEST_F(UnmarshalTestSuite, UnmarshalVariantWithNestedStruct)
+{
+  // Make a variant of a struct containing a struct containing a variant of a string
+  std::vector<byte> bytes{
+      0x07, '(', 'i', '(', 'u', 'v', ')', ')', 0x00,  // Signature
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,       // Pad to 8-byte boundary
+      0x2A, 0x00, 0x00, 0x00,                         // i32 = 42,
+      0x00, 0x00, 0x00, 0x00,                         // Pad to 8-byte boundary
+      0x18, 0x00, 0x00, 0x00,                         // u32 = 24
+      // No padding required here, Signatures have an alignment of 1
+      0x01, 's', 0x00,               // Signature
+      0x00,                          // Pad to 4-byte boundary for String
+      0x05, 0x00, 0x00, 0x00,        // u32 for string length
+      'D', 'B', 'u', 's', '!', 0x00  // string
+  };
+
+  auto v = UnmarshalDBusType<Variant>(bytes, "v");
+  auto data = v.UnmarshalData<std::tuple<int, std::tuple<uint32_t, Variant>>>();
+  EXPECT_EQ(std::get<0>(data), 42);
+  EXPECT_EQ(std::get<0>(std::get<1>(data)), 24);
+  EXPECT_EQ(std::get<1>(std::get<1>(data)).UnmarshalData<std::string>(), "DBus!");
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalVeryNestedMaps)
