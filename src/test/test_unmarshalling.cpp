@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "src/DBus.h"
 
 using namespace cxxbus;
@@ -273,6 +275,29 @@ TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
   auto inner = outer.UnmarshalData<Variant>();
   EXPECT_EQ(inner.GetSignature().GetSignature(), "y");
   EXPECT_EQ(inner.UnmarshalData<uint8_t>(), 0x07);
+}
+
+TEST_F(UnmarshalTestSuite, UnmarshalVariantWithNestedStruct)
+{
+  // Make a variant of a struct containing a struct containing a variant of a string
+  std::vector<byte> bytes{
+      0x07, '(', 'i', '(', 'u', 'v', ')', ')', 0x00,  // Signature
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,       // Pad to 8-byte boundary
+      0x2A, 0x00, 0x00, 0x00,                         // i32 = 42,
+      0x00, 0x00, 0x00, 0x00,                         // Pad to 8-byte boundary
+      0x18, 0x00, 0x00, 0x00,                         // u32 = 24
+      // No padding required here, Signatures have an alignment of 1
+      0x01, 's', 0x00,               // Signature
+      0x00,                          // Pad to 4-byte boundary for String
+      0x05, 0x00, 0x00, 0x00,        // u32 for string length
+      'D', 'B', 'u', 's', '!', 0x00  // string
+  };
+
+  auto v = UnmarshalDBusType<Variant>(bytes, "v");
+  auto data = v.UnmarshalData<std::tuple<int, std::tuple<uint32_t, Variant>>>();
+  EXPECT_EQ(std::get<0>(data), 42);
+  EXPECT_EQ(std::get<0>(std::get<1>(data)), 24);
+  EXPECT_EQ(std::get<1>(std::get<1>(data)).UnmarshalData<std::string>(), "DBus!");
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalVeryNestedMaps)
