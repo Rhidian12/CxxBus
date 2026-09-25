@@ -277,6 +277,17 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariant)
 
   EXPECT_EQ((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::map<uint32_t, uint32_t>>()),
             (std::map<uint32_t, uint32_t>{}));
+
+  // Variant containing array with 3 i32's
+  bytes = {
+      0x02, 'a',  'i',  0x00,  // Signature
+      0x0C, 0x00, 0x00, 0x00,  // Array length = 12
+      0x01, 0x00, 0x00, 0x00,  // i32 = 1
+      0x02, 0x00, 0x00, 0x00,  // i32 = 2
+      0x03, 0x00, 0x00, 0x00,  // i32 = 3
+  };
+  EXPECT_EQ(UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::vector<int32_t>>(),
+            (std::vector<int32_t>{1, 2, 3}));
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)
