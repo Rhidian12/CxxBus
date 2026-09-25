@@ -260,6 +260,23 @@ TEST_F(UnmarshalTestSuite, UnmarshalVariant)
   // Our variant contains a u32, but we're trying to unmarshal a 'std::string'
   bytes = {0x01, 'u', 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00};
   EXPECT_THROW((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::string>()), std::exception);
+
+  // Variant containing empty array
+  bytes = {
+      0x02, 'a',  'u',  0x00,  // Signature
+      0x00, 0x00, 0x00, 0x00   // empty array
+  };
+  EXPECT_EQ(UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::vector<uint32_t>>(), std::vector<uint32_t>{});
+
+  bytes = {
+      0x05, 'a',  '{',  'u',  'u', '}', 0x00,  // Signature
+      0x00,                                    // Padding to 4-byte boundary
+      0x00, 0x00, 0x00, 0x00,                  // array length = 0
+      0x00, 0x00, 0x00, 0x00,                  // pad to 8-byte boundary
+  };
+
+  EXPECT_EQ((UnmarshalDBusType<Variant>(bytes, "v").UnmarshalData<std::map<uint32_t, uint32_t>>()),
+            (std::map<uint32_t, uint32_t>{}));
 }
 
 TEST_F(UnmarshalTestSuite, UnmarshalNestedVariant)

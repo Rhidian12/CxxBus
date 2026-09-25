@@ -957,7 +957,11 @@ namespace cxxbus
       {
         vec.resize(arrLength / sizeof(typename T::value_type));
       }
-      std::memcpy(vec.data(), dbusType.data() + arrPointer, arrLength);
+
+      if (arrLength > 0)
+      {
+        std::memcpy(vec.data(), dbusType.data() + arrPointer, arrLength);
+      }
       arrPointer += arrLength;
     }
     else
@@ -1167,12 +1171,21 @@ namespace cxxbus
             // Read array size as u32 and skip the rest of the array
             uint32_t arrSize = UnmarshalDBusTypeImpl<uint32_t>(dbusType, arrPointer);
             // We increment 'i' here to get our actual array element
-            SkipPadding(arrPointer, GetAlignmentOfSignature(sig[++i]));
+            SkipPadding(arrPointer, GetAlignmentOfSignature(sig[i + 1]));
             arrPointer += arrSize;
+
+            if (static_cast<DBusTypeCodes>(sig[i + 1]) != DBusTypeCodes::DICT_BEGIN)
+            {
+              ++i;
+            }
           }
           break;
           case DBusTypeCodes::DICT_BEGIN:
-            // ARRAY case takes care of dictionaries
+            // Skip the signature until we get to DICT_END
+            while (static_cast<DBusTypeCodes>(sig[i]) != DBusTypeCodes::DICT_END && i < sig.size())
+            {
+              ++i;
+            }
             break;
           case DBusTypeCodes::DICT_END:
             // ARRAY case takes care of dictionaries

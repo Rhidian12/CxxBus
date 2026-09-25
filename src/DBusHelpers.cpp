@@ -149,6 +149,7 @@ namespace cxxbus
       case DBusTypeCodes::UINT64:
       case DBusTypeCodes::DOUBLE:
       case DBusTypeCodes::STRUCT_BEGIN:
+      case DBusTypeCodes::DICT_BEGIN:
         return 8;
       default:
         throw std::runtime_error{std::format("Alignment of signature '{}' cannot be requested", signature)};
