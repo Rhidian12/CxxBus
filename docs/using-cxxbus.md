@@ -21,16 +21,20 @@ using namespace cxxbus;
 boost::asio::io_context ioContext{};
 
 // Upon connecting to the dbus-daemon, try to claim the well-known name `com.cxxbus.example`
-std::shared_ptr<DBusConnection> conn = co_await DBusConnection::Create(ioContext, DBusWellKnownName{"com.cxxbus.example"}, BusType::SESSION);
+std::shared_ptr<DBusConnection> conn = co_await DBusConnection::Create(ioContext, 
+                                                                       DBusWellKnownName{"com.cxxbus.example"}, BusType::SESSION);
 
 // Upon connecting to the dbus-daemon, do not claim any well-known name.
 // Useful for when your connection is not intended to receive incoming traffic except replies
-std::shared_ptr<DBusConnection> conn2 = co_await DBusConnection::Create(ioContext, std::nullopt, BusType::SESSION);
+std::shared_ptr<DBusConnection> conn2 = co_await DBusConnection::Create(ioContext, 
+                                                                        std::nullopt, BusType::SESSION);
 
 // Connect to the system-bus instead of the session-bus.
-std::shared_ptr<DBusConnection> conn3 = co_await DBusConnection::Create(ioContext, std::nullopt, BusType::SYSTEM);
+std::shared_ptr<DBusConnection> conn3 = co_await DBusConnection::Create(ioContext, 
+                                                                        std::nullopt, BusType::SYSTEM);
 
-// Connect without awaiting the connection being created. The provided callback will be fired when the connection is established
+// Connect without awaiting the connection being created. The provided callback will be fired when 
+// the connection is established.
 // All previous examples also apply to `CreateDetached()`
 std::shared_ptr<DBusConnection> conn4 = DBusConnection::CreateDetached(ioContext,
                                                                        DBusWellKnownName{"com.cxxbus.detachedexample"},
@@ -88,3 +92,14 @@ Every kind message is allowed to have any of these parameters and can be added a
 
 Receiving incoming messages
 ---------------------------
+
+This section does not cover replies to earlier sent messages. Those are always automatically returned to the originating `SendMessage()` call.
+
+There are multiple ways incoming messages can be received & handled. The following list is the order of how messages are processed.
+
+1. If the message is a signal then the message is matched against any added match rules via `AddMatchRule()`
+  If the incoming message matches the added rule it's callback is ran.
+2. The incoming message is passed to all registered message filters added via `RegisterMessageFilter()`.
+  If any filter returns `MessageHandled::YES` then no other filters are ran and the message is considered handled and
+  no other processing on the message occurs.
+3
