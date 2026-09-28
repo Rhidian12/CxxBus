@@ -3,9 +3,9 @@
 ## Table Of Contents
 
 1. [Asynchronous DBus Connections](#asynchronousdbusconnection)
-    1.1 [Creating the DBus Connection](#creating-dbus-connection)
-    1.2 [Calling a method](#calling-a-method)
-    1.3 [Receiving incoming messages](#receiving-incoming-messages)
+    1. [Creating the DBus Connection](#creating-dbus-connection)
+    1. [Calling a method](#calling-a-method)
+    1. [Receiving incoming messages](#receiving-incoming-messages)
 
 Asynchronous DBus Connections
 -----------------------------
