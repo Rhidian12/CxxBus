@@ -171,7 +171,9 @@ namespace cxxbus
             std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION), Variant::Create(destination.value())));
       }
 
+#if CXX_UNIT_TESTS
       std::ranges::sort(headerFields, [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
+#endif  // CXX_UNIT_TESTS
 
       MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t,
                             std::vector<std::tuple<uint8_t, Variant>>>
