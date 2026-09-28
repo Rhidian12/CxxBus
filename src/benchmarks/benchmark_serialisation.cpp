@@ -85,6 +85,29 @@ static void BM_ArraySerialisation(benchmark::State& state)
   }
 }
 
+static void BM_HeaderFieldSerialisation(benchmark::State& state)
+{
+  std::vector<std::tuple<uint8_t, Variant>> headerFields{};
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::SIGNATURE)].decimalCode),
+      Variant::Create(Signature{"u"}));
+  headerFields.emplace_back(static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::PATH)].decimalCode),
+                            Variant::Create(ObjectPath{"/com/dbus/cxxtest"}));
+  headerFields.emplace_back(static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::MEMBER)].decimalCode),
+                            Variant::Create("Hello"));
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::DESTINATION)].decimalCode),
+      Variant::Create("com.dbus.cxxtest"));
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::INTERFACE)].decimalCode),
+      Variant::Create(DBusInterfaceName{"com.CxxTest"}));
+
+  for (auto _ : state)
+  {
+    MarshalDBusType(headerFields);
+  }
+}
+
 static void BM_StringSerialisation(benchmark::State& state)
 {
   std::string str{};
@@ -118,6 +141,7 @@ static void BM_DoubleSerialisation(benchmark::State& state)
 BENCHMARK(BM_NestedMapSerialisation);
 BENCHMARK(BM_NestedStructSerialisation);
 BENCHMARK(BM_ArraySerialisation);
+BENCHMARK(BM_HeaderFieldSerialisation);
 BENCHMARK(BM_StringSerialisation);
 BENCHMARK(BM_IntegerSerialisation);
 BENCHMARK(BM_DoubleSerialisation);

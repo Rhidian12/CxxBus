@@ -119,11 +119,6 @@ namespace cxxbus
         }
       }};
 
-  inline uint32_t RoundUp(uint32_t number, uint32_t multiple)
-  {
-    return ((number + multiple - 1) / multiple) * multiple;
-  }
-
   class Variant
   {
    public:
@@ -603,33 +598,46 @@ namespace cxxbus
   {
     using ContainedType = typename T::value_type;
 
-    std::vector<byte> tempBuffer;
-    uint8_t const alignment = GetAlignmentOfDBusType<ContainedType>();
-
-    for (auto const& [index, elem] : std::views::enumerate(value))
+    // std::vector<bool> has no `data()` member ...
+    if constexpr (IsDBusBasicFixedType<ContainedType> && !std::is_same_v<ContainedType, bool>)
     {
-      MarshalDBusTypeImpl(elem, tempBuffer);
-      if (index < static_cast<int32_t>(value.size()) - 1)
+      MarshalBasicFixedType<uint32_t>(value.size() * sizeof(ContainedType), dbusType);
+      ApplyPadding(dbusType, GetAlignmentOfDBusType<ContainedType>());
+      size_t oldSize{dbusType.size()};
+      dbusType.resize(dbusType.size() + sizeof(ContainedType) * value.size());
+      std::memcpy(dbusType.data() + oldSize, value.data(), value.size() * sizeof(ContainedType));
+    }
+    else
+    {
+      uint8_t const alignment = GetAlignmentOfDBusType<ContainedType>();
+
+      // Marshal a temporary u32, we'll replace it with the actual size later
+      MarshalBasicFixedType(0, dbusType);
+      size_t sizePos{dbusType.size() - sizeof(uint32_t)};
+
+      ApplyPadding(dbusType, alignment);
+      uint32_t beginDataPos{static_cast<uint32_t>(dbusType.size())};
+
+      for (auto const& [index, elem] : std::views::enumerate(value))
       {
-        // Not last element, so add padding if required
-        ApplyPadding(tempBuffer, alignment);
+        MarshalDBusTypeImpl(elem, dbusType);
+        if (index < static_cast<int32_t>(value.size()) - 1)
+        {
+          // Not last element, so add padding if required
+          ApplyPadding(dbusType, alignment);
+        }
       }
-    }
 
-    if (tempBuffer.size() >= 2 << 26)
-    {
-      throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
-    }
+      uint32_t arrSize{static_cast<uint32_t>(dbusType.size() - beginDataPos)};
 
-    // First we marshal a uint32_t fiving the length of the array (in bytes), followed by padding to the array's element
-    // type boundary
-    MarshalBasicFixedType(static_cast<uint32_t>(tempBuffer.size()), dbusType);
-    ApplyPadding(dbusType, alignment);
-#if __cpp_lib_containers_ranges
-    dbusType.append_range(std::move(tempBuffer));
-#else
-    dbusType.insert(dbusType.end(), tempBuffer.begin(), tempBuffer.end());
-#endif
+      if (arrSize >= 1 << 26)
+      {
+        throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
+      }
+
+      // Write the correct array length now
+      std::memcpy(dbusType.data() + sizePos, &arrSize, sizeof(uint32_t));
+    }
   }
 
   template <IsDBusStruct T, size_t I, size_t MaxI>

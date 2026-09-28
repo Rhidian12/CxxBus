@@ -70,33 +70,26 @@ namespace cxxbus
       // message type specifies which fields are required
 
       std::vector<byte> dbusMessage{};
-      // Do a bit of reserving for the header of our message
-      dbusMessage.reserve(4 * sizeof(uint8_t) + 2 * sizeof(uint32_t));
 
       std::vector<uint8_t> messageFlagsCasted;
       std::ranges::transform(messageFlags, std::back_inserter(messageFlagsCasted),
                              [](DBusMessageFlags flag) -> uint8_t { return static_cast<uint8_t>(flag); });
 
       std::vector<std::tuple<uint8_t, Variant>> headerFields{};
-#if __cpp_lib_ranges_to_container
-      std::vector<HeaderField> requiredHeaderFields{std::ranges::to<std::vector>(
-          std::views::filter(HEADER_FIELDS, [msgType](HeaderField const& headerField)
-                             { return std::ranges::contains(headerField.requiredMessageType, msgType); }))};
-#else
-      std::vector<HeaderField> requiredHeaderFields{};
-      std::ranges::copy_if(HEADER_FIELDS, std::back_inserter(requiredHeaderFields),
-                           [msgType](HeaderField const& headerField)
-                           { return std::ranges::contains(headerField.requiredMessageType, msgType); });
-#endif
-      if (!messageBody.empty())
+      for (HeaderField const& headerField : HEADER_FIELDS)
       {
-        requiredHeaderFields.push_back(
-            *std::ranges::find_if(HEADER_FIELDS, [](HeaderField const& headerField)
-                                  { return headerField.decimalCode == HeaderFieldCode::SIGNATURE; }));
-      }
+        if (headerField.decimalCode == HeaderFieldCode::SIGNATURE)
+        {
+          if (messageBody.empty())
+          {
+            continue;
+          }
+        }
+        else if (!std::ranges::contains(headerField.requiredMessageType, msgType))
+        {
+          continue;
+        }
 
-      for (HeaderField const& headerField : requiredHeaderFields)
-      {
         Variant variant{};
         switch (headerField.decimalCode)
         {
@@ -190,7 +183,7 @@ namespace cxxbus
               static_cast<uint8_t>(1),                                                        // Major version
               static_cast<uint32_t>(messageBody.size()),  // Length of the message body in bytes
               serial,                                     // Serial as u32
-              headerFields                                // Our array of header fields
+              std::move(headerFields)                     // Our array of header fields
           };
 
 #if __cpp_lib_containers_ranges
