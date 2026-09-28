@@ -115,15 +115,15 @@ static void BM_BigStringMessage(benchmark::State& state)
 static void BM_NestedMapMessage(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
-  for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
+  for (uint32_t i{}; i < 18; ++i)
   {
-    for (uint32_t bankNr{}; bankNr < 3; ++bankNr)
+    for (uint32_t j{}; j < 3; ++j)
     {
-      for (uint32_t powerLevel{}; powerLevel < 24; ++powerLevel)
+      for (uint32_t k{}; k < 24; ++k)
       {
-        for (uint32_t temperatureLevel{}; temperatureLevel < 32; ++temperatureLevel)
+        for (uint32_t l{}; l < 32; ++l)
         {
-          map[plateNr][bankNr][powerLevel][temperatureLevel] = rand() % 100;
+          map[i][j][k][l] = rand() % 100;
         }
       }
     }
