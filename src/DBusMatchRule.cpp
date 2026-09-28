@@ -35,12 +35,6 @@ namespace cxxbus
   namespace
   {
     constexpr char const* MESSAGE_TYPE_STRINGS[] = {"method_call", "method_return", "error", "signal"};
-
-#ifndef CXX_BUS_LOGLEVEL
-#define CXX_BUS_LOGLEVEL ERROR
-#endif  // CXX_BUS_LOGLEVEL
-
-    Logger const LOGGER{.logLevel = LogLevel::CXX_BUS_LOGLEVEL};
   }  // namespace
 
   DBusMatchRule DBusMatchRule::Create()

@@ -17,7 +17,7 @@ std::string const METHOD_NAME = "Benchmark";
 
 static void BM_EmptyMessage(benchmark::State& state)
 {
-  boost::asio::io_context ioContext{};
+  boost::asio::io_context ioContext{1};
   auto work = [&ioContext, &state]() -> boost::asio::awaitable<void>
   {
     auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
@@ -156,7 +156,7 @@ static void BM_NestedMapMessage(benchmark::State& state)
   ioContext.run();
 }
 
-BENCHMARK(BM_EmptyMessage);
-BENCHMARK(BM_StringMessage);
-BENCHMARK(BM_BigStringMessage);
-BENCHMARK(BM_NestedMapMessage);
+BENCHMARK(BM_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(BM_NestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();

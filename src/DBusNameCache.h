@@ -32,19 +32,21 @@
 
 namespace cxxbus
 {
-  class DBusConnection;
+  template <bool SingleThreaded = true>
+  class DBusConnectionImpl;
 
-  class DBusNameCache : public std::enable_shared_from_this<DBusNameCache>
+  template <bool SingleThreaded>
+  class DBusNameCache : public std::enable_shared_from_this<DBusNameCache<SingleThreaded>>
   {
    private:
-    DBusConnection& m_conn;
+    DBusConnectionImpl<SingleThreaded>& m_conn;
     std::unordered_map<std::string, std::set<std::string>> m_wellKnownNames;
 
    private:
     void OnNameOwnerChanged(IncomingDBusMessage message);
 
    public:
-    DBusNameCache(DBusConnection& conn);
+    DBusNameCache(DBusConnectionImpl<SingleThreaded>& conn);
 
     boost::asio::awaitable<void> SubscribeToNameChanges();
 
@@ -54,3 +56,5 @@ namespace cxxbus
     std::vector<std::string> GetWellKnownNames(std::string const& uniqueName) const;
   };
 }  // namespace cxxbus
+
+#include "DBusNameCache.txx"
