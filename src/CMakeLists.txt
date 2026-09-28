@@ -44,6 +44,8 @@ if(CXXBUS_DEV)
 endif()
 
 if(CXXBUS_ENABLE_TESTS)
+  add_compile_definitions(CXX_UNIT_TESTS=1)
+
   add_subdirectory(test)
 
   # Build the combined executable if we registered any unit tests

@@ -28,15 +28,15 @@ struct OuterOuterStruct
 static void BM_NestedMapSerialisation(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
-  for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
+  for (uint32_t i{}; i < 18; ++i)
   {
-    for (uint32_t bankNr{}; bankNr < 3; ++bankNr)
+    for (uint32_t j{}; j < 3; ++j)
     {
-      for (uint32_t powerLevel{}; powerLevel < 24; ++powerLevel)
+      for (uint32_t k{}; k < 24; ++k)
       {
-        for (uint32_t temperatureLevel{}; temperatureLevel < 32; ++temperatureLevel)
+        for (uint32_t l{}; l < 32; ++l)
         {
-          map[plateNr][bankNr][powerLevel][temperatureLevel] = rand() % 100;
+          map[i][j][k][l] = rand() % 100;
         }
       }
     }
@@ -85,6 +85,29 @@ static void BM_ArraySerialisation(benchmark::State& state)
   }
 }
 
+static void BM_HeaderFieldSerialisation(benchmark::State& state)
+{
+  std::vector<std::tuple<uint8_t, Variant>> headerFields{};
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::SIGNATURE)].decimalCode),
+      Variant::Create(Signature{"u"}));
+  headerFields.emplace_back(static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::PATH)].decimalCode),
+                            Variant::Create(ObjectPath{"/com/dbus/cxxtest"}));
+  headerFields.emplace_back(static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::MEMBER)].decimalCode),
+                            Variant::Create("Hello"));
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::DESTINATION)].decimalCode),
+      Variant::Create("com.dbus.cxxtest"));
+  headerFields.emplace_back(
+      static_cast<uint8_t>(HEADER_FIELDS[static_cast<int>(HeaderFieldCode::INTERFACE)].decimalCode),
+      Variant::Create(DBusInterfaceName{"com.CxxTest"}));
+
+  for (auto _ : state)
+  {
+    MarshalDBusType(headerFields);
+  }
+}
+
 static void BM_StringSerialisation(benchmark::State& state)
 {
   std::string str{};
@@ -118,6 +141,7 @@ static void BM_DoubleSerialisation(benchmark::State& state)
 BENCHMARK(BM_NestedMapSerialisation);
 BENCHMARK(BM_NestedStructSerialisation);
 BENCHMARK(BM_ArraySerialisation);
+BENCHMARK(BM_HeaderFieldSerialisation);
 BENCHMARK(BM_StringSerialisation);
 BENCHMARK(BM_IntegerSerialisation);
 BENCHMARK(BM_DoubleSerialisation);
