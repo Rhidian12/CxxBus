@@ -48,14 +48,11 @@ namespace cxxbus
 {
   inline void ApplyPadding(std::vector<byte>& bytes, uint8_t alignment)
   {
-    uint32_t const result{static_cast<uint32_t>(bytes.size()) % alignment};
-    if (result == 0) return;
-
-#if __cpp_lib_containers_ranges
-    bytes.append_range(std::vector<byte>(static_cast<uint8_t>(alignment - result), '\0'));
-#else
-    bytes.insert(bytes.end(), static_cast<uint8_t>(alignment - result), '\0');
-#endif
+    size_t const result{bytes.size() % alignment};
+    if (result != 0)
+    {
+      bytes.resize(bytes.size() + (alignment - result));
+    }
   }
 
   inline uint32_t AddPaddingToSize(uint32_t& size, uint8_t alignment)
