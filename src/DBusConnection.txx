@@ -567,20 +567,37 @@ namespace cxxbus
           {
             LOG_TRACE(LOGGER, "Rule '{}' matched incoming signal", info.rule.GetRule());
             boost::asio::io_context& ioContext{info.executeOnUserContext ? m_userIOContext : *m_state->ioContext};
+            auto invokeSignalHandlers = [](MatchRuleInfo info,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+            {
+              for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& cb : info.callback)
+              {
+                co_await cb(message);
+              }
+              co_return;
+            };
+
             if (!info.callback.empty())
             {
-              boost::asio::co_spawn(
-                  ioContext,
-                  [info, message = message]() -> boost::asio::awaitable<void>
-                  {
-                    for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& cb :
-                         info.callback)
-                    {
-                      co_await cb(message);
-                    }
-                    co_return;
-                  },
-                  boost::asio::detached);
+              // In `SingleThreaded` mode we're guaranteed to always run everything on the `m_userIOContext` so just
+              // invoke our signal handlers
+              if constexpr (SingleThreaded)
+              {
+                co_await invokeSignalHandlers(info, message);
+              }
+              else
+              {
+                // We check the activeContext with the asked ioContext here because user signal handlers run on
+                // `m_userIOContext` while the DBusNameCache wants things to run on our internal thread
+                if (state->activeContext == ioContext.get_executor())
+                {
+                  co_await invokeSignalHandlers(info, message);
+                }
+                else
+                {
+                  boost::asio::co_spawn(ioContext, invokeSignalHandlers(info, message), boost::asio::detached);
+                }
+              }
             }
           }
         }
@@ -604,20 +621,32 @@ namespace cxxbus
           }
         }
 
-        LOG_TRACE(LOGGER, "Invoking ObjectPath handler");
-        boost::asio::co_spawn(
-            m_userIOContext,
-            [message = std::move(message), state = std::move(state)]() mutable -> boost::asio::awaitable<void>
+        auto invokeObjectPathHandlers = [](std::shared_ptr<InternalState> state,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        {
+          for (auto const& [_, handlers] : state->objectPathHandlers)
+          {
+            for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
             {
-              for (auto const& [_, handlers] : state->objectPathHandlers)
-              {
-                for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
-                {
-                  co_await handler(message);
-                }
-              }
-            },
-            boost::asio::detached);
+              co_await handler(message);
+            }
+          }
+        };
+
+        LOG_TRACE(LOGGER, "Invoking ObjectPath handler");
+        if constexpr (SingleThreaded)
+        {
+          // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
+          co_await invokeObjectPathHandlers(std::move(state), std::move(message));
+        }
+        else
+        {
+          // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
+          // `m_userIOContext` so enqueue them on `m_userIOContext`
+          boost::asio::co_spawn(m_userIOContext, invokeObjectPathHandlers(std::move(state), std::move(message)),
+                                boost::asio::detached);
+        }
+
         co_return;
       }
 
@@ -625,18 +654,30 @@ namespace cxxbus
       if (!state->onIncomingSignal.empty())
       {
         LOG_TRACE(LOGGER, "OnIncoming has subscribers, so calling those");
-        boost::asio::co_spawn(
-            m_userIOContext,
-            [state = std::move(state), message = std::move(message)]() -> boost::asio::awaitable<void>
-            {
-              for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& signal :
-                   state->onIncomingSignal)
-              {
-                co_await signal(message);
-              }
-              co_return;
-            },
-            boost::asio::detached);
+        auto invokeOnIncomingHandlers = [](std::shared_ptr<InternalState> state,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        {
+          for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& signal :
+               state->onIncomingSignal)
+          {
+            co_await signal(message);
+          }
+          co_return;
+        };
+
+        if constexpr (SingleThreaded)
+        {
+          // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
+          co_await invokeOnIncomingHandlers(std::move(state), std::move(message));
+        }
+        else
+        {
+          // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
+          // `m_userIOContext` so enqueue them on `m_userIOContext`
+          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), std::move(message)),
+                                boost::asio::detached);
+        }
+
         co_return;
       }
 
@@ -822,7 +863,7 @@ namespace cxxbus
   void DBusConnectionImpl<SingleThreaded>::SendMessageNoReplySync(DBusMessage message)
   {
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
-    if (message.ExpectsReply())
+    if (message.ExpectsReply()) [[unlikely]]
     {
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
@@ -1263,7 +1304,7 @@ namespace cxxbus
                 serial, messageType, headerFieldArrLength, messageLength},
             std::ranges::to<std::vector>(
                 rawFullReply | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
-        co_await HandleReadMessage(std::move(message));
+        boost::asio::co_spawn(state->activeContext, HandleReadMessage(std::move(message)), boost::asio::detached);
       }
       catch (boost::system::system_error const& ex)
       {
