@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 #include "DBus.h"
@@ -86,6 +87,8 @@ namespace cxxbus
     IncomingDBusMessage() = default;
 
     std::optional<std::string> const& GetMember() const;
+    uint32_t GetSerial() const;
+    std::optional<std::string> const& GetSender() const;
     DBusMessageHeader const& GetHeader() const;
 
     template <IsDBusType T>

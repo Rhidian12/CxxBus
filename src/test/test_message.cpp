@@ -40,8 +40,7 @@ struct DBusMessageTestSuite : ::testing::Test
 
 TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
 {
-  DBusMessage msg{DBusMessage::Method("Hello")
-                      .Path(ObjectPath{"/org/freedesktop/DBus"})
+  DBusMessage msg{DBusMessage::Method("Hello", ObjectPath{"/org/freedesktop/DBus"})
                       .Interface(DBusInterfaceName{"org.freedesktop.DBus"})};
 
   // clang-format off
@@ -84,7 +83,7 @@ TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
  
 TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
 {
-  DBusMessage msg{DBusMessage::Method("M").Path(ObjectPath{"/o"}).Interface(DBusInterfaceName{"com.dbus.CxxTest"}).Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
+  DBusMessage msg{DBusMessage::Method("M", ObjectPath{"/o"}).Interface(DBusInterfaceName{"com.dbus.CxxTest"}).Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
  
   // clang-format off
   EXPECT_EQ(msg.Serialize(/*serial=*/5),

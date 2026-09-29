@@ -450,8 +450,7 @@ namespace cxxbus
 
     // Get our unique bus name
     std::optional<IncomingDBusMessage> reply =
-        co_await SendMessageInternal(std::move(DBusMessage::Method("Hello")
-                                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+        co_await SendMessageInternal(std::move(DBusMessage::Method("Hello", ObjectPath{"/org/freedesktop/DBus"})
                                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                    .Destination("org.freedesktop.DBus")));
     if (reply.has_value())
@@ -467,8 +466,7 @@ namespace cxxbus
     for (DBusWellKnownName name : m_state->wellKnownNames)
     {
       reply = co_await SendMessageInternal(std::move(
-          DBusMessage::Method("RequestName")
-              .Path(ObjectPath{"/org/freedesktop/DBus"})
+          DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
               .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
               .Destination("org.freedesktop.DBus")
               .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)})));
@@ -830,8 +828,7 @@ namespace cxxbus
   {
     LOG_TRACE(LOGGER, "Adding match rule '{}'", rule.GetRule());
 
-    co_await SendMessage(DBusMessage::Method("AddMatch")
-                             .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await SendMessage(DBusMessage::Method("AddMatch", ObjectPath{"/org/freedesktop/DBus"})
                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()),
@@ -863,7 +860,8 @@ namespace cxxbus
     else
     {
       co_return co_await boost::asio::co_spawn(
-          m_state->activeContext, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext), boost::asio::use_awaitable);
+          m_state->activeContext, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext),
+          boost::asio::use_awaitable);
     }
   }
 
@@ -895,8 +893,7 @@ namespace cxxbus
   {
     LOG_TRACE(LOGGER, "Removing match rule '{}'", rule.GetRule());
 
-    co_await SendMessage(DBusMessage::Method("RemoveMatch")
-                             .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await SendMessage(DBusMessage::Method("RemoveMatch", ObjectPath{"/org/freedesktop/DBus"})
                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()),
@@ -1028,8 +1025,7 @@ namespace cxxbus
     }
 
     IncomingDBusMessage reply = co_await SendMessage(
-        DBusMessage::Method("RequestName")
-            .Path(ObjectPath{"/org/freedesktop/DBus"})
+        DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Destination("org.freedesktop.DBus")
             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}),
@@ -1093,12 +1089,12 @@ namespace cxxbus
     }
 
     LOG_TRACE(LOGGER, "Releasing our well-known name '{}'", name.GetName());
-    IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
-                                                             .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                             .Destination("org.freedesktop.DBus")
-                                                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                             .Parameter(name.GetName()),
-                                                         DONT_HOP);
+    IncomingDBusMessage const ret =
+        co_await SendMessage(DBusMessage::Method("ReleaseName", ObjectPath{"/org/freedesktop/DBus"})
+                                 .Destination("org.freedesktop.DBus")
+                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                 .Parameter(name.GetName()),
+                             DONT_HOP);
 
     uint32_t const res = ret.Get<uint32_t>();
     switch (res)

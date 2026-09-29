@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -30,11 +31,10 @@
 #include "DBus.h"
 #include "DBusHelpers.h"
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
-  class IncomingDBusMessage;
-
   class InvalidDBusPath : public std::runtime_error
   {
    public:
@@ -59,13 +59,44 @@ namespace cxxbus
    public:
     DBusMessage() = default;
 
-    static DBusMessage Method(std::string const& method);
-    static DBusMessage Method(std::string&& method);
+    template <typename TMethod, std::same_as<ObjectPath> TPath>
+      requires(std::constructible_from<std::string, TMethod>)
+    static DBusMessage Method(TMethod&& method, TPath&& path)
+    {
+      DBusMessage message;
+      message.m_method = std::forward<TMethod>(method);
+      message.m_path = std::forward<TPath>(path);
+      message.m_messageType = DBusMessageType::METHOD_CALL;
+      return message;
+    }
+
+    template <typename TSignal, std::same_as<ObjectPath> TPath, std::same_as<DBusInterfaceName> TInterface>
+      requires(std::constructible_from<std::string, TSignal>)
+    static DBusMessage Signal(TSignal&& signal, TPath&& path, TInterface&& interface)
+    {
+      DBusMessage message;
+      message.m_method = std::forward<TSignal>(signal);
+      message.m_path = std::forward<TPath>(path);
+      message.m_interface = std::forward<TInterface>(interface);
+      message.m_messageType = DBusMessageType::SIGNAL;
+      return message;
+    }
+
+    template <typename TErrorName, typename TErrorMessage>
+      requires(std::constructible_from<std::string, TErrorName> && std::constructible_from<std::string, TErrorMessage>)
+    static DBusMessage Error(IncomingDBusMessage const& incomingMessage, TErrorName&& errorName,
+                             TErrorMessage&& errorMessage)
+    {
+      DBusMessage message;
+      message.m_messageType = DBusMessageType::ERROR;
+      message.m_errorName = std::forward<TErrorName>(errorName);
+      message.m_replySerial = incomingMessage.GetSerial();
+      message.m_destination = incomingMessage.GetSender();
+      message.Parameter(std::forward<TErrorMessage>(errorMessage));
+
+      return message;
+    }
     static DBusMessage Reply(IncomingDBusMessage const& incomingMessage);
-    static DBusMessage Signal(std::string const& signal);
-    static DBusMessage Signal(std::string&& signal);
-    static DBusMessage Error(IncomingDBusMessage const& incomingMessage, std::string errorName,
-                             std::string errorMessage);
 
     DBusMessage& Path(ObjectPath&& path);
     DBusMessage& Path(ObjectPath const& path);

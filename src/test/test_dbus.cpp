@@ -51,19 +51,19 @@ struct DBusConnectionTestSuite : ::testing::Test
           auto tempConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxBusVerifier"},
                                                           BusType::SESSION);
 
-          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                           .Destination("org.freedesktop.DBus")
-                                                           .Parameter(std::string{"com.dbus.CxxTest"})))
-                           .Get<bool>());
+          EXPECT_FALSE(
+              (co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
+                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                  .Destination("org.freedesktop.DBus")
+                                                  .Parameter(std::string{"com.dbus.CxxTest"})))
+                  .Get<bool>());
 
-          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                           .Destination("org.freedesktop.DBus")
-                                                           .Parameter(std::string{"com.dbus.CxxTest2"})))
-                           .Get<bool>());
+          EXPECT_FALSE(
+              (co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
+                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                  .Destination("org.freedesktop.DBus")
+                                                  .Parameter(std::string{"com.dbus.CxxTest2"})))
+                  .Get<bool>());
 
           co_await tempConn->Close();
         },
@@ -115,8 +115,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect", ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                                 .Destination("org.freedesktop.DBus"));
     LOG_INFO(LOGGER, "SENT MESSAGE");
@@ -432,8 +431,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                 .Destination("org.freedesktop.DBus")
                                                 .Parameter(std::string{"com.dbus.CxxTest"}));
@@ -474,8 +472,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                 });
 
     LOG_DEBUG(LOGGER, "Sending message to trigger NameOwnerChanged signal");
-    co_await conn->SendMessage(DBusMessage::Method("RequestName")
-                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await conn->SendMessage(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                    .Destination("org.freedesktop.DBus")
                                    .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
@@ -496,9 +493,8 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    DBusMessage message{DBusMessage::Method("RequestName")
+    DBusMessage message{DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                             .Destination("org.freedesktop.DBus")
                             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
 
@@ -547,14 +543,13 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
         });
 
     LOG_DEBUG(LOGGER, "Sending a message from connection1 to connection2");
-    EXPECT_THROW(
-        co_await conn->SendMessage(
-            DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
-        DBusError);
+    EXPECT_THROW(co_await conn->SendMessage(
+                     DBusMessage::Method("Wow", ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2")),
+                 DBusError);
     try
     {
       co_await conn->SendMessage(
-          DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
+          DBusMessage::Method("Wow", ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
     }
     catch (DBusError const& ex)
     {
@@ -563,11 +558,11 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     }
 
     LOG_DEBUG(LOGGER, "Sending a final message from connection1 to connection2");
-    EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
-                                               .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
-                                               .Destination("com.dbus.CxxTest2")))
-                   .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
-              (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+    EXPECT_EQ(
+        ((co_await conn->SendMessage(
+              DBusMessage::Method("Method", ObjectPath{"/com/dbus/CxxTest2/Method"}).Destination("com.dbus.CxxTest2")))
+             .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
+        (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
     co_await conn2->Close();
     LOG_TRACE(LOGGER, "Finished closing 2nd connection");
@@ -601,9 +596,7 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
         });
 
     co_await conn->SendMessageNoReply(
-        DBusMessage::Signal("SignalEmitted")
-            .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
-            .Path(ObjectPath{"/com/dbus/CxxTest"})
+        DBusMessage::Signal("SignalEmitted", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
     LOG_DEBUG(LOGGER, "Waiting for signal to be received");
@@ -622,8 +615,7 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
     try
     {
       conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SYSTEM);
-      auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                  .Path(ObjectPath{"/org/freedesktop/DBus"})
+      auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
                                                   .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                   .Destination("org.freedesktop.DBus")
                                                   .Parameter(std::string{"com.dbus.CxxTest"}));
@@ -687,9 +679,9 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
         });
 
     co_await conn->SendMessage(
-        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("Handle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
     co_await conn->SendMessage(
-        DBusMessage::Method("DoNotHandle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("DoNotHandle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
 
     co_await chann->async_receive(boost::asio::use_awaitable);
 
@@ -699,7 +691,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
 
     co_await conn2->UnregisterMessageFilter(id);
     co_await conn->SendMessage(
-        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("Handle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
 
     co_await chann->async_receive(boost::asio::use_awaitable);
 
@@ -719,7 +711,7 @@ TEST_F(DBusConnectionTestSuite, TestCallingUnknownMethod)
 
     EXPECT_THROW(
         co_await conn->SendMessage(
-            DBusMessage::Method("UnknownMethod").Destination("com.dbus.CxxTest").Path(ObjectPath{"/com/dbus/CxxTest"})),
+            DBusMessage::Method("UnknownMethod", ObjectPath{"/com/dbus/CxxTest"}).Destination("com.dbus.CxxTest")),
         DBusError);
   };
 }
@@ -766,10 +758,8 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
       str.push_back(std::max(i % 127, 1));
     }
 
-    co_await conn->SendMessage(DBusMessage::Method("Boo")
-                                   .Destination("com.dbus.CxxTest2")
-                                   .Path(ObjectPath{"/com/test/cxxbus"})
-                                   .Parameter(str));
+    EXPECT_NO_THROW(co_await conn->SendMessage(
+        DBusMessage::Method("Boo", ObjectPath{"/com/test/cxxbus"}).Destination("com.dbus.CxxTest2").Parameter(str)));
 
     co_await conn2->Close();
   };

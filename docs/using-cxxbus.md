@@ -55,7 +55,8 @@ Once your connection has been created, you can call functions by using the `Send
 An outgoing `DBusMessage` has 2 potential forms:
 
 - A normal outgoing method call, created by `DBusMessage::Method()`
-  DBus Methods require a Method name, DBus Destination and DBus Object Path, so these are 3 required parameters in the `Method` call.
+  DBus Methods require a Method name and DBus Object Path, so these are 2 required parameters in the `Method` call.
+  The destination is not required but *highly* recommended if you're not sure what you're doing
 - A normal outgoing signal emission, created by `DBusMessage::Signal()`
   DBus Signals require a Signal name, the DBus Interface the signal is emitted from and the object path the signal is emitted from.
 
@@ -64,11 +65,11 @@ using namespace cxxbus;
 
 // Send a message and await a reply from the other side.
 // Our method is `Foo`, the destination is `com.dbus.exampleserver` and the object path is `/foo`
-co_await conn->SendMessage(DBusMessage::Method("Foo", "com.dbus.exampleserver", ObjectPath{"/foo"}));
+co_await conn->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.exampleserver"));
 
 // Important! Signals NEVER expect a reply, so using `SendMessage()` will cause your code to infinitely block
 // Our signal is called 'Bar', our interface is called `com.dbus.exampleclient` and we're invoking it from object path `/client`
-co_await conn->SendMessageNoReply(DBusMessage::Signal("Bar", DBusInterfaceName{"com.dbus.exampleclient"}, ObjectPath{"/client"}))
+co_await conn->SendMessageNoReply(DBusMessage::Signal("Bar", ObjectPath{"/client"}, DBusInterfaceName{"com.dbus.exampleclient"}))
 
 // Our method is `FooBar`, and we're passing a DBus struct along as a parameter for the `FooBar` method by 
 // chaining the `.Parameter()` method into the `DBusMessage::Method()` method

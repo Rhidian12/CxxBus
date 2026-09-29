@@ -54,8 +54,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     auto conn =
         MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
     auto threadID = std::this_thread::get_id();
-    auto reply = conn->SendMessageSync(DBusMessage::Method("Introspect")
-                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = conn->SendMessageSync(DBusMessage::Method("Introspect", ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                            .Destination("org.freedesktop.DBus"));
 
@@ -374,8 +373,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestMethodCall)
   {
     auto conn =
         MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto reply = conn->SendMessageSync(DBusMessage::Method("NameHasOwner")
-                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = conn->SendMessageSync(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                            .Destination("org.freedesktop.DBus")
                                            .Parameter(std::string{"com.dbus.CxxTest"}));
@@ -430,8 +428,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestMatchRule)
           co_return;
         });
 
-    auto reply = conn->SendMessageSync(DBusMessage::Method("RequestName")
-                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = conn->SendMessageSync(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                                            .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                            .Destination("org.freedesktop.DBus")
                                            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
@@ -458,9 +455,8 @@ TEST_F(SyncDBusConnectionTestSuite, TestGettingErrors)
   {
     auto conn =
         MultithreadedDBusConnection::CreateSync(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    DBusMessage message{DBusMessage::Method("RequestName")
+    DBusMessage message{DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                             .Destination("org.freedesktop.DBus")
                             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
 
@@ -509,9 +505,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestEmittingSignal)
                             });
 
     conn->SendMessageNoReplySync(
-        DBusMessage::Signal("SignalEmitted")
-            .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
-            .Path(ObjectPath{"/com/dbus/CxxTest"})
+        DBusMessage::Signal("SignalEmitted", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
     co_await chann->async_receive(boost::asio::use_awaitable);
@@ -554,7 +548,7 @@ TEST_F(SyncDBusConnectionTestSuite, TestSyncDBusConnectionsCallingEachotherInSam
     std::thread t{work};
     ready.get_future().wait();
     conn->SendMessageSync(
-        DBusMessage::Method("Foo").Path(ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
+        DBusMessage::Method("Foo", ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
 
     workGuard.reset();
     t.join();

@@ -206,57 +206,12 @@ namespace cxxbus
     }
   }  // namespace
 
-  DBusMessage DBusMessage::Method(std::string&& method)
-  {
-    DBusMessage message;
-    message.m_method = std::move(method);
-    message.m_messageType = DBusMessageType::METHOD_CALL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Method(std::string const& method)
-  {
-    DBusMessage message;
-    message.m_method = method;
-    message.m_messageType = DBusMessageType::METHOD_CALL;
-    return message;
-  }
-
   DBusMessage DBusMessage::Reply(IncomingDBusMessage const& incomingMessage)
   {
     DBusMessage message;
     message.m_messageType = DBusMessageType::METHOD_RETURN;
-    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
-    message.m_destination = incomingMessage.GetHeader().GetSender();
-    return message;
-  }
-
-  DBusMessage DBusMessage::Signal(std::string const& signal)
-  {
-    DBusMessage message;
-    message.m_method = signal;
-    message.m_messageType = DBusMessageType::SIGNAL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Signal(std::string&& signal)
-  {
-    DBusMessage message;
-    message.m_method = std::move(signal);
-    message.m_messageType = DBusMessageType::SIGNAL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Error(IncomingDBusMessage const& incomingMessage, std::string errorName,
-                                 std::string errorMessage)
-  {
-    DBusMessage message;
-    message.m_messageType = DBusMessageType::ERROR;
-    message.m_errorName = std::move(errorName);
-    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
-    message.m_destination = incomingMessage.GetHeader().GetSender();
-    message.Parameter(std::move(errorMessage));
-
+    message.m_replySerial = incomingMessage.GetSerial();
+    message.m_destination = incomingMessage.GetSender();
     return message;
   }
 
