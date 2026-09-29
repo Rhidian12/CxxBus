@@ -651,7 +651,7 @@ namespace cxxbus
       DBusMessage&& message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-    bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
+    bool const expectsReply{message.ExpectsReply()};
     uint32_t const serial = m_state->serial++;
     // [TODO]: Logic doesnt fully make sense what if 1 not sent but all other messages are sent and we loop back around
     // to 1?
@@ -705,6 +705,16 @@ namespace cxxbus
       LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
       co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
+    }
+
+    if (!message.ExpectsReply()) [[unlikely]]
+    {
+      LOG_ERROR(LOGGER,
+                "SendMessage() can only send messages that expect a reply. Use SendMessageNoReply() if you don't want "
+                "to await a reply");
+      throw std::runtime_error{
+          "SendMessage() can only send messages that expect a reply. Use SendMessageNoReply() if you don't want "
+          "to await a reply"};
     }
 
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message));
@@ -767,7 +777,7 @@ namespace cxxbus
     }
 
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
-    if (!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED))
+    if (message.ExpectsReply())
     {
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
@@ -812,7 +822,7 @@ namespace cxxbus
   void DBusConnectionImpl<SingleThreaded>::SendMessageNoReplySync(DBusMessage message)
   {
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
-    if (!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED))
+    if (message.ExpectsReply())
     {
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }

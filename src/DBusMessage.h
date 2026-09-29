@@ -47,7 +47,7 @@ namespace cxxbus
     std::optional<std::string> m_method;
     std::optional<ObjectPath> m_path;
     std::optional<DBusInterfaceName> m_interface;
-    std::vector<DBusMessageFlags> m_flags;
+    uint8_t m_flags;
     DBusMessageType m_messageType;
 
     std::optional<Signature> m_signature;
@@ -121,7 +121,7 @@ namespace cxxbus
 
     std::vector<uint8_t> Serialize(uint32_t serial) const;
 
-    std::vector<DBusMessageFlags> const& GetFlags() const;
+    uint8_t GetFlags() const;
 
     bool ExpectsReply() const;
 

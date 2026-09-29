@@ -764,3 +764,15 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
     co_await conn2->Close();
   };
 }
+
+TEST_F(DBusConnectionTestSuite, TestMessageMustExpectReply)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+
+    EXPECT_THROW(co_await conn->SendMessage(
+                     DBusMessage::Method("Test", ObjectPath{"/test"}).Flag(DBusMessageFlags::NO_REPLY_EXPECTED)),
+                 std::runtime_error);
+  };
+}
