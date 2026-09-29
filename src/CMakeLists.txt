@@ -38,11 +38,6 @@ create_binary(NAME cxxbus-test-sync
               LIBRARIES cxxbus-lib
               INCLUDE_DIRS ${cxxbus-include-dir})
 
-if(CXXBUS_DEV)
-  set(CXXBUS_ENABLE_TESTS ON)
-  set(CXXBUS_ENABLE_BENCHMARKS ON)
-endif()
-
 if(CXXBUS_ENABLE_TESTS)
   add_compile_definitions(CXX_UNIT_TESTS=1)
 

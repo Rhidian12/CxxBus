@@ -1,78 +1,53 @@
 # CxxBus
 
-Low-level DBus implementation in C++
+CxxBus is a highly performant low-level DBus implementation written in C++20 and is meant as an alternative to SDBus and libdbus.
 
-## Usage
+## Overview
 
-`CxxBus` is an async-first framework and requires an eventloop to work.
-Currently, only `boost::asio` is supported.
-
-The base of `CxxBus` are the `DBusConnection` and `SyncDBusConnection` and are the core parts of `CxxBus` you will be interacting with.
-Both of these provide the same functionality:
-
-- Sending messages and waiting for a reply,
-- Sending messages without waiting for replies (typically used for signals),
-- Adding match rules to match incoming broadcast messages (typically signals)
-
-Messages are easily created via the `DBusMessage` builder-style functions:
-
-```cpp
-using namespace cxxbus;
-
-// A simple message containing a member (method) with a path, destination, interface and a string parameter attached.
-DBusMessage message = DBusMessage::Method("Hello")
-                                    .Path(ObjectPath{"/com/world/hello"}
-                                    .Destination("com.world.Hello")
-                                    .Interface(DBusInterfaceName{"com.world.Hello"})
-                                    .Parameter(std::string{"Hello world!"});
-```
-
-A `DBusMessage` is created by first specifying the type of the message:
-
-- `Method`,
-- `Reply`,
-- `Signal` or
-- `Error`
-
-After the type of the message, all parameters can be added as you want, however, per the DBus Spec, some messages require certain parameters.
-`DBusConnection` and `SyncDBusConnection` will verify that the message you are sending contains the required fields.
-
-Adding a parameter to a message is done via the `Parameter()` function which takes in any DBus-compatible type.
-Note that you can only add **1** parameter to a `DBusMessage`. If you want to add more than 1 value as a parameter to your message, wrap your values in either:
-
-- a `std::tuple` to make it a DBus struct (See [StructToTuple](https://github.com/Rhidian12/StructToTuple) for a library to automatically convert structs to tuples)
-- a `MultipleCompleteTypes` to list multiple types after one another without it being a struct
+`CxxBus` is a Boost.Asio coroutine-based framework and therefore requires a Boost.Asio `io_context` on which to enqueue work.
+There is limited support for a synchronous API with the `MultithreadedDBusConnection`, however it is far less performant and I can only highly recommend to use the async API.
+Boost.Asio **is required for both** the asynchronous and synchronous API.
 
 ## Building
 
+CxxBus is built using CMake:
+
 ```md
-# Configure
-cmake -S . -B build
-
-# Configure in DEBUG
-cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build
-
-# Configure a specific C++ compiler:
-cmake -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -S . -B build
-
-# To run all test cases
-cmake --build build --target run_all_tests
-
-# To set the logging level (Error by default)
-cmake -DCMAKE_CXX_FLAGS="-DCXX_BUS_LOGLEVEL=FATAL" -S . -B build
-
-# To enable sanitizers:
-cmake -DASAN=1 -DUSAN=1 -S . -B build
-cmake -DSANITIZERS=1 -S . -B build # Same as -DASAN=1 -DUSAN=1
-cmake -DTSAN=1 -S . -B build
-# Note that ASAN and TSAN cannot be combined
+cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
+cmake --build build --target cxxbus-lib
 ```
+
+### Configuration flags
+
+- `CXXBUS_ENABLE_TESTS` [boolean] [Default: OFF]
+  Build unit tests. These are available via the target `run_all_tests` or per specific file found in `src/test`
+- `CXXBUS_ENABLE_BENCHMARKS` [boolean] [Default: OFF]
+  Build the benchmarks. These are available via the target `run_all_benchmarks`, or per specific file found in `src/benchmarks`
+- `CXXBUS_DEV` [boolean] [Default: OFF]
+  quality-of-life flag that sets both `CXXBUS_ENABLE_TESTS` and `CXXBUS_ENABLE_BENCHMARKS`
+- `CMAKE_BUILD_TYPE` [string]
+  Set the CMake build type. Set to `Release` for maximum performance and production use. Set to `Debug` for debugging purposes.
+- `CXXBUS_LOGLEVEL` [string] [Default: ERROR]
+  Sets the logging level of the CxxBus library. Possible values: `TRACE`, `DEBUG`, `INFO`, `ERROR`, `OFF`.
+  For production, leave this to `ERROR`, for debugging, set this to `TRACE` or `DEBUG`.
+  By design, the log level `FATAL` will always be logged as this points to a failure in the library.
+- `CXXBUS_USAN` [boolean] [Default: OFF]
+  Enables a build with Undefined Behaviour Sanitizer. Do not use this in production as it harms performance.
+- `CXXBUS_ASAN` [boolean] [Default: OFF]
+  Enables a build with Address Sanitizer. Do not use this in production as it harms performance.
+- `CXXBUS_TSAN` [boolean] [Default: OFF]
+  Enables a build with Thread Sanitizer. Do not use this in production as it harms performance.
+  Only works with Clang and cannot be combined with ASAN or USAN.
+- `CXXBUS_SANITIZERS` [boolean] [Default: OFF]
+  Quality-of-life flag that sets both `USAN` and `ASAN`. Do not use this in production as it harms performance.
+  Cannot be combined with `TSAN`
 
 ## Requirements
 
 - C++23 compiler, C++20 is partially supported, but prefer C++23.
-- `boost::asio`, `boost::signals2` and `boost::system` are the required Boost libraries
-- `GTest` and `GoogleBenchmark` for the unit tests and benchmarks
+- Boost.Asio available (CxxBus is verified to work with Boost.Asio 1.92.0-1)
+- `GTest` for the unit tests
+- `GoogleBenchmark` for the benchmarks
 
 ## Future work
 

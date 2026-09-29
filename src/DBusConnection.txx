@@ -597,6 +597,7 @@ namespace cxxbus
       {
         LOG_TRACE(LOGGER, "Message's ObjectPath matches a handler");
 
+        // [TODO]: Filter should always be ran, not only when we have object path handlers set
         for (auto const& [_, filter] : state->messageFilters)
         {
           if (co_await filter(message) == MessageHandled::YES)
