@@ -85,6 +85,7 @@ namespace cxxbus
     IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
     IncomingDBusMessage() = default;
 
+    std::optional<std::string> const& GetMember() const;
     DBusMessageHeader const& GetHeader() const;
 
     template <IsDBusType T>

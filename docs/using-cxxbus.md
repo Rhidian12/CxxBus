@@ -5,7 +5,10 @@
 1. [Asynchronous DBus Connections](#asynchronousdbusconnection)
     1. [Creating the DBus Connection](#creating-dbus-connection)
     1. [Calling a method](#calling-a-method)
-    1. [Receiving incoming messages](#receiving-incoming-messages)
+    1. [Receiving & handling incoming messages](#receiving-incoming-messages)
+    1. [Matching signals](#matching-signals)
+    1. [Closing the connection](#closing-the-connection)
+2. [Synchronous DBus API](#synchronous-dbus-api)
 
 Asynchronous DBus Connections
 -----------------------------
@@ -90,7 +93,7 @@ Every kind message is allowed to have any of these parameters and can be added a
 - `Flag()` -> Sets a flag for this message.
   `SendMessageNoReply()` automatically adds the `DBusMessageFlags::NO_REPLY_EXPECTED` flag on messages.
 
-Receiving incoming messages
+Receiving & handling incoming messages
 ---------------------------
 
 This section does not cover replies to earlier sent messages. Those are always automatically returned to the originating `SendMessage()` call.
@@ -99,7 +102,53 @@ There are multiple ways incoming messages can be received & handled. The followi
 
 1. If the message is a signal then the message is matched against any added match rules via `AddMatchRule()`
   If the incoming message matches the added rule it's callback is ran.
+  No other processing on the message occurs if it's a signal.
 2. The incoming message is passed to all registered message filters added via `RegisterMessageFilter()`.
+  The filters are ran in the order they were added.
   If any filter returns `MessageHandled::YES` then no other filters are ran and the message is considered handled and
   no other processing on the message occurs.
-3
+3. The incoming message is passed to any object path handler added via `RegisterObjectPathHandler()` if the message's path matches the registered object path.
+4. If previous steps did not handle the message, then the final fallback is to pass the message to handlers registered via `ReceiveIncomingMessages()`
+  This is a general-case handler to receive *any* incoming message (as long as it's not a signal) regardless of interface, path, ...
+5. If none of the above steps handled the message we return a DBus error of type `org.freedesktop.DBus.Error.UnknownMethod`.
+
+Upon receiving a message, you should generally send a reply back if the sender is expecting a reply.
+
+```cpp
+using namespace cxxbus;
+
+std::shared_ptr<DBusConnection> conn = co_await DBusConnection::Create(ioContext, 
+                                                                       DBusWellKnownName{"com.dbus.exampleserver"}, BusType::SESSION);
+
+// Accept incoming messages on the destination `com.dbus.exampleserver` (as defined above when we created the connection) that also 
+// specifies the path `/foo`
+co_await conn->RegisterObjectPathHandler(ObjectPath{"/foo"}, [conn](IncomingDBusMessage const & message) -> boost::asio::awaitable<void> {
+  // If the method (= member in DBus terminology) is "The Answer!", send a reply back!
+  if (*message.GetMember() == "The Answer!")
+  {
+    co_await conn->SendMessageNoReply(DBusMessage::Reply(message).Parameter("Everything!"));
+  }
+});
+```
+
+Matching signals
+----------------
+
+To match incoming signals, you can add [DBus Match Rules](https://dbus.freedesktop.org/doc/dbus-specification.html#:~:text=Match%20Rules,-An) via the `AddMatchRule()` function.
+
+Eavesdropping is currently not supported.
+
+Closing the connection
+----------------------
+
+The `DBusConnection` should be closed at the end of the program by calling the provided `Close()` function.
+This will kill the connection to the dbus-daemon and release any acquired well-known names.
+
+Synchronous DBus API
+--------------------
+
+The `MultithreadedDBusConnection` supports both a synchronous and asynchronous API. The synchronous API is identical to the asynchronous API and is suffixed with `Sync`, e.g. `CreateSync()` instead of `Create()`.
+
+There is no possibility of using a fully synchronous DBus API without relying on Boost.Asio or disabling the asynchronous API.
+
+CxxBus is asynchronous-first and any synchronous support is second-class, but should work.

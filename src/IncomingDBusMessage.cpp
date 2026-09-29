@@ -262,6 +262,11 @@ namespace cxxbus
   {
   }
 
+  std::optional<std::string> const& IncomingDBusMessage::GetMember() const
+  {
+    return m_header.GetMember();
+  }
+
   DBusMessageHeader const& IncomingDBusMessage::GetHeader() const
   {
     return m_header;
