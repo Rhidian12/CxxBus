@@ -712,6 +712,7 @@ namespace cxxbus
     // 4th, check if we're expecting a reply
     if (!expectsReply)
     {
+      LOG_TRACE(LOGGER, "Not expecting reply, returning ...");
       co_return std::nullopt;
     }
 

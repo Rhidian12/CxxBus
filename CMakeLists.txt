@@ -65,14 +65,14 @@ if(CXXBUS_ASAN)
   add_link_options(-fsanitize=address -fno-omit-frame-pointer)
 endif()
 
-if(USAN)
+if(CXXBUS_USAN)
   message(STATUS "Enabling UndefinedBehaviorSanitizer")
 
   add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=undefined -fno-omit-frame-pointer)
 endif()
 
-if(TSAN)
+if(CXXBUS_TSAN)
   message(STATUS "Enabling ThreadSanitizer")
 
   add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)

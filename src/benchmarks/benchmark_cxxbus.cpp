@@ -30,7 +30,7 @@ static void BM_EmptyMessage(benchmark::State& state)
     for (auto _ : state)
     {
       co_await clientConn->SendMessage(
-          std::move(cxxbus::DBusMessage::Method(METHOD_NAME).Destination(WELL_KNOWN_NAME.GetName()).Path(OBJECT_PATH)));
+          std::move(cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName())));
     }
 
     co_await serverConn->Close();
@@ -62,10 +62,8 @@ static void BM_StringMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
-                                           .Destination(WELL_KNOWN_NAME.GetName())
-                                           .Path(OBJECT_PATH)
-                                           .Parameter(str));
+      co_await clientConn->SendMessage(
+          cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName()).Parameter(str));
     }
 
     co_await serverConn->Close();
@@ -97,10 +95,8 @@ static void BM_BigStringMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
-                                           .Destination(WELL_KNOWN_NAME.GetName())
-                                           .Path(OBJECT_PATH)
-                                           .Parameter(str));
+      co_await clientConn->SendMessage(
+          cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName()).Parameter(str));
     }
 
     co_await serverConn->Close();
@@ -141,10 +137,8 @@ static void BM_NestedMapMessage(benchmark::State& state)
 
     for (auto _ : state)
     {
-      co_await clientConn->SendMessage(cxxbus::DBusMessage::Method(METHOD_NAME)
-                                           .Destination(WELL_KNOWN_NAME.GetName())
-                                           .Path(OBJECT_PATH)
-                                           .Parameter(map));
+      co_await clientConn->SendMessage(
+          cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName()).Parameter(map));
     }
 
     co_await serverConn->Close();

@@ -47,7 +47,7 @@ namespace cxxbus
     std::optional<std::string> m_method;
     std::optional<ObjectPath> m_path;
     std::optional<DBusInterfaceName> m_interface;
-    uint8_t m_flags;
+    uint8_t m_flags{};
     DBusMessageType m_messageType;
 
     std::optional<Signature> m_signature;
@@ -59,8 +59,8 @@ namespace cxxbus
    public:
     DBusMessage() = default;
 
-    template <typename TMethod, std::same_as<ObjectPath> TPath>
-      requires(std::constructible_from<std::string, TMethod>)
+    template <typename TMethod, typename TPath>
+      requires(std::constructible_from<std::string, TMethod> && std::same_as<std::remove_cvref_t<TPath>, ObjectPath>)
     static DBusMessage Method(TMethod&& method, TPath&& path)
     {
       DBusMessage message;
@@ -70,8 +70,9 @@ namespace cxxbus
       return message;
     }
 
-    template <typename TSignal, std::same_as<ObjectPath> TPath, std::same_as<DBusInterfaceName> TInterface>
-      requires(std::constructible_from<std::string, TSignal>)
+    template <typename TSignal, typename TPath, typename TInterface>
+      requires(std::constructible_from<std::string, TSignal> && std::same_as<std::remove_cvref_t<TPath>, ObjectPath> &&
+               std::same_as<std::remove_cvref_t<TInterface>, DBusInterfaceName>)
     static DBusMessage Signal(TSignal&& signal, TPath&& path, TInterface&& interface)
     {
       DBusMessage message;
