@@ -920,7 +920,7 @@ namespace cxxbus
   {
     uint32_t const arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
 
-    if (arrLength >= 2 << 26) [[unlikely]]
+    if (arrLength >= 1 << 26) [[unlikely]]
     {
       throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
     }
