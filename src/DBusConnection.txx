@@ -605,21 +605,20 @@ namespace cxxbus
         co_return;
       }
 
+      for (auto const& [_, filter] : state->messageFilters)
+      {
+        if (co_await filter(message) == MessageHandled::YES)
+        {
+          co_return;
+        }
+      }
+
       std::string const path =
           messageHeader.GetObjectPath().transform([](ObjectPath const& path) { return path.GetPath(); }).value_or("");
 
       if (state->objectPathHandlers.contains(path))
       {
         LOG_TRACE(LOGGER, "Message's ObjectPath matches a handler");
-
-        // [TODO]: Filter should always be ran, not only when we have object path handlers set
-        for (auto const& [_, filter] : state->messageFilters)
-        {
-          if (co_await filter(message) == MessageHandled::YES)
-          {
-            co_return;
-          }
-        }
 
         auto invokeObjectPathHandlers = [](std::shared_ptr<InternalState> state,
                                            IncomingDBusMessage message) -> boost::asio::awaitable<void>

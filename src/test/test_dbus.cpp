@@ -776,3 +776,48 @@ TEST_F(DBusConnectionTestSuite, TestMessageMustExpectReply)
                  std::runtime_error);
   };
 }
+
+TEST_F(DBusConnectionTestSuite, TestFilterPrecedesObjectPathHandler)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+    bool messageFilterRan{};
+    bool objectPathHandlerRan{};
+
+    // We shouldn't require the object path that we're sending to be registered to run our message filter
+    co_await conn->RegisterObjectPathHandler(
+        ObjectPath{"/"},
+        [this, &objectPathHandlerRan](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          objectPathHandlerRan = true;
+          co_return co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+        });
+
+    co_await conn->RegisterMessageFilter(
+        [this, &messageFilterRan](IncomingDBusMessage const& msg) -> boost::asio::awaitable<MessageHandled>
+        {
+          messageFilterRan = true;
+          co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          co_return MessageHandled::YES;
+        });
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest"));
+
+    EXPECT_TRUE(messageFilterRan);
+    EXPECT_FALSE(objectPathHandlerRan);
+
+    messageFilterRan = false;
+
+    // In fact, we shouldnt need ANY object path handler registered to run our message filters
+    co_await conn->UnregisterObjectPathHandler(ObjectPath{"/foo"});
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest"));
+
+    EXPECT_TRUE(messageFilterRan);
+    EXPECT_FALSE(objectPathHandlerRan);
+
+    co_await conn2->Close();
+  };
+}
