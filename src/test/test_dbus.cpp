@@ -4,7 +4,9 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
+#include <boost/asio/detail/epoll_reactor.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
@@ -18,6 +20,8 @@
 #include "src/Log.h"
 
 using namespace cxxbus;
+
+using namespace std::chrono_literals;
 
 struct DBusConnectionTestSuite : ::testing::Test
 {
@@ -817,6 +821,109 @@ TEST_F(DBusConnectionTestSuite, TestFilterPrecedesObjectPathHandler)
 
     EXPECT_TRUE(messageFilterRan);
     EXPECT_FALSE(objectPathHandlerRan);
+
+    co_await conn2->Close();
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>
+        blockMessageChannels{};
+
+    co_await conn->RegisterObjectPathHandler(
+        ObjectPath{"/foo"},
+        [this, &blockMessageChannels](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> channel{
+              std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+          boost::asio::experimental::channel<void(boost::system::error_code)>* chann = channel.get();
+          blockMessageChannels.push_back(std::move(channel));
+
+          // block any incoming message until we finally get the message that would cause us to overwrite an
+          // existing message
+          if (msg.Get<bool>())
+          {
+            // Replying here will properly return but our very first message we sent will be blocked and never get
+            // handled ...
+            LOG_DEBUG(LOGGER, "Got the Nth + 1 message!");
+            co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          }
+          else
+          {
+            LOG_DEBUG(LOGGER, "Got a message to block");
+
+            co_await chann->async_receive(boost::asio::use_awaitable);
+
+            // Now that we've been given the go-ahead, send a reply and unblock this channel
+            co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          }
+        });
+
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>
+        messageResolvedChannels{};
+
+    // Fill up the message buffer
+    LOG_DEBUG(LOGGER, "Filling up the message buffer");
+    boost::asio::experimental::channel<void(boost::system::error_code)> allMessagesSentChannel{ioService, 1};
+    for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
+    {
+      std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> channel{
+          std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+      boost::asio::experimental::channel<void(boost::system::error_code)>* chann = channel.get();
+
+      boost::asio::co_spawn(
+          ioService,
+          [conn2, i, &allMessagesSentChannel, this]() -> boost::asio::awaitable<void>
+          {
+            if (i == CXX_BUS_MAX_CONCURRENT_MESSAGES - 1)
+            {
+              boost::asio::co_spawn(
+                  ioService,
+                  [&allMessagesSentChannel] -> boost::asio::awaitable<void>
+                  {
+                    allMessagesSentChannel.async_send({}, boost::asio::detached);
+                    co_return;
+                  },
+                  boost::asio::detached);
+            }
+            co_await conn2->SendMessage(
+                DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest").Parameter(false));
+            co_return;
+          },
+          [chann](std::exception_ptr)
+          {
+            // We got our reply!
+            chann->async_send({}, boost::asio::detached);
+          });
+
+      messageResolvedChannels.push_back(std::move(channel));
+    }
+
+    co_await allMessagesSentChannel.async_receive(boost::asio::use_awaitable);
+
+    // This next call will instantly resolve, however, our very first call from above will never resolve.
+    LOG_DEBUG(LOGGER, "Sending Nth + 1 message");
+    co_await conn2->SendMessage(
+        DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest").Parameter(true));
+
+    // Unblock all of our waiting messages
+    LOG_DEBUG(LOGGER, "Unblocking all waiting messages");
+    for (auto& chann : blockMessageChannels)
+    {
+      chann->async_send({}, boost::asio::detached);
+    }
+
+    LOG_DEBUG(LOGGER, "Waiting for all messages to be resolved");
+    for (auto& chann : messageResolvedChannels)
+    {
+      co_await chann->async_receive(boost::asio::cancel_after(3s, boost::asio::use_awaitable));
+    }
 
     co_await conn2->Close();
   };

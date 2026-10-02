@@ -83,6 +83,7 @@ namespace cxxbus
       return message;
     }
 
+    // [TODO]: Error names have the same nqaming requirements as DBus Interfaces
     template <typename TErrorName, typename TErrorMessage>
       requires(std::constructible_from<std::string, TErrorName> && std::constructible_from<std::string, TErrorMessage>)
     static DBusMessage Error(IncomingDBusMessage const& incomingMessage, TErrorName&& errorName,
