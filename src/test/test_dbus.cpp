@@ -871,7 +871,7 @@ TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
     // Fill up the message buffer
     LOG_DEBUG(LOGGER, "Filling up the message buffer");
     boost::asio::experimental::channel<void(boost::system::error_code)> allMessagesSentChannel{ioService, 1};
-    for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
+    for (int i{}; i < CXXBUS_MAX_CONCURRENT_MESSAGES; ++i)
     {
       std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> channel{
           std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
@@ -881,7 +881,7 @@ TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
           ioService,
           [conn2, i, &allMessagesSentChannel, this]() -> boost::asio::awaitable<void>
           {
-            if (i == CXX_BUS_MAX_CONCURRENT_MESSAGES - 1)
+            if (i == CXXBUS_MAX_CONCURRENT_MESSAGES - 1)
             {
               boost::asio::co_spawn(
                   ioService,

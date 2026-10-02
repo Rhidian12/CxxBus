@@ -48,7 +48,9 @@
 
 namespace cxxbus
 {
-#define CXX_BUS_MAX_CONCURRENT_MESSAGES 56
+#ifndef CXXBUS_MAX_CONCURRENT_MESSAGES
+#define CXXBUS_MAX_CONCURRENT_MESSAGES 56
+#endif
 
   enum class MessageHandled
   {

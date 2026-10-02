@@ -229,7 +229,7 @@ namespace cxxbus
       m_state->ioThread = std::make_shared<std::thread>(&IOThread, ioContext);
     }
 
-    for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
+    for (int i{}; i < CXXBUS_MAX_CONCURRENT_MESSAGES; ++i)
     {
       m_state->replyChannels.emplace_back(
           boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>{
@@ -539,7 +539,7 @@ namespace cxxbus
 
       // This can only be set to 'true' if we didn't send a message with this serial first
       // which should be impossible
-      if (ChannelInfo& channInfo{state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES]};
+      if (ChannelInfo& channInfo{state->replyChannels[replySerial % CXXBUS_MAX_CONCURRENT_MESSAGES]};
           channInfo.serial == replySerial && !channInfo.ready)
       {
         co_await channInfo.channel.async_send(boost::system::error_code{}, std::move(message),
@@ -701,7 +701,7 @@ namespace cxxbus
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
     bool const expectsReply{message.ExpectsReply()};
     uint32_t const serial = m_state->serial++;
-    ChannelInfo& channInfo{m_state->replyChannels[serial % CXX_BUS_MAX_CONCURRENT_MESSAGES]};
+    ChannelInfo& channInfo{m_state->replyChannels[serial % CXXBUS_MAX_CONCURRENT_MESSAGES]};
     boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* channel{
         &channInfo.channel};
     bool newChannelUsed{};
