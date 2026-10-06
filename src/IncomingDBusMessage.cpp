@@ -282,6 +282,11 @@ namespace cxxbus
     return m_header;
   }
 
+  std::optional<Signature> const& IncomingDBusMessage::GetSignature() const
+  {
+    return m_header.GetSignature();
+  }
+
   bool IncomingDBusMessage::HasArguments() const
   {
     return !m_messageBody.empty();

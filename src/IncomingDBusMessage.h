@@ -90,6 +90,7 @@ namespace cxxbus
     uint32_t GetSerial() const;
     std::optional<std::string> const& GetSender() const;
     DBusMessageHeader const& GetHeader() const;
+    std::optional<Signature> const& GetSignature() const;
 
     template <IsDBusType T>
     T Get() const

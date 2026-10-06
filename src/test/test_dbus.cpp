@@ -10,8 +10,10 @@
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
+#include <cstdint>
 #include <functional>
 
+#include "src/DBus.h"
 #include "src/DBusConnection.h"
 #include "src/DBusMatchRule.h"
 #include "src/DBusMessage.h"
@@ -22,6 +24,71 @@
 using namespace cxxbus;
 
 using namespace std::chrono_literals;
+using namespace std::string_literals;
+
+namespace
+{
+  IncomingDBusMessage MakeSignalMessage(std::string const& param)
+  {
+    std::vector<byte> serializedParam = MarshalDBusType(param);
+    std::vector<byte> fullMessageBytes{
+        'l',  0x04, 0x00, 0x01,  // endian, type, flags, version
+        0x00, 0x00, 0x00, 0x00,  // body length = TO BE FILLED IN
+        0x01, 0x00, 0x00, 0x00,  // serial = 1
+        0x3F, 0x00, 0x00, 0x00,  // Header fields length: 63
+
+        0x01, 0x01, 'o',  0x00,  // header field variant for ObjectPath
+        0x01, 0x00, 0x00, 0x00,  // object path length: u32 = 1
+        '/',  0x00,              // Object path
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x02, 0x01, 's',  0x00,                               // Header field variant for Interface
+        0x08, 0x00, 0x00, 0x00,                               // String length: u32 = 8
+        'c',  'o',  'm',  '.',  'T',  'e',  's',  't', 0x00,  // string
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x03, 0x01, 's',  0x00,  // header field variant for Member
+        0x01, 0x00, 0x00, 0x00,  // string length: u32 = 1
+        'A',  0x00,              // string
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x08, 0x01, 'g',  0x00,  // Declare header field variant for Signature
+        0x01, 's',  0x00,        // String signature
+
+        0x00  // Padding
+    };
+
+    // Fill in body length
+    uint32_t paramSize{static_cast<uint32_t>(serializedParam.size())};
+    std::memcpy(fullMessageBytes.data() + 4, &paramSize, sizeof(uint32_t));
+
+    // Add serialized data
+    fullMessageBytes.append_range(serializedParam);
+
+    auto headerData =
+        UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
+            std::ranges::to<std::vector>(fullMessageBytes | std::views::take(FIRST_HEADER_PART_SIZE)), "yyyyuuu");
+    uint32_t const messageLength = headerData.GetType<4>();
+    uint32_t const headerFieldArrLength = headerData.GetType<6>();
+    uint32_t const serial = headerData.GetType<5>();
+    DBusMessageType const messageType = static_cast<DBusMessageType>(headerData.GetType<1>());
+
+    uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
+    uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
+
+    return IncomingDBusMessage{
+        DBusMessageHeader{
+            std::span<byte const>{fullMessageBytes.begin(),
+                                  fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
+            serial, messageType, headerFieldArrLength, messageLength},
+        std::ranges::to<std::vector>(
+            fullMessageBytes | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
+  }
+
+}  // namespace
 
 struct DBusConnectionTestSuite : ::testing::Test
 {
@@ -582,30 +649,53 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
-    bool signalEmitted{};
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann2{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+    bool structSignalEmitted{};
+    bool mapSignalEmitted{};
     co_await conn2->AddMatchRule(
-        DBusMatchRule::Create().Member("SignalEmitted"),
-        [&signalEmitted, chann, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        DBusMatchRule::Create().Member("StructSignalEmitted"),
+        [&structSignalEmitted, chann](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
-          LOG_INFO(LOGGER, "Received emitted signal");
-          signalEmitted = true;
+          LOG_DEBUG(LOGGER, "Received emitted struct signal");
+          structSignalEmitted = true;
           EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
                     (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
-
-          boost::asio::co_spawn(
-              ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
-              boost::asio::detached);
+          chann->async_send(boost::system::error_code{}, boost::asio::detached);
           co_return;
         });
 
+    co_await conn2->AddMatchRule(
+        DBusMatchRule::Create().Member("MapSignalEmitted"),
+        [&mapSignalEmitted, chann2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          LOG_DEBUG(LOGGER, "Received emitted map signal");
+          mapSignalEmitted = true;
+          EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
+                    (std::map<std::string, std::tuple<std::string, uint64_t>>{
+                        {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          chann2->async_send(boost::system::error_code{}, boost::asio::detached);
+          co_return;
+        });
+
+    LOG_DEBUG(LOGGER, "Emitting struct signal!");
     co_await conn->SendMessageNoReply(
-        DBusMessage::Signal("SignalEmitted", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+        DBusMessage::Signal("StructSignalEmitted", ObjectPath{"/com/dbus/CxxTest"},
+                            DBusInterfaceName{"com.dbus.CxxTest"})
             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
-    LOG_DEBUG(LOGGER, "Waiting for signal to be received");
+    LOG_DEBUG(LOGGER, "Emitting map signal!");
+    co_await conn->SendMessageNoReply(
+        DBusMessage::Signal("MapSignalEmitted", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(std::map<std::string, std::tuple<std::string, uint64_t>>{
+                {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+
+    LOG_DEBUG(LOGGER, "Waiting for signals to be received");
     co_await chann->async_receive(boost::asio::use_awaitable);
-    EXPECT_TRUE(signalEmitted);
+    co_await chann2->async_receive(boost::asio::use_awaitable);
+
+    EXPECT_TRUE(structSignalEmitted);
+    EXPECT_TRUE(mapSignalEmitted);
 
     co_await conn2->Close();
   };
@@ -926,5 +1016,140 @@ TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
     }
 
     co_await conn2->Close();
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMatchRules)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    std::array<bool, 8> matchRulesTriggered{};
+    bool shouldNotGetTriggered{};
+    std::vector<boost::asio::experimental::channel<void(boost::system::error_code)>> channels;
+    for (size_t i{}; i < matchRulesTriggered.size(); ++i)
+    {
+      channels.emplace_back(ioService, 1);
+    }
+
+    // Test argument matching
+    co_await conn->AddMatchRule(
+        DBusMatchRule::Create().Argument(1, "Foo"),
+        [&matchRulesTriggered, &channels](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          matchRulesTriggered[0] = true;
+          channels[0].async_send({}, boost::asio::detached);
+          co_return;
+        });
+
+    // Test path namespace matching
+    co_await conn->AddMatchRule(
+        DBusMatchRule::Create().PathNamespace(ObjectPath{"/foo"}),
+        [&matchRulesTriggered, &channels](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          if (msg.GetHeader().GetObjectPath() == "/foo")
+          {
+            matchRulesTriggered[1] = true;
+            channels[1].async_send({}, boost::asio::detached);
+          }
+          else if (msg.GetHeader().GetObjectPath() == "/foo/bar")
+          {
+            matchRulesTriggered[2] = true;
+            channels[2].async_send({}, boost::asio::detached);
+          }
+          co_return;
+        });
+
+    // Test argument path matching
+    co_await conn->AddMatchRule(DBusMatchRule::Create().ArgumentPath(0, "/aa/bb/"),
+                                [&matchRulesTriggered, &channels,
+                                 &shouldNotGetTriggered](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+                                {
+                                  if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/")
+                                  {
+                                    matchRulesTriggered[3] = true;
+                                    channels[3].async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/")
+                                  {
+                                    matchRulesTriggered[4] = true;
+                                    channels[4].async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/")
+                                  {
+                                    matchRulesTriggered[5] = true;
+                                    channels[5].async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/cc/")
+                                  {
+                                    matchRulesTriggered[6] = true;
+                                    channels[6].async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "o" && msg.Get<ObjectPath>() == "/aa/bb/cc")
+                                  {
+                                    matchRulesTriggered[7] = true;
+                                    channels[7].async_send({}, boost::asio::detached);
+                                  }
+                                  else
+                                  {
+                                    shouldNotGetTriggered = true;
+                                  }
+
+                                  co_return;
+                                });
+
+    // Trigger argument match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(MultipleCompleteTypes<int, std::string, int>{1, "Foo", 3}));
+
+    // Trigger patch namespace match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/foo"}, DBusInterfaceName{"com.dbus.CxxTest"}));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/foo/bar"}, DBusInterfaceName{"com.dbus.CxxTest"}));
+
+    // Trigger argument path match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/bb/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/bb/cc/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(ObjectPath{"/aa/bb/cc"}));
+
+    // Can't do this via sending messages because the dbus-daemon would not relay these messages because they don't
+    // match our added rules ...
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa"), std::vector<std::string>{}));
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa/b"), std::vector<std::string>{}));
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa/bb"), std::vector<std::string>{}));
+
+    for (auto& chann : channels)
+    {
+      co_await chann.async_receive(boost::asio::use_awaitable);
+    }
+
+    EXPECT_TRUE(std::ranges::all_of(matchRulesTriggered, [](bool b) { return b; }));
+    EXPECT_FALSE(shouldNotGetTriggered);
+
+    co_await conn2->Close();
+
+    co_return;
   };
 }
