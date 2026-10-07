@@ -657,38 +657,57 @@ namespace cxxbus
         co_return;
       }
 
-      // [TODO]: User should let us know whether they actually handled this or not
       if (!state->onIncomingSignal.empty())
       {
         LOG_TRACE(LOGGER, "OnIncoming has subscribers, so calling those");
         auto invokeOnIncomingHandlers = [](std::shared_ptr<InternalState> state,
-                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<MessageHandled>
         {
-          for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& signal :
+          for (std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> const& signal :
                state->onIncomingSignal)
           {
-            co_await signal(message);
+            if (co_await signal(message) == MessageHandled::YES)
+            {
+              co_return MessageHandled::YES;
+            }
           }
-          co_return;
+          co_return MessageHandled::NO;
         };
 
         if constexpr (SingleThreaded)
         {
           // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
-          co_await invokeOnIncomingHandlers(std::move(state), std::move(message));
+          if (co_await invokeOnIncomingHandlers(std::move(state), message) == MessageHandled::YES)
+          {
+            co_return;
+          }
         }
         else
         {
           // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
           // `m_userIOContext` so enqueue them on `m_userIOContext`
-          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), std::move(message)),
-                                boost::asio::detached);
-        }
+          std::shared_ptr<IncomingDBusMessage> msg{std::make_shared<IncomingDBusMessage>(std::move(message))};
+          boost::asio::co_spawn(
+              m_userIOContext, invokeOnIncomingHandlers(std::move(state), *msg),
+              [this, msg](std::exception_ptr, MessageHandled handled) -> void
+              {
+                if (handled == MessageHandled::NO)
+                {
+                  // If nothing handles our message then we return an error to the sender
+                  boost::asio::co_spawn(
+                      m_state->activeContext,
+                      SendMessageNoReply(DBusMessage::Error(*msg, "org.freedesktop.DBus.Error.UnknownMethod",
+                                                            "The method called is not implemented by this connection")),
+                      boost::asio::detached);
+                }
+              });
 
-        co_return;
+          co_return;
+        }
       }
 
       // If nothing handles our message then we return an error to the sender
+      LOG_TRACE(LOGGER, "Message did not get handled. Replying with UnknownMethod error");
       co_await SendMessageNoReply(DBusMessage::Error(message, "org.freedesktop.DBus.Error.UnknownMethod",
                                                      "The method called is not implemented by this connection"));
     }
@@ -1260,7 +1279,7 @@ namespace cxxbus
 
   template <bool SingleThreaded>
   boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::ReceiveIncomingMessages(
-      std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback)
+      std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> callback)
   {
     m_state->onIncomingSignal.push_back(std::move(callback));
     co_return;

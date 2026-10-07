@@ -117,7 +117,7 @@ namespace cxxbus
           std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>>>
           fallbackReplyChannels;
 
-      std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>> onIncomingSignal;
+      std::vector<std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)>> onIncomingSignal;
       std::unordered_map<uint32_t, std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)>>
           messageFilters;
       uint32_t messageFilterID;
@@ -224,7 +224,7 @@ namespace cxxbus
     boost::asio::awaitable<void> UnregisterMessageFilter(uint32_t filterID);
 
     boost::asio::awaitable<void> ReceiveIncomingMessages(
-        std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback);
+        std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback);

@@ -597,11 +597,12 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     co_await conn2->ReceiveIncomingMessages(
-        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<MessageHandled>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
           LOG_DEBUG(LOGGER, "Connection2 received the message, returning an error");
           co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
+          co_return MessageHandled::YES;
         });
 
     co_await conn2->RegisterObjectPathHandler(
@@ -1151,5 +1152,27 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
     co_await conn2->Close();
 
     co_return;
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMethodUnkown)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    co_await conn->ReceiveIncomingMessages(
+        [](IncomingDBusMessage const&) -> boost::asio::awaitable<MessageHandled>
+        {
+          LOG_DEBUG(LOGGER, "Handler got called");
+          co_return MessageHandled::NO;
+        });
+
+    EXPECT_THROW(
+        co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest")),
+        DBusError);
+
+    co_await conn2->Close();
   };
 }
