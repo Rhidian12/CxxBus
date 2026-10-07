@@ -28,7 +28,7 @@ option(CXXBUS_ENABLE_TESTS "Build CxxBus Unit Tests" OFF)
 option(CXXBUS_ENABLE_BENCHMARKS "Build CxxBus Benchmarks" OFF)
 option(CXXBUS_DEV "Build CxxBus Unit Tests & Benchmarks" OFF)
 set(CXXBUS_LOGLEVEL "ERROR" CACHE STRING "Set the CxxBus loglevel")
-set(CXXBUS_MAX_CONCURRENT_MESSAGES 56 CACHE INT "Set the max nr of concurrent messages CxxBus can handle. This is an optimisation. The higher this number, the more memory CxxBus uses")
+set(CXXBUS_MAX_CONCURRENT_MESSAGES 56 CACHE STRING "Set the max nr of concurrent messages CxxBus can handle. This is an optimisation. The higher this number, the more memory CxxBus uses")
 
 if(CXXBUS_SANITIZERS)
   set(CXXBUS_ASAN ON)
