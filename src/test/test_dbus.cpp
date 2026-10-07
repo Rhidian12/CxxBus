@@ -831,8 +831,8 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
     co_await chann->async_receive(boost::asio::use_awaitable);
     LOG_DEBUG(LOGGER, "Detached connection is connected");
 
-    multiConn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
-    co_await multiConn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
+    multiConn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"}, WellKnownNameFlag::NONE);
+    co_await multiConn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"}, WellKnownNameFlag::NONE);
   };
 }
 
