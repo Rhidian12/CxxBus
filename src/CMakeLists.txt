@@ -28,16 +28,6 @@ target_precompile_headers(cxxbus-lib REUSE_FROM pch-target)
 
 set(cxxbus-include-dir ${CMAKE_SOURCE_DIR})
 
-create_binary(NAME cxxbus-test
-              SOURCES main.cpp
-              LIBRARIES cxxbus-lib
-              INCLUDE_DIRS ${cxxbus-include-dir})
-
-create_binary(NAME cxxbus-test-sync
-              SOURCES main_sync.cpp
-              LIBRARIES cxxbus-lib
-              INCLUDE_DIRS ${cxxbus-include-dir})
-
 if(CXXBUS_ENABLE_TESTS)
   add_compile_definitions(CXX_UNIT_TESTS=1)
 
