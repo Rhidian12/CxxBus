@@ -137,8 +137,6 @@ Matching signals
 
 To match incoming signals, you can add [DBus Match Rules](https://dbus.freedesktop.org/doc/dbus-specification.html#:~:text=Match%20Rules,-An) via the `AddMatchRule()` function.
 
-Eavesdropping is currently not supported.
-
 Closing the connection
 ----------------------
 
