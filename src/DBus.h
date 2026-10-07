@@ -1284,7 +1284,6 @@ namespace cxxbus
       throw DBusInvalidSignatureError{std::format("Signature '{}' contains unknown DBus Type Codes.", signature)};
     }
 
-    // [TODO]: stop being lazy and check this at compile time
     if (!AreDBusTypeCodeBracketsEven(signature))
     {
       throw DBusInvalidSignatureError{

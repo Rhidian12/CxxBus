@@ -48,6 +48,9 @@ std::shared_ptr<DBusConnection> conn4 = DBusConnection::CreateDetached(ioContext
 Trying to send messages on the DBus Connection without awaiting the connection is well-defined: Messages are internally queued until the connection is established
 and then processed.
 
+> [!IMPORTANT]
+> An asynchronous DBus connection **MUST** be manually closed via the provided `Close()` method.
+
 Calling a method
 ----------------
 

@@ -466,11 +466,12 @@ namespace cxxbus
     // Now, request a well-known name from the dbus-daemon
     for (DBusWellKnownName name : m_state->wellKnownNames)
     {
-      reply = co_await SendMessageInternal(std::move(
-          DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
-              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-              .Destination("org.freedesktop.DBus")
-              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)})));
+      reply = co_await SendMessageInternal(
+          std::move(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
+                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                        .Destination("org.freedesktop.DBus")
+                        .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                            name.GetName(), static_cast<uint32_t>(WellKnownNameFlag::NONE)})));
 
       if (!reply.has_value())
       {
@@ -488,7 +489,6 @@ namespace cxxbus
         case 1:
           LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
           break;
-        // [TODO]: Allow user passing flags for the Well-known name.
         case 2:
           LOG_ERROR(LOGGER,
                     "Well-known name '{}' is already owned by another connection and we did "
@@ -1102,7 +1102,8 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(DBusWellKnownName name)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(DBusWellKnownName name,
+                                                                                            WellKnownNameFlag flags)
   {
     {
       if (std::ranges::contains(m_state->wellKnownNames, name))
@@ -1115,7 +1116,7 @@ namespace cxxbus
         DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Destination("org.freedesktop.DBus")
-            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}),
+            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(flags)}),
         DONT_HOP);
 
     switch (reply.Get<uint32_t>())
@@ -1123,7 +1124,6 @@ namespace cxxbus
       case 1:
         LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
         break;
-      // [TODO]: Allow user passing flags for the Well-known name.
       case 2:
         LOG_ERROR(LOGGER,
                   "Well-known name '{}' is already owned by another connection and we did "
@@ -1147,15 +1147,16 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(DBusWellKnownName name)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(DBusWellKnownName name,
+                                                                                        WellKnownNameFlag flags)
   {
     if constexpr (SingleThreaded)
     {
-      co_await RequestWellKnownNameImpl(std::move(name));
+      co_await RequestWellKnownNameImpl(std::move(name), flags);
     }
     else
     {
-      co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name)),
+      co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name), flags),
                                      boost::asio::use_awaitable);
     }
   }
@@ -1228,10 +1229,10 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  void DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name)
+  void DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags)
   {
-    WaitOnAsyncWork<void>(*m_state->strand, [this, name = std::move(name)] -> boost::asio::awaitable<void>
-                          { return RequestWellKnownNameImpl(std::move(name)); });
+    WaitOnAsyncWork<void>(*m_state->strand, [this, name = std::move(name), flags] -> boost::asio::awaitable<void>
+                          { return RequestWellKnownNameImpl(std::move(name), flags); });
   }
 
   template <bool SingleThreaded>
@@ -1374,5 +1375,10 @@ namespace cxxbus
 
     LOG_TRACE(LOGGER, "Read Loop is quitting gracefully");
     state->readLoopFinished.async_send(boost::system::error_code{}, boost::asio::detached);
+  }
+
+  inline constexpr WellKnownNameFlag operator|(WellKnownNameFlag a, WellKnownNameFlag b) noexcept
+  {
+    return static_cast<WellKnownNameFlag>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
   }
 }  // namespace cxxbus
