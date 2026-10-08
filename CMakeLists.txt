@@ -92,7 +92,7 @@ include("build-system/CreateBinary.cmake")
 
 enable_testing()
 
-if(CXXBUS_DEV)
+if(CXXBUS_DEV OR CXXBUS_ENABLE_BENCHMARKS)
   include(FetchContent)
 
   FetchContent_Declare(
