@@ -4,9 +4,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
-#include <boost/asio/detail/epoll_reactor.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
-#include <boost/asio/steady_timer.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
