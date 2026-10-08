@@ -343,4 +343,50 @@ namespace cxxbus
   {
     return m_name == str;
   }
+
+  DBusErrorName::DBusErrorName(std::string const& errorName)
+    : m_name()
+  {
+    if (auto result{ValidateDBusInterfaceName(errorName)}; result.has_value())
+    {
+      throw InvalidDBusName{result.value()};
+    }
+
+    m_name = std::move(errorName);
+  }
+
+  std::string const& DBusErrorName::GetName() const
+  {
+    return m_name;
+  }
+
+  uint32_t DBusErrorName::size() const
+  {
+    return m_name.size();
+  }
+
+  DBusErrorName::operator std::string() const
+  {
+    return m_name;
+  }
+
+  bool DBusErrorName::empty() const
+  {
+    return m_name.empty();
+  }
+
+  char const* DBusErrorName::data() const
+  {
+    return m_name.data();
+  }
+
+  bool DBusErrorName::contains(char c) const
+  {
+    return m_name.contains(c);
+  }
+
+  bool DBusErrorName::operator==(std::string const& str) const
+  {
+    return m_name == str;
+  }
 }  // namespace cxxbus

@@ -687,20 +687,20 @@ namespace cxxbus
           // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
           // `m_userIOContext` so enqueue them on `m_userIOContext`
           std::shared_ptr<IncomingDBusMessage> msg{std::make_shared<IncomingDBusMessage>(std::move(message))};
-          boost::asio::co_spawn(
-              m_userIOContext, invokeOnIncomingHandlers(std::move(state), *msg),
-              [this, msg](std::exception_ptr, MessageHandled handled) -> void
-              {
-                if (handled == MessageHandled::NO)
-                {
-                  // If nothing handles our message then we return an error to the sender
-                  boost::asio::co_spawn(
-                      m_state->activeContext,
-                      SendMessageNoReply(DBusMessage::Error(*msg, "org.freedesktop.DBus.Error.UnknownMethod",
-                                                            "The method called is not implemented by this connection")),
-                      boost::asio::detached);
-                }
-              });
+          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), *msg),
+                                [this, msg](std::exception_ptr, MessageHandled handled) -> void
+                                {
+                                  if (handled == MessageHandled::NO)
+                                  {
+                                    // If nothing handles our message then we return an error to the sender
+                                    boost::asio::co_spawn(
+                                        m_state->activeContext,
+                                        SendMessageNoReply(DBusMessage::Error(
+                                            *msg, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
+                                            "The method called is not implemented by this connection")),
+                                        boost::asio::detached);
+                                  }
+                                });
 
           co_return;
         }
@@ -708,7 +708,7 @@ namespace cxxbus
 
       // If nothing handles our message then we return an error to the sender
       LOG_TRACE(LOGGER, "Message did not get handled. Replying with UnknownMethod error");
-      co_await SendMessageNoReply(DBusMessage::Error(message, "org.freedesktop.DBus.Error.UnknownMethod",
+      co_await SendMessageNoReply(DBusMessage::Error(message, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
                                                      "The method called is not implemented by this connection"));
     }
   }

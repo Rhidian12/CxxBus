@@ -601,7 +601,8 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
           LOG_DEBUG(LOGGER, "Connection2 received the message, returning an error");
-          co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
+          co_await conn2->SendMessageNoReply(
+              DBusMessage::Error(message, DBusErrorName{"com.you.Stupid"}, "lol you're so stupid"));
           co_return MessageHandled::YES;
         });
 

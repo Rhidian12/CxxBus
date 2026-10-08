@@ -267,6 +267,27 @@ namespace cxxbus
     bool operator==(std::string const& str) const;
   };
 
+  class DBusErrorName
+  {
+   private:
+    std::string m_name;
+
+   public:
+    explicit DBusErrorName(std::string const& errorName);
+
+    std::string const& GetName() const;
+
+    uint32_t size() const;
+    explicit operator std::string() const;
+    bool empty() const;
+    char const* data() const;
+    bool contains(char c) const;
+
+    auto operator<=>(DBusErrorName const&) const noexcept = default;
+    bool operator==(DBusErrorName const&) const = default;
+    bool operator==(std::string const& str) const;
+  };
+
   class DBusError : public std::runtime_error
   {
    private:

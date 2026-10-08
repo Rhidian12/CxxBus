@@ -83,15 +83,15 @@ namespace cxxbus
       return message;
     }
 
-    // [TODO]: Error names have the same nqaming requirements as DBus Interfaces
     template <typename TErrorName, typename TErrorMessage>
-      requires(std::constructible_from<std::string, TErrorName> && std::constructible_from<std::string, TErrorMessage>)
+      requires(std::constructible_from<DBusErrorName, TErrorName> &&
+               std::constructible_from<std::string, TErrorMessage>)
     static DBusMessage Error(IncomingDBusMessage const& incomingMessage, TErrorName&& errorName,
                              TErrorMessage&& errorMessage)
     {
       DBusMessage message;
       message.m_messageType = DBusMessageType::ERROR;
-      message.m_errorName = std::forward<TErrorName>(errorName);
+      message.m_errorName = errorName.GetName();
       message.m_replySerial = incomingMessage.GetSerial();
       message.m_destination = incomingMessage.GetSender();
       message.Parameter(std::forward<TErrorMessage>(errorMessage));
