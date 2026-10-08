@@ -66,7 +66,11 @@ namespace
     std::memcpy(fullMessageBytes.data() + 4, &paramSize, sizeof(uint32_t));
 
     // Add serialized data
+#if __cpp_lib_containers_ranges
     fullMessageBytes.append_range(serializedParam);
+#else
+    fullMessageBytes.insert(fullMessageBytes.end(), serializedParam.begin(), serializedParam.end());
+#endif
 
     auto headerData =
         UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
