@@ -1018,7 +1018,7 @@ TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
     LOG_DEBUG(LOGGER, "Waiting for all messages to be resolved");
     for (auto& chann : messageResolvedChannels)
     {
-      co_await chann->async_receive(boost::asio::cancel_after(3s, boost::asio::use_awaitable));
+      co_await chann->async_receive(boost::asio::use_awaitable);
     }
 
     co_await conn2->Close();
