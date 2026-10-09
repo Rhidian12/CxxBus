@@ -17,6 +17,23 @@ cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
 cmake --build build --target cxxbus-lib
 ```
 
+Available targets are:
+
+- `cxxbus-lib`
+  Main build target. Builds the library
+- `run_all_tests`
+  Builds all unit tests. Only available if `CXXBUS_ENABLE_TESTS` is set
+- `run_all_benchmarks`
+  Builds all benchmarks. Only available if `CXXBUS_ENABLE_BENCHMARKS` is set
+- `test_XXX`
+  Every unit test is also separately available through a target `test_<UNIT_TEST_NAME>` where the name is the name of the file.
+  e.g. `test_dbus.cpp` can be built via the `test_dbus` target
+  Only available if `CXXBUS_ENABLE_TESTS` is set
+- `benchmark_XXX`
+  Every benchmark is also separately available through a target `benchmark_<BENCHMARK_NAME>` where the name is the name of the file.
+  e.g. `benchmark_cxxbus.cpp` can be built via the `benchmark_cxxbus` target.
+  Only available if `CXXBUS_ENABLE_BENCHMARKS` is set
+
 ### Configuration flags
 
 - `CXXBUS_ENABLE_TESTS` [boolean] [Default: OFF]

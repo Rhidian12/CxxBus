@@ -48,12 +48,35 @@
 
 namespace cxxbus
 {
-#define CXX_BUS_MAX_CONCURRENT_MESSAGES 256
+#ifndef CXXBUS_MAX_CONCURRENT_MESSAGES
+#define CXXBUS_MAX_CONCURRENT_MESSAGES 56
+#endif
 
   enum class MessageHandled
   {
     YES,
     NO
+  };
+
+  enum class WellKnownNameFlag : uint8_t
+  {
+    NONE = 0x00,
+
+    // If this flag is specified when requesting a new well-known name, then another application can take over ownership
+    // of our acquired well-known name
+    // if they set the REPLACE_EXISTING flag
+    ALLOW_REPLACEMENT = 0x01,
+
+    // When requesting a new name, try to replace the current owner of the name if there is one. If this flag is not
+    // set, the name can only be acquired if there is no owner yet.
+    REPLACE_EXISTING = 0x02,
+
+    // Without this flag, if a name is requested that is already owned, the requesting application will be placed in a
+    // queue to own the name
+    // when the current owner gives it up.
+    // If this flag is not specified, the application will not be put in the queue, and the name request will simply
+    // fail
+    DO_NOT_QUEUE = 0x04,
   };
 
   template <bool SingleThreaded /* = true */>
@@ -73,6 +96,7 @@ namespace cxxbus
     struct ChannelInfo
     {
       boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)> channel;
+      uint32_t serial;
       bool ready;
     };
 
@@ -87,11 +111,13 @@ namespace cxxbus
       std::shared_ptr<boost::asio::io_context> ioContext;
 
       // Store channels to make our 'SendMessage' be awaitable
-      // std::map<uint32_t, boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>*>
-      //     replyChannels;
       std::vector<ChannelInfo> replyChannels;
+      std::unordered_map<
+          uint32_t,
+          std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>>>
+          fallbackReplyChannels;
 
-      std::vector<std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)>> onIncomingSignal;
+      std::vector<std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)>> onIncomingSignal;
       std::unordered_map<uint32_t, std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)>>
           messageFilters;
       uint32_t messageFilterID;
@@ -148,7 +174,7 @@ namespace cxxbus
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessageImpl(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReplyImpl(DBusMessage message);
-    boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name);
+    boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name, WellKnownNameFlag flags);
     boost::asio::awaitable<void> ReleaseWellKnownNameImpl(DBusWellKnownName name);
     boost::asio::awaitable<void> AddMatchRuleImpl(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback,
@@ -198,7 +224,7 @@ namespace cxxbus
     boost::asio::awaitable<void> UnregisterMessageFilter(uint32_t filterID);
 
     boost::asio::awaitable<void> ReceiveIncomingMessages(
-        std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback);
+        std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> callback);
 
     boost::asio::awaitable<void> AddMatchRule(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback);
@@ -215,10 +241,10 @@ namespace cxxbus
     IncomingDBusMessage SendMessageSync(DBusMessage message);
     void SendMessageNoReplySync(DBusMessage message);
 
-    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name);
+    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name, WellKnownNameFlag flags);
     boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name);
 
-    void RequestWellKnownNameSync(DBusWellKnownName name);
+    void RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags);
     void ReleaseWellKnownNameSync(DBusWellKnownName name);
 
     std::vector<DBusWellKnownName> const& GetWellKnownNames() const;

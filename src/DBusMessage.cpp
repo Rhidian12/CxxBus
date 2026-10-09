@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <format>
-#include <iterator>
 #include <magic_enum.hpp>
 #include <optional>
 #include <stdexcept>
@@ -46,12 +45,14 @@ namespace cxxbus
     concept IsAcceptedMessageType =
         requires { requires T == DBusMessageType::METHOD_CALL || T == DBusMessageType::SIGNAL; };
 
-    std::vector<byte> CreateDBusMessage(
-        DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody,
-        std::vector<DBusMessageFlags> const& messageFlags, std::optional<std::string> const& method,
-        std::optional<ObjectPath> const& objectPath, std::optional<DBusInterfaceName> const& interface,
-        std::optional<std::string> destination, std::optional<Signature> const& signature,
-        std::optional<std::string> const& errorName, std::optional<uint32_t> const& replySerial)
+    std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody,
+                                        uint32_t messageFlags, std::optional<std::string> const& method,
+                                        std::optional<ObjectPath> const& objectPath,
+                                        std::optional<DBusInterfaceName> const& interface,
+                                        std::optional<std::string> destination,
+                                        std::optional<Signature> const& signature,
+                                        std::optional<std::string> const& errorName,
+                                        std::optional<uint32_t> const& replySerial)
     {
       // Signature of a DBus Header is yyyyuua(yv)
       // y = byte
@@ -70,10 +71,6 @@ namespace cxxbus
       // message type specifies which fields are required
 
       std::vector<byte> dbusMessage{};
-
-      std::vector<uint8_t> messageFlagsCasted;
-      std::ranges::transform(messageFlags, std::back_inserter(messageFlagsCasted),
-                             [](DBusMessageFlags flag) -> uint8_t { return static_cast<uint8_t>(flag); });
 
       std::vector<std::tuple<uint8_t, Variant>> headerFields{};
       for (HeaderField const& headerField : HEADER_FIELDS)
@@ -180,12 +177,11 @@ namespace cxxbus
           header{
               static_cast<uint8_t>(Endianness::LITTLE_ENDIAN_TYPE),  // Endianness
               static_cast<uint8_t>(msgType),                         // Message Type
-              std::ranges::fold_left(messageFlagsCasted, static_cast<uint8_t>(0),
-                                     [](uint8_t a, uint8_t b) -> uint8_t { return a | b; }),  // Flags
-              static_cast<uint8_t>(1),                                                        // Major version
-              static_cast<uint32_t>(messageBody.size()),  // Length of the message body in bytes
-              serial,                                     // Serial as u32
-              std::move(headerFields)                     // Our array of header fields
+              messageFlags,                                          // Flags
+              static_cast<uint8_t>(1),                               // Major version
+              static_cast<uint32_t>(messageBody.size()),             // Length of the message body in bytes
+              serial,                                                // Serial as u32
+              std::move(headerFields)                                // Our array of header fields
           };
 
 #if __cpp_lib_containers_ranges
@@ -206,57 +202,12 @@ namespace cxxbus
     }
   }  // namespace
 
-  DBusMessage DBusMessage::Method(std::string&& method)
-  {
-    DBusMessage message;
-    message.m_method = std::move(method);
-    message.m_messageType = DBusMessageType::METHOD_CALL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Method(std::string const& method)
-  {
-    DBusMessage message;
-    message.m_method = method;
-    message.m_messageType = DBusMessageType::METHOD_CALL;
-    return message;
-  }
-
   DBusMessage DBusMessage::Reply(IncomingDBusMessage const& incomingMessage)
   {
     DBusMessage message;
     message.m_messageType = DBusMessageType::METHOD_RETURN;
-    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
-    message.m_destination = incomingMessage.GetHeader().GetSender();
-    return message;
-  }
-
-  DBusMessage DBusMessage::Signal(std::string const& signal)
-  {
-    DBusMessage message;
-    message.m_method = signal;
-    message.m_messageType = DBusMessageType::SIGNAL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Signal(std::string&& signal)
-  {
-    DBusMessage message;
-    message.m_method = std::move(signal);
-    message.m_messageType = DBusMessageType::SIGNAL;
-    return message;
-  }
-
-  DBusMessage DBusMessage::Error(IncomingDBusMessage const& incomingMessage, std::string errorName,
-                                 std::string errorMessage)
-  {
-    DBusMessage message;
-    message.m_messageType = DBusMessageType::ERROR;
-    message.m_errorName = std::move(errorName);
-    message.m_replySerial = incomingMessage.GetHeader().GetSerial();
-    message.m_destination = incomingMessage.GetHeader().GetSender();
-    message.Parameter(std::move(errorMessage));
-
+    message.m_replySerial = incomingMessage.GetSerial();
+    message.m_destination = incomingMessage.GetSender();
     return message;
   }
 
@@ -298,7 +249,7 @@ namespace cxxbus
 
   DBusMessage& DBusMessage::Flag(DBusMessageFlags flag)
   {
-    m_flags.push_back(flag);
+    m_flags = m_flags | static_cast<uint8_t>(flag);
     return *this;
   }
 
@@ -308,14 +259,14 @@ namespace cxxbus
                              m_destination, m_signature, m_errorName, m_replySerial);
   }
 
-  std::vector<DBusMessageFlags> const& DBusMessage::GetFlags() const
+  uint8_t DBusMessage::GetFlags() const
   {
     return m_flags;
   }
 
   bool DBusMessage::ExpectsReply() const
   {
-    return !std::ranges::contains(m_flags, DBusMessageFlags::NO_REPLY_EXPECTED);
+    return (m_flags & static_cast<uint8_t>(DBusMessageFlags::NO_REPLY_EXPECTED)) == 0;
   }
 
   std::optional<ObjectPath> const& DBusMessage::GetPath() const

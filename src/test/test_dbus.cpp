@@ -8,8 +8,10 @@
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
+#include <cstdint>
 #include <functional>
 
+#include "src/DBus.h"
 #include "src/DBusConnection.h"
 #include "src/DBusMatchRule.h"
 #include "src/DBusMessage.h"
@@ -18,6 +20,77 @@
 #include "src/Log.h"
 
 using namespace cxxbus;
+
+using namespace std::chrono_literals;
+using namespace std::string_literals;
+
+namespace
+{
+  IncomingDBusMessage MakeSignalMessage(std::string const& param)
+  {
+    std::vector<byte> serializedParam = MarshalDBusType(param);
+    std::vector<byte> fullMessageBytes{
+        'l',  0x04, 0x00, 0x01,  // endian, type, flags, version
+        0x00, 0x00, 0x00, 0x00,  // body length = TO BE FILLED IN
+        0x01, 0x00, 0x00, 0x00,  // serial = 1
+        0x3F, 0x00, 0x00, 0x00,  // Header fields length: 63
+
+        0x01, 0x01, 'o',  0x00,  // header field variant for ObjectPath
+        0x01, 0x00, 0x00, 0x00,  // object path length: u32 = 1
+        '/',  0x00,              // Object path
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x02, 0x01, 's',  0x00,                               // Header field variant for Interface
+        0x08, 0x00, 0x00, 0x00,                               // String length: u32 = 8
+        'c',  'o',  'm',  '.',  'T',  'e',  's',  't', 0x00,  // string
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x03, 0x01, 's',  0x00,  // header field variant for Member
+        0x01, 0x00, 0x00, 0x00,  // string length: u32 = 1
+        'A',  0x00,              // string
+
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Padding
+
+        0x08, 0x01, 'g',  0x00,  // Declare header field variant for Signature
+        0x01, 's',  0x00,        // String signature
+
+        0x00  // Padding
+    };
+
+    // Fill in body length
+    uint32_t paramSize{static_cast<uint32_t>(serializedParam.size())};
+    std::memcpy(fullMessageBytes.data() + 4, &paramSize, sizeof(uint32_t));
+
+    // Add serialized data
+#if __cpp_lib_containers_ranges
+    fullMessageBytes.append_range(serializedParam);
+#else
+    fullMessageBytes.insert(fullMessageBytes.end(), serializedParam.begin(), serializedParam.end());
+#endif
+
+    auto headerData =
+        UnmarshalDBusType<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
+            std::ranges::to<std::vector>(fullMessageBytes | std::views::take(FIRST_HEADER_PART_SIZE)), "yyyyuuu");
+    uint32_t const messageLength = headerData.GetType<4>();
+    uint32_t const headerFieldArrLength = headerData.GetType<6>();
+    uint32_t const serial = headerData.GetType<5>();
+    DBusMessageType const messageType = static_cast<DBusMessageType>(headerData.GetType<1>());
+
+    uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
+    uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
+
+    return IncomingDBusMessage{
+        DBusMessageHeader{
+            std::span<byte const>{fullMessageBytes.begin(),
+                                  fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
+            serial, messageType, headerFieldArrLength, messageLength},
+        std::ranges::to<std::vector>(
+            fullMessageBytes | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
+  }
+
+}  // namespace
 
 struct DBusConnectionTestSuite : ::testing::Test
 {
@@ -51,19 +124,19 @@ struct DBusConnectionTestSuite : ::testing::Test
           auto tempConn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxBusVerifier"},
                                                           BusType::SESSION);
 
-          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                           .Destination("org.freedesktop.DBus")
-                                                           .Parameter(std::string{"com.dbus.CxxTest"})))
-                           .Get<bool>());
+          EXPECT_FALSE(
+              (co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
+                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                  .Destination("org.freedesktop.DBus")
+                                                  .Parameter(std::string{"com.dbus.CxxTest"})))
+                  .Get<bool>());
 
-          EXPECT_FALSE((co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                           .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                           .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                           .Destination("org.freedesktop.DBus")
-                                                           .Parameter(std::string{"com.dbus.CxxTest2"})))
-                           .Get<bool>());
+          EXPECT_FALSE(
+              (co_await tempConn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
+                                                  .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                                  .Destination("org.freedesktop.DBus")
+                                                  .Parameter(std::string{"com.dbus.CxxTest2"})))
+                  .Get<bool>());
 
           co_await tempConn->Close();
         },
@@ -115,8 +188,7 @@ TEST_F(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("Introspect", ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus.Introspectable"})
                                                 .Destination("org.freedesktop.DBus"));
     LOG_INFO(LOGGER, "SENT MESSAGE");
@@ -432,8 +504,7 @@ TEST_F(DBusConnectionTestSuite, TestMethodCall)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                .Path(ObjectPath{"/org/freedesktop/DBus"})
+    auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
                                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                 .Destination("org.freedesktop.DBus")
                                                 .Parameter(std::string{"com.dbus.CxxTest"}));
@@ -474,8 +545,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRule)
                                 });
 
     LOG_DEBUG(LOGGER, "Sending message to trigger NameOwnerChanged signal");
-    co_await conn->SendMessage(DBusMessage::Method("RequestName")
-                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await conn->SendMessage(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                    .Destination("org.freedesktop.DBus")
                                    .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
@@ -496,9 +566,8 @@ TEST_F(DBusConnectionTestSuite, TestGettingErrors)
   coroutineToRun = [this]() -> boost::asio::awaitable<void>
   {
     conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
-    DBusMessage message{DBusMessage::Method("RequestName")
+    DBusMessage message{DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                            .Path(ObjectPath{"/org/freedesktop/DBus"})
                             .Destination("org.freedesktop.DBus")
                             .Parameter(MultipleCompleteTypes<std::string, uint32_t>{"boo", 0x01})};
 
@@ -530,11 +599,13 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     auto conn2 = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     co_await conn2->ReceiveIncomingMessages(
-        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<MessageHandled>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
           LOG_DEBUG(LOGGER, "Connection2 received the message, returning an error");
-          co_await conn2->SendMessageNoReply(DBusMessage::Error(message, "com.you.Stupid", "lol you're so stupid"));
+          co_await conn2->SendMessageNoReply(
+              DBusMessage::Error(message, DBusErrorName{"com.you.Stupid"}, "lol you're so stupid"));
+          co_return MessageHandled::YES;
         });
 
     co_await conn2->RegisterObjectPathHandler(
@@ -547,14 +618,13 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
         });
 
     LOG_DEBUG(LOGGER, "Sending a message from connection1 to connection2");
-    EXPECT_THROW(
-        co_await conn->SendMessage(
-            DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"})),
-        DBusError);
+    EXPECT_THROW(co_await conn->SendMessage(
+                     DBusMessage::Method("Wow", ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2")),
+                 DBusError);
     try
     {
       co_await conn->SendMessage(
-          DBusMessage::Method("Wow").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2"}));
+          DBusMessage::Method("Wow", ObjectPath{"/com/dbus/CxxTest2"}).Destination("com.dbus.CxxTest2"));
     }
     catch (DBusError const& ex)
     {
@@ -563,11 +633,11 @@ TEST_F(DBusConnectionTestSuite, TestReplying)
     }
 
     LOG_DEBUG(LOGGER, "Sending a final message from connection1 to connection2");
-    EXPECT_EQ(((co_await conn->SendMessage(DBusMessage::Method("Method")
-                                               .Path(ObjectPath{"/com/dbus/CxxTest2/Method"})
-                                               .Destination("com.dbus.CxxTest2")))
-                   .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
-              (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
+    EXPECT_EQ(
+        ((co_await conn->SendMessage(
+              DBusMessage::Method("Method", ObjectPath{"/com/dbus/CxxTest2/Method"}).Destination("com.dbus.CxxTest2")))
+             .Get<MultipleCompleteTypes<std::string, uint32_t>>()),
+        (MultipleCompleteTypes<std::string, uint32_t>{"Hello from connection2", 42}));
 
     co_await conn2->Close();
     LOG_TRACE(LOGGER, "Finished closing 2nd connection");
@@ -583,32 +653,53 @@ TEST_F(DBusConnectionTestSuite, TestEmittingSignal)
 
     std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann{
         std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
-    bool signalEmitted{};
+    std::shared_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> chann2{
+        std::make_shared<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+    bool structSignalEmitted{};
+    bool mapSignalEmitted{};
     co_await conn2->AddMatchRule(
-        DBusMatchRule::Create().Member("SignalEmitted"),
-        [&signalEmitted, chann, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        DBusMatchRule::Create().Member("StructSignalEmitted"),
+        [&structSignalEmitted, chann](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
         {
-          LOG_INFO(LOGGER, "Received emitted signal");
-          signalEmitted = true;
+          LOG_DEBUG(LOGGER, "Received emitted struct signal");
+          structSignalEmitted = true;
           EXPECT_EQ((msg.Get<std::tuple<std::string, int, double, std::string>>()),
                     (std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
-
-          boost::asio::co_spawn(
-              ioService, [chann]() -> boost::asio::awaitable<void>
-              { co_await chann->async_send(boost::system::error_code{}, boost::asio::use_awaitable); },
-              boost::asio::detached);
+          chann->async_send(boost::system::error_code{}, boost::asio::detached);
           co_return;
         });
 
+    co_await conn2->AddMatchRule(
+        DBusMatchRule::Create().Member("MapSignalEmitted"),
+        [&mapSignalEmitted, chann2](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          LOG_DEBUG(LOGGER, "Received emitted map signal");
+          mapSignalEmitted = true;
+          EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
+                    (std::map<std::string, std::tuple<std::string, uint64_t>>{
+                        {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          chann2->async_send(boost::system::error_code{}, boost::asio::detached);
+          co_return;
+        });
+
+    LOG_DEBUG(LOGGER, "Emitting struct signal!");
     co_await conn->SendMessageNoReply(
-        DBusMessage::Signal("SignalEmitted")
-            .Interface(DBusInterfaceName{"com.dbus.CxxTest"})
-            .Path(ObjectPath{"/com/dbus/CxxTest"})
+        DBusMessage::Signal("StructSignalEmitted", ObjectPath{"/com/dbus/CxxTest"},
+                            DBusInterfaceName{"com.dbus.CxxTest"})
             .Parameter(std::tuple<std::string, int, double, std::string>{"Hello", 456, 3.1415, "World!"}));
 
-    LOG_DEBUG(LOGGER, "Waiting for signal to be received");
+    LOG_DEBUG(LOGGER, "Emitting map signal!");
+    co_await conn->SendMessageNoReply(
+        DBusMessage::Signal("MapSignalEmitted", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(std::map<std::string, std::tuple<std::string, uint64_t>>{
+                {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+
+    LOG_DEBUG(LOGGER, "Waiting for signals to be received");
     co_await chann->async_receive(boost::asio::use_awaitable);
-    EXPECT_TRUE(signalEmitted);
+    co_await chann2->async_receive(boost::asio::use_awaitable);
+
+    EXPECT_TRUE(structSignalEmitted);
+    EXPECT_TRUE(mapSignalEmitted);
 
     co_await conn2->Close();
   };
@@ -622,8 +713,7 @@ TEST_F(DBusConnectionTestSuite, TestSystemBus)
     try
     {
       conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SYSTEM);
-      auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner")
-                                                  .Path(ObjectPath{"/org/freedesktop/DBus"})
+      auto reply = co_await conn->SendMessage(DBusMessage::Method("NameHasOwner", ObjectPath{"/org/freedesktop/DBus"})
                                                   .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                   .Destination("org.freedesktop.DBus")
                                                   .Parameter(std::string{"com.dbus.CxxTest"}));
@@ -687,9 +777,9 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
         });
 
     co_await conn->SendMessage(
-        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("Handle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
     co_await conn->SendMessage(
-        DBusMessage::Method("DoNotHandle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("DoNotHandle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
 
     co_await chann->async_receive(boost::asio::use_awaitable);
 
@@ -699,7 +789,7 @@ TEST_F(DBusConnectionTestSuite, TestMessageFilter)
 
     co_await conn2->UnregisterMessageFilter(id);
     co_await conn->SendMessage(
-        DBusMessage::Method("Handle").Destination("com.dbus.CxxTest2").Path(ObjectPath{"/com/dbus/CxxTest2/Foo"}));
+        DBusMessage::Method("Handle", ObjectPath{"/com/dbus/CxxTest2/Foo"}).Destination("com.dbus.CxxTest2"));
 
     co_await chann->async_receive(boost::asio::use_awaitable);
 
@@ -719,7 +809,7 @@ TEST_F(DBusConnectionTestSuite, TestCallingUnknownMethod)
 
     EXPECT_THROW(
         co_await conn->SendMessage(
-            DBusMessage::Method("UnknownMethod").Destination("com.dbus.CxxTest").Path(ObjectPath{"/com/dbus/CxxTest"})),
+            DBusMessage::Method("UnknownMethod", ObjectPath{"/com/dbus/CxxTest"}).Destination("com.dbus.CxxTest")),
         DBusError);
   };
 }
@@ -745,8 +835,8 @@ TEST_F(DBusConnectionTestSuite, TestMixSyncAndAsync)
     co_await chann->async_receive(boost::asio::use_awaitable);
     LOG_DEBUG(LOGGER, "Detached connection is connected");
 
-    multiConn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"});
-    co_await multiConn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"});
+    multiConn->RequestWellKnownNameSync(DBusWellKnownName{"com.dbus.CxxTest2"}, WellKnownNameFlag::NONE);
+    co_await multiConn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest3"}, WellKnownNameFlag::NONE);
   };
 }
 
@@ -766,10 +856,326 @@ TEST_F(DBusConnectionTestSuite, TestSendingBigString)
       str.push_back(std::max(i % 127, 1));
     }
 
-    co_await conn->SendMessage(DBusMessage::Method("Boo")
-                                   .Destination("com.dbus.CxxTest2")
-                                   .Path(ObjectPath{"/com/test/cxxbus"})
-                                   .Parameter(str));
+    EXPECT_NO_THROW(co_await conn->SendMessage(
+        DBusMessage::Method("Boo", ObjectPath{"/com/test/cxxbus"}).Destination("com.dbus.CxxTest2").Parameter(str)));
+
+    co_await conn2->Close();
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMessageMustExpectReply)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+
+    EXPECT_THROW(co_await conn->SendMessage(
+                     DBusMessage::Method("Test", ObjectPath{"/test"}).Flag(DBusMessageFlags::NO_REPLY_EXPECTED)),
+                 std::runtime_error);
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestFilterPrecedesObjectPathHandler)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+    bool messageFilterRan{};
+    bool objectPathHandlerRan{};
+
+    // We shouldn't require the object path that we're sending to be registered to run our message filter
+    co_await conn->RegisterObjectPathHandler(
+        ObjectPath{"/"},
+        [this, &objectPathHandlerRan](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          objectPathHandlerRan = true;
+          co_return co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+        });
+
+    co_await conn->RegisterMessageFilter(
+        [this, &messageFilterRan](IncomingDBusMessage const& msg) -> boost::asio::awaitable<MessageHandled>
+        {
+          messageFilterRan = true;
+          co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          co_return MessageHandled::YES;
+        });
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest"));
+
+    EXPECT_TRUE(messageFilterRan);
+    EXPECT_FALSE(objectPathHandlerRan);
+
+    messageFilterRan = false;
+
+    // In fact, we shouldnt need ANY object path handler registered to run our message filters
+    co_await conn->UnregisterObjectPathHandler(ObjectPath{"/foo"});
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest"));
+
+    EXPECT_TRUE(messageFilterRan);
+    EXPECT_FALSE(objectPathHandlerRan);
+
+    co_await conn2->Close();
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestOutstandingMessagesDoNotBlockNewOnes)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>
+        blockMessageChannels{};
+
+    co_await conn->RegisterObjectPathHandler(
+        ObjectPath{"/foo"},
+        [this, &blockMessageChannels](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> channel{
+              std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+          boost::asio::experimental::channel<void(boost::system::error_code)>* chann = channel.get();
+          blockMessageChannels.push_back(std::move(channel));
+
+          // block any incoming message until we finally get the message that would cause us to overwrite an
+          // existing message
+          if (msg.Get<bool>())
+          {
+            // Replying here will properly return but our very first message we sent will be blocked and never get
+            // handled ...
+            LOG_DEBUG(LOGGER, "Got the Nth + 1 message!");
+            co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          }
+          else
+          {
+            LOG_DEBUG(LOGGER, "Got a message to block");
+
+            co_await chann->async_receive(boost::asio::use_awaitable);
+
+            // Now that we've been given the go-ahead, send a reply and unblock this channel
+            co_await conn->SendMessageNoReply(DBusMessage::Reply(msg));
+          }
+        });
+
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>>
+        messageResolvedChannels{};
+
+    // Fill up the message buffer
+    LOG_DEBUG(LOGGER, "Filling up the message buffer");
+    boost::asio::experimental::channel<void(boost::system::error_code)> allMessagesSentChannel{ioService, 1};
+    for (int i{}; i < CXXBUS_MAX_CONCURRENT_MESSAGES; ++i)
+    {
+      std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>> channel{
+          std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1)};
+      boost::asio::experimental::channel<void(boost::system::error_code)>* chann = channel.get();
+
+      boost::asio::co_spawn(
+          ioService,
+          [conn2, i, &allMessagesSentChannel, this]() -> boost::asio::awaitable<void>
+          {
+            if (i == CXXBUS_MAX_CONCURRENT_MESSAGES - 1)
+            {
+              boost::asio::co_spawn(
+                  ioService,
+                  [&allMessagesSentChannel] -> boost::asio::awaitable<void>
+                  {
+                    allMessagesSentChannel.async_send({}, boost::asio::detached);
+                    co_return;
+                  },
+                  boost::asio::detached);
+            }
+            co_await conn2->SendMessage(
+                DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest").Parameter(false));
+            co_return;
+          },
+          [chann](std::exception_ptr)
+          {
+            // We got our reply!
+            chann->async_send({}, boost::asio::detached);
+          });
+
+      messageResolvedChannels.push_back(std::move(channel));
+    }
+
+    co_await allMessagesSentChannel.async_receive(boost::asio::use_awaitable);
+
+    // This next call will instantly resolve, however, our very first call from above will never resolve.
+    LOG_DEBUG(LOGGER, "Sending Nth + 1 message");
+    co_await conn2->SendMessage(
+        DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest").Parameter(true));
+
+    // Unblock all of our waiting messages
+    LOG_DEBUG(LOGGER, "Unblocking all waiting messages");
+    for (auto& chann : blockMessageChannels)
+    {
+      chann->async_send({}, boost::asio::detached);
+    }
+
+    LOG_DEBUG(LOGGER, "Waiting for all messages to be resolved");
+    for (auto& chann : messageResolvedChannels)
+    {
+      co_await chann->async_receive(boost::asio::use_awaitable);
+    }
+
+    co_await conn2->Close();
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMatchRules)
+{
+  coroutineToRun = [this] -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    std::array<bool, 8> matchRulesTriggered{};
+    bool shouldNotGetTriggered{};
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>> channels;
+    for (size_t i{}; i < matchRulesTriggered.size(); ++i)
+    {
+      channels.push_back(
+          std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1));
+    }
+
+    // Test argument matching
+    co_await conn->AddMatchRule(
+        DBusMatchRule::Create().Argument(1, "Foo"),
+        [&matchRulesTriggered, &channels](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+        {
+          matchRulesTriggered[0] = true;
+          channels[0]->async_send({}, boost::asio::detached);
+          co_return;
+        });
+
+    // Test path namespace matching
+    co_await conn->AddMatchRule(
+        DBusMatchRule::Create().PathNamespace(ObjectPath{"/foo"}),
+        [&matchRulesTriggered, &channels](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          if (msg.GetHeader().GetObjectPath() == "/foo")
+          {
+            matchRulesTriggered[1] = true;
+            channels[1]->async_send({}, boost::asio::detached);
+          }
+          else if (msg.GetHeader().GetObjectPath() == "/foo/bar")
+          {
+            matchRulesTriggered[2] = true;
+            channels[2]->async_send({}, boost::asio::detached);
+          }
+          co_return;
+        });
+
+    // Test argument path matching
+    co_await conn->AddMatchRule(DBusMatchRule::Create().ArgumentPath(0, "/aa/bb/"),
+                                [&matchRulesTriggered, &channels,
+                                 &shouldNotGetTriggered](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+                                {
+                                  if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/")
+                                  {
+                                    matchRulesTriggered[3] = true;
+                                    channels[3]->async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/")
+                                  {
+                                    matchRulesTriggered[4] = true;
+                                    channels[4]->async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/")
+                                  {
+                                    matchRulesTriggered[5] = true;
+                                    channels[5]->async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/cc/")
+                                  {
+                                    matchRulesTriggered[6] = true;
+                                    channels[6]->async_send({}, boost::asio::detached);
+                                  }
+                                  else if (msg.GetSignature() == "o" && msg.Get<ObjectPath>() == "/aa/bb/cc")
+                                  {
+                                    matchRulesTriggered[7] = true;
+                                    channels[7]->async_send({}, boost::asio::detached);
+                                  }
+                                  else
+                                  {
+                                    shouldNotGetTriggered = true;
+                                  }
+
+                                  co_return;
+                                });
+
+    // Trigger argument match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(MultipleCompleteTypes<int, std::string, int>{1, "Foo", 3}));
+
+    // Trigger patch namespace match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/foo"}, DBusInterfaceName{"com.dbus.CxxTest"}));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/foo/bar"}, DBusInterfaceName{"com.dbus.CxxTest"}));
+
+    // Trigger argument path match
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/bb/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter("/aa/bb/cc/"));
+    co_await conn2->SendMessageNoReply(
+        DBusMessage::Signal("Signal", ObjectPath{"/com/dbus/CxxTest"}, DBusInterfaceName{"com.dbus.CxxTest"})
+            .Parameter(ObjectPath{"/aa/bb/cc"}));
+
+    // Can't do this via sending messages because the dbus-daemon would not relay these messages because they don't
+    // match our added rules ...
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa"), std::vector<std::string>{}));
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa/b"), std::vector<std::string>{}));
+    EXPECT_FALSE(DBusMatchRule::Create()
+                     .ArgumentPath(0, "/aa/bb/")
+                     .Matches(MakeSignalMessage("/aa/bb"), std::vector<std::string>{}));
+
+    for (auto& chann : channels)
+    {
+      co_await chann->async_receive(boost::asio::use_awaitable);
+    }
+
+    EXPECT_TRUE(std::ranges::all_of(matchRulesTriggered, [](bool b) { return b; }));
+    EXPECT_FALSE(shouldNotGetTriggered);
+
+    co_await conn2->Close();
+
+    co_return;
+  };
+}
+
+TEST_F(DBusConnectionTestSuite, TestMethodUnkown)
+{
+  coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    conn = co_await DBusConnection::Create(ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await DBusConnection::Create(ioService, std::nullopt, BusType::SESSION);
+
+    co_await conn->ReceiveIncomingMessages(
+        [](IncomingDBusMessage const&) -> boost::asio::awaitable<MessageHandled>
+        {
+          LOG_DEBUG(LOGGER, "Handler got called");
+          co_return MessageHandled::NO;
+        });
+
+    EXPECT_THROW(
+        co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest")),
+        DBusError);
 
     co_await conn2->Close();
   };

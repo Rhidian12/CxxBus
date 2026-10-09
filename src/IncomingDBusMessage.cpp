@@ -267,9 +267,24 @@ namespace cxxbus
     return m_header.GetMember();
   }
 
+  uint32_t IncomingDBusMessage::GetSerial() const
+  {
+    return m_header.GetSerial();
+  }
+
+  std::optional<std::string> const& IncomingDBusMessage::GetSender() const
+  {
+    return m_header.GetSender();
+  }
+
   DBusMessageHeader const& IncomingDBusMessage::GetHeader() const
   {
     return m_header;
+  }
+
+  std::optional<Signature> const& IncomingDBusMessage::GetSignature() const
+  {
+    return m_header.GetSignature();
   }
 
   bool IncomingDBusMessage::HasArguments() const

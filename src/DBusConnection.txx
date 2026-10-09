@@ -193,6 +193,7 @@ namespace cxxbus
     m_state = std::shared_ptr<InternalState>(new InternalState{
         .ioContext = ioContext,
         .replyChannels = {},
+        .fallbackReplyChannels = {},
         .onIncomingSignal = {},
         .messageFilters = {},
         .messageFilterID = 0,
@@ -228,12 +229,12 @@ namespace cxxbus
       m_state->ioThread = std::make_shared<std::thread>(&IOThread, ioContext);
     }
 
-    for (int i{}; i < CXX_BUS_MAX_CONCURRENT_MESSAGES; ++i)
+    for (int i{}; i < CXXBUS_MAX_CONCURRENT_MESSAGES; ++i)
     {
       m_state->replyChannels.emplace_back(
           boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>{
               m_state->activeContext, 1},
-          true);
+          0, true);
     }
   }
 
@@ -450,8 +451,7 @@ namespace cxxbus
 
     // Get our unique bus name
     std::optional<IncomingDBusMessage> reply =
-        co_await SendMessageInternal(std::move(DBusMessage::Method("Hello")
-                                                   .Path(ObjectPath{"/org/freedesktop/DBus"})
+        co_await SendMessageInternal(std::move(DBusMessage::Method("Hello", ObjectPath{"/org/freedesktop/DBus"})
                                                    .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                                                    .Destination("org.freedesktop.DBus")));
     if (reply.has_value())
@@ -466,12 +466,12 @@ namespace cxxbus
     // Now, request a well-known name from the dbus-daemon
     for (DBusWellKnownName name : m_state->wellKnownNames)
     {
-      reply = co_await SendMessageInternal(std::move(
-          DBusMessage::Method("RequestName")
-              .Path(ObjectPath{"/org/freedesktop/DBus"})
-              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-              .Destination("org.freedesktop.DBus")
-              .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)})));
+      reply = co_await SendMessageInternal(
+          std::move(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
+                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                        .Destination("org.freedesktop.DBus")
+                        .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
+                            name.GetName(), static_cast<uint32_t>(WellKnownNameFlag::NONE)})));
 
       if (!reply.has_value())
       {
@@ -489,7 +489,6 @@ namespace cxxbus
         case 1:
           LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
           break;
-        // [TODO]: Allow user passing flags for the Well-known name.
         case 2:
           LOG_ERROR(LOGGER,
                     "Well-known name '{}' is already owned by another connection and we did "
@@ -540,7 +539,17 @@ namespace cxxbus
 
       // This can only be set to 'true' if we didn't send a message with this serial first
       // which should be impossible
-      if (state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].ready)
+      if (ChannelInfo& channInfo{state->replyChannels[replySerial % CXXBUS_MAX_CONCURRENT_MESSAGES]};
+          channInfo.serial == replySerial && !channInfo.ready)
+      {
+        co_await channInfo.channel.async_send(boost::system::error_code{}, std::move(message),
+                                              boost::asio::use_awaitable);
+      }
+      else if (auto it = state->fallbackReplyChannels.find(replySerial); it != state->fallbackReplyChannels.end())
+      {
+        co_await it->second->async_send({}, std::move(message), boost::asio::use_awaitable);
+      }
+      else
       {
         // It should not be possible to get a reply to a message we don't know
         LOG_FATAL(LOGGER,
@@ -549,9 +558,6 @@ namespace cxxbus
                   replySerial);
         throw InternalError{"Internal error: Receiving reply to a message, but the serial is unknown to us"};
       }
-
-      co_await state->replyChannels[replySerial % CXX_BUS_MAX_CONCURRENT_MESSAGES].channel.async_send(
-          boost::system::error_code{}, std::move(message), boost::asio::use_awaitable);
     }
     // Simply an incoming message
     else
@@ -569,25 +575,50 @@ namespace cxxbus
           {
             LOG_TRACE(LOGGER, "Rule '{}' matched incoming signal", info.rule.GetRule());
             boost::asio::io_context& ioContext{info.executeOnUserContext ? m_userIOContext : *m_state->ioContext};
+            auto invokeSignalHandlers = [](MatchRuleInfo info,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+            {
+              for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& cb : info.callback)
+              {
+                co_await cb(message);
+              }
+              co_return;
+            };
+
             if (!info.callback.empty())
             {
-              boost::asio::co_spawn(
-                  ioContext,
-                  [info, message = message]() -> boost::asio::awaitable<void>
-                  {
-                    for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& cb :
-                         info.callback)
-                    {
-                      co_await cb(message);
-                    }
-                    co_return;
-                  },
-                  boost::asio::detached);
+              // In `SingleThreaded` mode we're guaranteed to always run everything on the `m_userIOContext` so just
+              // invoke our signal handlers
+              if constexpr (SingleThreaded)
+              {
+                co_await invokeSignalHandlers(info, message);
+              }
+              else
+              {
+                // We check the activeContext with the asked ioContext here because user signal handlers run on
+                // `m_userIOContext` while the DBusNameCache wants things to run on our internal thread
+                if (state->activeContext == ioContext.get_executor())
+                {
+                  co_await invokeSignalHandlers(info, message);
+                }
+                else
+                {
+                  boost::asio::co_spawn(ioContext, invokeSignalHandlers(info, message), boost::asio::detached);
+                }
+              }
             }
           }
         }
 
         co_return;
+      }
+
+      for (auto const& [_, filter] : state->messageFilters)
+      {
+        if (co_await filter(message) == MessageHandled::YES)
+        {
+          co_return;
+        }
       }
 
       std::string const path =
@@ -597,53 +628,87 @@ namespace cxxbus
       {
         LOG_TRACE(LOGGER, "Message's ObjectPath matches a handler");
 
-        // [TODO]: Filter should always be ran, not only when we have object path handlers set
-        for (auto const& [_, filter] : state->messageFilters)
+        auto invokeObjectPathHandlers = [](std::shared_ptr<InternalState> state,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
         {
-          if (co_await filter(message) == MessageHandled::YES)
+          for (auto const& [_, handlers] : state->objectPathHandlers)
+          {
+            for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
+            {
+              co_await handler(message);
+            }
+          }
+        };
+
+        LOG_TRACE(LOGGER, "Invoking ObjectPath handler");
+        if constexpr (SingleThreaded)
+        {
+          // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
+          co_await invokeObjectPathHandlers(std::move(state), std::move(message));
+        }
+        else
+        {
+          // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
+          // `m_userIOContext` so enqueue them on `m_userIOContext`
+          boost::asio::co_spawn(m_userIOContext, invokeObjectPathHandlers(std::move(state), std::move(message)),
+                                boost::asio::detached);
+        }
+
+        co_return;
+      }
+
+      if (!state->onIncomingSignal.empty())
+      {
+        LOG_TRACE(LOGGER, "OnIncoming has subscribers, so calling those");
+        auto invokeOnIncomingHandlers = [](std::shared_ptr<InternalState> state,
+                                           IncomingDBusMessage message) -> boost::asio::awaitable<MessageHandled>
+        {
+          for (std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> const& signal :
+               state->onIncomingSignal)
+          {
+            if (co_await signal(message) == MessageHandled::YES)
+            {
+              co_return MessageHandled::YES;
+            }
+          }
+          co_return MessageHandled::NO;
+        };
+
+        if constexpr (SingleThreaded)
+        {
+          // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
+          if (co_await invokeOnIncomingHandlers(std::move(state), message) == MessageHandled::YES)
           {
             co_return;
           }
         }
+        else
+        {
+          // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
+          // `m_userIOContext` so enqueue them on `m_userIOContext`
+          std::shared_ptr<IncomingDBusMessage> msg{std::make_shared<IncomingDBusMessage>(std::move(message))};
+          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), *msg),
+                                [this, msg](std::exception_ptr, MessageHandled handled) -> void
+                                {
+                                  if (handled == MessageHandled::NO)
+                                  {
+                                    // If nothing handles our message then we return an error to the sender
+                                    boost::asio::co_spawn(
+                                        m_state->activeContext,
+                                        SendMessageNoReply(DBusMessage::Error(
+                                            *msg, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
+                                            "The method called is not implemented by this connection")),
+                                        boost::asio::detached);
+                                  }
+                                });
 
-        LOG_TRACE(LOGGER, "Invoking ObjectPath handler");
-        boost::asio::co_spawn(
-            m_userIOContext,
-            [message = std::move(message), state = std::move(state)]() mutable -> boost::asio::awaitable<void>
-            {
-              for (auto const& [_, handlers] : state->objectPathHandlers)
-              {
-                for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
-                {
-                  co_await handler(message);
-                }
-              }
-            },
-            boost::asio::detached);
-        co_return;
-      }
-
-      // [TODO]: User should let us know whether they actually handled this or not
-      if (!state->onIncomingSignal.empty())
-      {
-        LOG_TRACE(LOGGER, "OnIncoming has subscribers, so calling those");
-        boost::asio::co_spawn(
-            m_userIOContext,
-            [state = std::move(state), message = std::move(message)]() -> boost::asio::awaitable<void>
-            {
-              for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& signal :
-                   state->onIncomingSignal)
-              {
-                co_await signal(message);
-              }
-              co_return;
-            },
-            boost::asio::detached);
-        co_return;
+          co_return;
+        }
       }
 
       // If nothing handles our message then we return an error to the sender
-      co_await SendMessageNoReply(DBusMessage::Error(message, "org.freedesktop.DBus.Error.UnknownMethod",
+      LOG_TRACE(LOGGER, "Message did not get handled. Replying with UnknownMethod error");
+      co_await SendMessageNoReply(DBusMessage::Error(message, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
                                                      "The method called is not implemented by this connection"));
     }
   }
@@ -653,32 +718,61 @@ namespace cxxbus
       DBusMessage&& message)
   {
     // 1st, if we're expecting a reply, store a channel so we can await a reply from the dbus-daemon
-    bool const expectsReply{!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED)};
+    bool const expectsReply{message.ExpectsReply()};
     uint32_t const serial = m_state->serial++;
-    // [TODO]: Logic doesnt fully make sense what if 1 not sent but all other messages are sent and we loop back around
-    // to 1?
-    ChannelInfo& channInfo{m_state->replyChannels[serial % CXX_BUS_MAX_CONCURRENT_MESSAGES]};
+    ChannelInfo& channInfo{m_state->replyChannels[serial % CXXBUS_MAX_CONCURRENT_MESSAGES]};
+    boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>* channel{
+        &channInfo.channel};
+    bool newChannelUsed{};
 
     if (expectsReply)
     {
-      channInfo.ready = false;
+      if (!channInfo.ready) [[unlikely]]
+      {
+        // We're trying to get a channel but it's currently already in use by an earlier sent outstanding message.
+        // We don't want to break the user's logic, so create a channel here as a fallback
+        LOG_TRACE(LOGGER, "Message queue is full. Allocating new channel to use for this message with serial '{}'",
+                  serial);
+        std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>>
+            newChannel{std::make_unique<
+                boost::asio::experimental::channel<void(boost::system::error_code, IncomingDBusMessage)>>(
+                m_state->activeContext, 1)};
+        channel = newChannel.get();
+        m_state->fallbackReplyChannels.insert(std::make_pair(serial, std::move(newChannel)));
+        newChannelUsed = true;
+      }
+      else
+      {
+        // Our channel is available, so mark it as unavailable
+        channInfo.ready = false;
+        channInfo.serial = serial;
+      }
     }
 
     // Write our actual message
     co_await boost::asio::async_write(m_state->socket, boost::asio::buffer(message.Serialize(serial)),
                                       boost::asio::use_awaitable);
 
-    LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", message.GetInfo(), m_state->serial);
+    LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", message.GetInfo(), serial);
 
     // 4th, check if we're expecting a reply
     if (!expectsReply)
     {
+      LOG_TRACE(LOGGER, "Not expecting reply, returning ...");
       co_return std::nullopt;
     }
 
     // 5th, wait for the reply to be sent back to us from the ReadLoop() coroutine
-    IncomingDBusMessage reply = co_await channInfo.channel.async_receive(boost::asio::use_awaitable);
-    channInfo.ready = true;
+    IncomingDBusMessage reply = co_await channel->async_receive(boost::asio::use_awaitable);
+    LOG_DEBUG(LOGGER, "Got a reply for '{}'", reply.GetHeader().GetReplySerial().value());
+    if (!newChannelUsed) [[likely]]
+    {
+      channInfo.ready = true;
+    }
+    else
+    {
+      m_state->fallbackReplyChannels.erase(serial);
+    }
 
     if (reply.GetHeader().GetMessageType() == DBusMessageType::ERROR) [[unlikely]]
     {
@@ -707,6 +801,16 @@ namespace cxxbus
       LOG_TRACE(LOGGER, "Connection not ready yet, waiting for it to complete");
       m_state->nrOfWaiters++;
       co_await m_state->connectionCompleted.async_receive(boost::asio::use_awaitable);
+    }
+
+    if (!message.ExpectsReply()) [[unlikely]]
+    {
+      LOG_ERROR(LOGGER,
+                "SendMessage() can only send messages that expect a reply. Use SendMessageNoReply() if you don't want "
+                "to await a reply");
+      throw std::runtime_error{
+          "SendMessage() can only send messages that expect a reply. Use SendMessageNoReply() if you don't want "
+          "to await a reply"};
     }
 
     std::optional<IncomingDBusMessage> reply = co_await SendMessageInternal(std::move(message));
@@ -769,7 +873,7 @@ namespace cxxbus
     }
 
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
-    if (!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED))
+    if (message.ExpectsReply())
     {
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
@@ -814,7 +918,7 @@ namespace cxxbus
   void DBusConnectionImpl<SingleThreaded>::SendMessageNoReplySync(DBusMessage message)
   {
     // Let's auto add the NO_REPLY_EXPECTED flag if it's not been added
-    if (!std::ranges::contains(message.GetFlags(), DBusMessageFlags::NO_REPLY_EXPECTED))
+    if (message.ExpectsReply()) [[unlikely]]
     {
       message.Flag(DBusMessageFlags::NO_REPLY_EXPECTED);
     }
@@ -830,8 +934,7 @@ namespace cxxbus
   {
     LOG_TRACE(LOGGER, "Adding match rule '{}'", rule.GetRule());
 
-    co_await SendMessage(DBusMessage::Method("AddMatch")
-                             .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await SendMessage(DBusMessage::Method("AddMatch", ObjectPath{"/org/freedesktop/DBus"})
                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()),
@@ -863,7 +966,8 @@ namespace cxxbus
     else
     {
       co_return co_await boost::asio::co_spawn(
-          m_state->activeContext, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext), boost::asio::use_awaitable);
+          m_state->activeContext, AddMatchRuleImpl(std::move(rule), std::move(callback), executeOnUserContext),
+          boost::asio::use_awaitable);
     }
   }
 
@@ -895,8 +999,7 @@ namespace cxxbus
   {
     LOG_TRACE(LOGGER, "Removing match rule '{}'", rule.GetRule());
 
-    co_await SendMessage(DBusMessage::Method("RemoveMatch")
-                             .Path(ObjectPath{"/org/freedesktop/DBus"})
+    co_await SendMessage(DBusMessage::Method("RemoveMatch", ObjectPath{"/org/freedesktop/DBus"})
                              .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
                              .Destination("org.freedesktop.DBus")
                              .Parameter(rule.GetRule()),
@@ -1018,7 +1121,8 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(DBusWellKnownName name)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(DBusWellKnownName name,
+                                                                                            WellKnownNameFlag flags)
   {
     {
       if (std::ranges::contains(m_state->wellKnownNames, name))
@@ -1028,11 +1132,10 @@ namespace cxxbus
     }
 
     IncomingDBusMessage reply = co_await SendMessage(
-        DBusMessage::Method("RequestName")
-            .Path(ObjectPath{"/org/freedesktop/DBus"})
+        DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Destination("org.freedesktop.DBus")
-            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(0x1)}),
+            .Parameter(MultipleCompleteTypes<std::string, uint32_t>{name.GetName(), static_cast<uint32_t>(flags)}),
         DONT_HOP);
 
     switch (reply.Get<uint32_t>())
@@ -1040,7 +1143,6 @@ namespace cxxbus
       case 1:
         LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
         break;
-      // [TODO]: Allow user passing flags for the Well-known name.
       case 2:
         LOG_ERROR(LOGGER,
                   "Well-known name '{}' is already owned by another connection and we did "
@@ -1064,15 +1166,16 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(DBusWellKnownName name)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(DBusWellKnownName name,
+                                                                                        WellKnownNameFlag flags)
   {
     if constexpr (SingleThreaded)
     {
-      co_await RequestWellKnownNameImpl(std::move(name));
+      co_await RequestWellKnownNameImpl(std::move(name), flags);
     }
     else
     {
-      co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name)),
+      co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name), flags),
                                      boost::asio::use_awaitable);
     }
   }
@@ -1093,12 +1196,12 @@ namespace cxxbus
     }
 
     LOG_TRACE(LOGGER, "Releasing our well-known name '{}'", name.GetName());
-    IncomingDBusMessage const ret = co_await SendMessage(DBusMessage::Method("ReleaseName")
-                                                             .Path(ObjectPath{"/org/freedesktop/DBus"})
-                                                             .Destination("org.freedesktop.DBus")
-                                                             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                                                             .Parameter(name.GetName()),
-                                                         DONT_HOP);
+    IncomingDBusMessage const ret =
+        co_await SendMessage(DBusMessage::Method("ReleaseName", ObjectPath{"/org/freedesktop/DBus"})
+                                 .Destination("org.freedesktop.DBus")
+                                 .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
+                                 .Parameter(name.GetName()),
+                             DONT_HOP);
 
     uint32_t const res = ret.Get<uint32_t>();
     switch (res)
@@ -1145,10 +1248,10 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  void DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name)
+  void DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags)
   {
-    WaitOnAsyncWork<void>(*m_state->strand, [this, name = std::move(name)] -> boost::asio::awaitable<void>
-                          { return RequestWellKnownNameImpl(std::move(name)); });
+    WaitOnAsyncWork<void>(*m_state->strand, [this, name = std::move(name), flags] -> boost::asio::awaitable<void>
+                          { return RequestWellKnownNameImpl(std::move(name), flags); });
   }
 
   template <bool SingleThreaded>
@@ -1176,7 +1279,7 @@ namespace cxxbus
 
   template <bool SingleThreaded>
   boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::ReceiveIncomingMessages(
-      std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback)
+      std::function<boost::asio::awaitable<MessageHandled>(IncomingDBusMessage const&)> callback)
   {
     m_state->onIncomingSignal.push_back(std::move(callback));
     co_return;
@@ -1257,7 +1360,7 @@ namespace cxxbus
                 serial, messageType, headerFieldArrLength, messageLength},
             std::ranges::to<std::vector>(
                 rawFullReply | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
-        co_await HandleReadMessage(std::move(message));
+        boost::asio::co_spawn(state->activeContext, HandleReadMessage(std::move(message)), boost::asio::detached);
       }
       catch (boost::system::system_error const& ex)
       {
@@ -1291,5 +1394,10 @@ namespace cxxbus
 
     LOG_TRACE(LOGGER, "Read Loop is quitting gracefully");
     state->readLoopFinished.async_send(boost::system::error_code{}, boost::asio::detached);
+  }
+
+  inline constexpr WellKnownNameFlag operator|(WellKnownNameFlag a, WellKnownNameFlag b) noexcept
+  {
+    return static_cast<WellKnownNameFlag>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
   }
 }  // namespace cxxbus

@@ -22,10 +22,16 @@
 
 #include "DBusMatchRule.h"
 
+#include <sys/types.h>
+
 #include <cstdint>
 #include <format>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 
+#include "DBus.h"
+#include "DBusHelpers.h"
 #include "DBusTypes.h"
 #include "IncomingDBusMessage.h"
 #include "Log.h"
@@ -35,6 +41,193 @@ namespace cxxbus
   namespace
   {
     constexpr char const* MESSAGE_TYPE_STRINGS[] = {"method_call", "method_return", "error", "signal"};
+
+    void WalkSignature(Signature const& signature, std::vector<byte> const& messageBody, uint32_t& pointer,
+                       uint8_t& argIndex, std::unordered_map<uint8_t, std::string>& stringArgs,
+                       std::unordered_map<uint8_t, ObjectPath>& objectPathArgs, bool allowedToAddArgs = true)
+    {
+      for (size_t i{}; i < signature.size(); ++i)
+      {
+        char const c = signature.GetSignature()[i];
+
+        SkipPadding(pointer, GetAlignmentOfSignature(c));
+
+        if (IsDBusBasicFixedTypeCode(c))
+        {
+          pointer += GetAlignmentOfSignature(c);
+        }
+        else if (IsDBusBasicStringlikeTypeCode(c))
+        {
+          switch (static_cast<DBusTypeCodes>(c))
+          {
+            case DBusTypeCodes::STRING:
+            {
+              uint32_t strSize{UnmarshalDBusType<uint32_t>(
+                  std::span<byte const>{messageBody.begin() + pointer, sizeof(uint32_t)}, "u")};
+              if (allowedToAddArgs)
+              {
+                stringArgs.insert(std::make_pair(
+                    argIndex,
+                    UnmarshalDBusType<std::string>(
+                        std::span<byte const>{messageBody.begin() + pointer, strSize + sizeof(uint32_t) + 1}, "s")));
+              }
+              pointer += strSize + sizeof(uint32_t) + 1;
+            }
+            break;
+            case DBusTypeCodes::OBJECT_PATH:
+            {
+              uint32_t strSize{UnmarshalDBusType<uint32_t>(
+                  std::span<byte const>{messageBody.begin() + pointer, sizeof(uint32_t)}, "u")};
+              if (allowedToAddArgs)
+              {
+                objectPathArgs.insert(std::make_pair(
+                    argIndex,
+                    UnmarshalDBusType<std::string>(
+                        std::span<byte const>{messageBody.begin() + pointer, strSize + sizeof(uint32_t) + 1}, "s")));
+              }
+              pointer += strSize + sizeof(uint32_t) + 1;
+            }
+            break;
+            case DBusTypeCodes::SIGNATURE:
+              pointer += UnmarshalDBusType<uint8_t>(
+                             std::span<byte const>{messageBody.begin() + pointer, sizeof(uint8_t)}, "y") +
+                         sizeof(uint8_t) + 1;
+              break;
+            default:
+              LOG_FATAL(LOGGER,
+                        "DBusMatchRule > While walking signature we encounter a non-string type where we really "
+                        "expected one");
+              throw InternalError{
+                  "DBusMatchRule > While walking signature we encounter a non-string type where we really expected "
+                  "one"};
+              break;
+          }
+        }
+        else
+        {
+          switch (static_cast<DBusTypeCodes>(c))
+          {
+            case DBusTypeCodes::ARRAY:
+            {
+              if (static_cast<DBusTypeCodes>(signature.GetSignature()[i + 1]) == DBusTypeCodes::DICT_BEGIN)
+              {
+                break;
+              }
+
+              uint32_t arrSize{UnmarshalDBusType<uint32_t>(
+                  std::span<byte const>{messageBody.begin() + pointer, sizeof(uint32_t)}, "u")};
+              pointer += sizeof(uint32_t);
+              AddPaddingToSize(pointer, GetAlignmentOfSignature(signature.GetSignature()[i + 1]));
+              pointer += arrSize;
+
+              ++i;  // Skip array element
+            }
+            break;
+            case DBusTypeCodes::DICT_BEGIN:
+            {
+              uint32_t dictSize{UnmarshalDBusType<uint32_t>(
+                  std::span<byte const>{messageBody.begin() + pointer, sizeof(uint32_t)}, "u")};
+              pointer += sizeof(uint32_t);
+              SkipPadding(pointer, GetAlignmentOfSignature(c));
+              pointer += dictSize;
+
+              uint32_t bracketCounter = 1;
+              while (bracketCounter > 0)
+              {
+                DBusTypeCodes const code{static_cast<DBusTypeCodes>(signature.GetSignature()[++i])};
+                if (code == DBusTypeCodes::DICT_END)
+                {
+                  --bracketCounter;
+                }
+                else if (code == DBusTypeCodes::DICT_BEGIN)
+                {
+                  ++bracketCounter;
+                }
+              }
+            }
+            break;
+            case DBusTypeCodes::STRUCT_BEGIN:
+            {
+              // go through each element separately but skip all of them
+              DBusTypeCodes code{static_cast<DBusTypeCodes>(signature.GetSignature()[++i])};
+              uint8_t currArgIndex{argIndex};
+              while (code != DBusTypeCodes::STRUCT_END)
+              {
+                WalkSignature(Signature{std::string{signature.GetSignature()[i]}}, messageBody, pointer, argIndex,
+                              stringArgs, objectPathArgs, false);
+                code = static_cast<DBusTypeCodes>(signature.GetSignature()[++i]);
+                if (static_cast<DBusTypeCodes>(signature.GetSignature()[i + 1]) == DBusTypeCodes::STRUCT_END)
+                {
+                  break;
+                }
+                SkipPadding(pointer, GetAlignmentOfSignature(signature.GetSignature()[i + 1]));
+              }
+              ++i;                      // Skip the closing struct bracket
+              argIndex = currArgIndex;  // Make sure we didn't change the argIndex
+            }
+            break;
+            case DBusTypeCodes::VARIANT:
+            {
+              uint8_t sigLength{UnmarshalDBusType<uint8_t>(
+                  std::span<byte const>{messageBody.begin() + pointer, sizeof(uint8_t)}, "y")};
+              Signature const varSig{UnmarshalDBusType<Signature>(
+                  std::span<byte const>{messageBody.begin() + pointer + sizeof(uint8_t), sigLength}, "g")};
+              pointer += sigLength + 1;
+              SkipPadding(pointer, GetAlignmentOfSignature(varSig.GetSignature()[0]));
+
+              uint8_t currArgIndex{argIndex};
+              WalkSignature(varSig, messageBody, pointer, argIndex, stringArgs, objectPathArgs, false);
+              argIndex = currArgIndex;  // Make sure we didn't change the argIndex
+            }
+            break;
+            default:
+              LOG_FATAL(LOGGER,
+                        "DBusMatchRule > While walking signature we encounter a non-DBus-container type where we "
+                        "really expected one");
+              throw InternalError{
+                  "DBusMatchRule > While walking signature we encounter a non-DBus-container type where we really "
+                  "expected one"};
+              break;
+          }
+        }
+
+        ++argIndex;
+      }
+    }
+
+    std::vector<std::string> SplitString(std::string const& s, char delimiter)
+    {
+      std::vector<std::string> res;
+      std::stringstream ss{s};
+      std::string temp;
+
+      while (std::getline(ss, temp, delimiter))
+      {
+        res.push_back(temp);
+        if (!ss.eof())
+        {
+          res.push_back(std::string{delimiter});
+        }
+      }
+
+      auto it = std::ranges::remove(res, "");
+      res.erase(it.begin(), it.end());
+
+      return res;
+    }
+
+    bool IsPathPrefixed(std::vector<std::string> const& rule, std::vector<std::string> const& toCheck)
+    {
+      for (size_t i{}; i < rule.size(); ++i)
+      {
+        if (i >= toCheck.size() || toCheck[i] != rule[i])
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
   }  // namespace
 
   DBusMatchRule DBusMatchRule::Create()
@@ -202,7 +395,8 @@ namespace cxxbus
 
 #ifndef CXX_BUS_CHECK_MATCH_OPTIONAL
 #define CXX_BUS_CHECK_MATCH_OPTIONAL(res, expr, var) \
-  if (res && (var).has_value())                      \
+  if (!res) return false;                            \
+  if ((var).has_value())                             \
   {                                                  \
     CXX_BUS_CHECK_MATCH(res, expr, var)              \
   }
@@ -229,7 +423,95 @@ namespace cxxbus
         matches, header.GetDestination(),
         m_destination.transform([](DBusUniqueConnectionName const& name) { return name.GetName(); }))
 
-    // [TODO]: Add argument & path namespace & argument paths & arg namespace & eavesdrop matching
+    std::unordered_map<uint8_t, std::string> stringArgs;
+    std::unordered_map<uint8_t, ObjectPath> objectPathArgs;
+    if (message.HasArguments())
+    {
+      uint32_t pointer{};
+      uint8_t argIndex{};
+      WalkSignature(*message.GetHeader().GetSignature(), message.GetRawData(), pointer, argIndex, stringArgs,
+                    objectPathArgs);
+    }
+
+    for (ArgInfo const& argInfo : m_args)
+    {
+      // In case an earlier iteration set `matches` to false
+      if (!matches)
+      {
+        return false;
+      }
+
+      if (auto it = stringArgs.find(argInfo.index); it != stringArgs.end())
+      {
+        matches &= it->second == argInfo.name;
+      }
+      else
+      {
+        return false;  // No need to check the rest. We don't match
+      }
+    }
+
+    if (m_pathNamespace.has_value())
+    {
+      if (!header.GetObjectPath().has_value())
+      {
+        return false;
+      }
+
+      matches &= header.GetObjectPath()->GetPath().contains(m_pathNamespace->GetPath());
+    }
+
+    for (ArgInfo const& argInfo : m_argPaths)
+    {
+      // In case an earlier iteration set `matches` to false
+      if (!matches)
+      {
+        return false;
+      }
+
+      std::string argObjectPath;
+      if (auto it = objectPathArgs.find(argInfo.index); it != objectPathArgs.end())
+      {
+        argObjectPath = it->second.GetPath();
+      }
+      else if (auto it = stringArgs.find(argInfo.index); it != stringArgs.end())
+      {
+        argObjectPath = it->second;
+      }
+      else
+      {
+        return false;  // No need to check the rest. We don't match
+      }
+
+      std::vector<std::string> splitArgObjectPath = SplitString(argObjectPath, '/');
+      std::vector<std::string> splitRuleArgObjectPath = SplitString(argInfo.name, '/');
+
+      // clang-format off
+      matches &=
+      // Path must match completely
+        (argInfo.name == argObjectPath ||
+      // ===================== OR =====================
+      // Rule must end with '/' and be a prefix of the message
+        (argInfo.name.back() == '/' && IsPathPrefixed(splitRuleArgObjectPath, splitArgObjectPath) ) ||
+      // ===================== OR =====================
+      // Message must end with '/' and be a prefix of the rule
+        (argObjectPath.back() == '/' && IsPathPrefixed(splitArgObjectPath, splitRuleArgObjectPath))
+      );
+      // clang-format on
+    }
+
+    if (m_argNamespace.has_value())
+    {
+      if (auto it = stringArgs.find(0); it != stringArgs.end())
+      {
+        matches &= it->second.starts_with(*m_argNamespace);
+      }
+      else
+      {
+        // First argument must exist and be a string, if it is not, then we don't match
+        return false;
+      }
+    }
 
     return matches;
   }

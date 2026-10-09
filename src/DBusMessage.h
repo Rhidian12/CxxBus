@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -30,11 +31,10 @@
 #include "DBus.h"
 #include "DBusHelpers.h"
 #include "DBusTypes.h"
+#include "IncomingDBusMessage.h"
 
 namespace cxxbus
 {
-  class IncomingDBusMessage;
-
   class InvalidDBusPath : public std::runtime_error
   {
    public:
@@ -47,7 +47,7 @@ namespace cxxbus
     std::optional<std::string> m_method;
     std::optional<ObjectPath> m_path;
     std::optional<DBusInterfaceName> m_interface;
-    std::vector<DBusMessageFlags> m_flags;
+    uint8_t m_flags{};
     DBusMessageType m_messageType;
 
     std::optional<Signature> m_signature;
@@ -59,13 +59,46 @@ namespace cxxbus
    public:
     DBusMessage() = default;
 
-    static DBusMessage Method(std::string const& method);
-    static DBusMessage Method(std::string&& method);
+    template <typename TMethod, typename TPath>
+      requires(std::constructible_from<std::string, TMethod> && std::same_as<std::remove_cvref_t<TPath>, ObjectPath>)
+    static DBusMessage Method(TMethod&& method, TPath&& path)
+    {
+      DBusMessage message;
+      message.m_method = std::forward<TMethod>(method);
+      message.m_path = std::forward<TPath>(path);
+      message.m_messageType = DBusMessageType::METHOD_CALL;
+      return message;
+    }
+
+    template <typename TSignal, typename TPath, typename TInterface>
+      requires(std::constructible_from<std::string, TSignal> && std::same_as<std::remove_cvref_t<TPath>, ObjectPath> &&
+               std::same_as<std::remove_cvref_t<TInterface>, DBusInterfaceName>)
+    static DBusMessage Signal(TSignal&& signal, TPath&& path, TInterface&& interface)
+    {
+      DBusMessage message;
+      message.m_method = std::forward<TSignal>(signal);
+      message.m_path = std::forward<TPath>(path);
+      message.m_interface = std::forward<TInterface>(interface);
+      message.m_messageType = DBusMessageType::SIGNAL;
+      return message;
+    }
+
+    template <typename TErrorName, typename TErrorMessage>
+      requires(std::constructible_from<DBusErrorName, TErrorName> &&
+               std::constructible_from<std::string, TErrorMessage>)
+    static DBusMessage Error(IncomingDBusMessage const& incomingMessage, TErrorName&& errorName,
+                             TErrorMessage&& errorMessage)
+    {
+      DBusMessage message;
+      message.m_messageType = DBusMessageType::ERROR;
+      message.m_errorName = errorName.GetName();
+      message.m_replySerial = incomingMessage.GetSerial();
+      message.m_destination = incomingMessage.GetSender();
+      message.Parameter(std::forward<TErrorMessage>(errorMessage));
+
+      return message;
+    }
     static DBusMessage Reply(IncomingDBusMessage const& incomingMessage);
-    static DBusMessage Signal(std::string const& signal);
-    static DBusMessage Signal(std::string&& signal);
-    static DBusMessage Error(IncomingDBusMessage const& incomingMessage, std::string errorName,
-                             std::string errorMessage);
 
     DBusMessage& Path(ObjectPath&& path);
     DBusMessage& Path(ObjectPath const& path);
@@ -90,7 +123,7 @@ namespace cxxbus
 
     std::vector<uint8_t> Serialize(uint32_t serial) const;
 
-    std::vector<DBusMessageFlags> const& GetFlags() const;
+    uint8_t GetFlags() const;
 
     bool ExpectsReply() const;
 

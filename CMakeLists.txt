@@ -28,6 +28,7 @@ option(CXXBUS_ENABLE_TESTS "Build CxxBus Unit Tests" OFF)
 option(CXXBUS_ENABLE_BENCHMARKS "Build CxxBus Benchmarks" OFF)
 option(CXXBUS_DEV "Build CxxBus Unit Tests & Benchmarks" OFF)
 set(CXXBUS_LOGLEVEL "ERROR" CACHE STRING "Set the CxxBus loglevel")
+set(CXXBUS_MAX_CONCURRENT_MESSAGES 56 CACHE STRING "Set the max nr of concurrent messages CxxBus can handle. This is an optimisation. The higher this number, the more memory CxxBus uses")
 
 if(CXXBUS_SANITIZERS)
   set(CXXBUS_ASAN ON)
@@ -52,10 +53,15 @@ message(STATUS "  CXXBUS_ENABLE_TESTS: ${CXXBUS_ENABLE_TESTS}")
 message(STATUS "  CXXBUS_ENABLE_BENCHMARKS: ${CXXBUS_ENABLE_BENCHMARKS}")
 message(STATUS "  CXXBUS_DEV: ${CXXBUS_DEV}")
 message(STATUS "  CXXBUS_LOGLEVEL: ${CXXBUS_LOGLEVEL}")
+message(STATUS "  CXXBUS_MAX_CONCURRENT_MESSAGES: ${CXXBUS_MAX_CONCURRENT_MESSAGES}")
 message(STATUS "")
 
 if(CXXBUS_LOGLEVEL)
   add_compile_definitions(CXX_BUS_LOGLEVEL=${CXXBUS_LOGLEVEL})
+endif()
+
+if(CXXBUS_MAX_CONCURRENT_MESSAGES)
+  add_compile_definitions(CXXBUS_MAX_CONCURRENT_MESSAGES=${CXXBUS_MAX_CONCURRENT_MESSAGES})
 endif()
 
 if(CXXBUS_ASAN)
@@ -65,14 +71,14 @@ if(CXXBUS_ASAN)
   add_link_options(-fsanitize=address -fno-omit-frame-pointer)
 endif()
 
-if(USAN)
+if(CXXBUS_USAN)
   message(STATUS "Enabling UndefinedBehaviorSanitizer")
 
   add_compile_options(-fsanitize=undefined -fno-omit-frame-pointer)
   add_link_options(-fsanitize=undefined -fno-omit-frame-pointer)
 endif()
 
-if(TSAN)
+if(CXXBUS_TSAN)
   message(STATUS "Enabling ThreadSanitizer")
 
   add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
@@ -86,7 +92,7 @@ include("build-system/CreateBinary.cmake")
 
 enable_testing()
 
-if(CXXBUS_DEV)
+if(CXXBUS_DEV OR CXXBUS_ENABLE_BENCHMARKS)
   include(FetchContent)
 
   FetchContent_Declare(

@@ -48,14 +48,11 @@ namespace cxxbus
 {
   inline void ApplyPadding(std::vector<byte>& bytes, uint8_t alignment)
   {
-    uint32_t const result{static_cast<uint32_t>(bytes.size()) % alignment};
-    if (result == 0) return;
-
-#if __cpp_lib_containers_ranges
-    bytes.append_range(std::vector<byte>(static_cast<uint8_t>(alignment - result), '\0'));
-#else
-    bytes.insert(bytes.end(), static_cast<uint8_t>(alignment - result), '\0');
-#endif
+    size_t const result{bytes.size() % alignment};
+    if (result != 0)
+    {
+      bytes.resize(bytes.size() + (alignment - result));
+    }
   }
 
   inline uint32_t AddPaddingToSize(uint32_t& size, uint8_t alignment)
@@ -923,7 +920,7 @@ namespace cxxbus
   {
     uint32_t const arrLength{UnmarshalDBusBasicFixedType<uint32_t>(dbusType, arrPointer)};
 
-    if (arrLength >= 2 << 26) [[unlikely]]
+    if (arrLength >= 1 << 26) [[unlikely]]
     {
       throw std::length_error{"DBus Arrays cannot exceed a size of 64 MiB"};
     }
@@ -1287,7 +1284,6 @@ namespace cxxbus
       throw DBusInvalidSignatureError{std::format("Signature '{}' contains unknown DBus Type Codes.", signature)};
     }
 
-    // [TODO]: stop being lazy and check this at compile time
     if (!AreDBusTypeCodeBracketsEven(signature))
     {
       throw DBusInvalidSignatureError{
