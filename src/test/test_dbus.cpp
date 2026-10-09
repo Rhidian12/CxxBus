@@ -1032,10 +1032,11 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
 
     std::array<bool, 8> matchRulesTriggered{};
     bool shouldNotGetTriggered{};
-    std::vector<boost::asio::experimental::channel<void(boost::system::error_code)>> channels;
+    std::vector<std::unique_ptr<boost::asio::experimental::channel<void(boost::system::error_code)>>> channels;
     for (size_t i{}; i < matchRulesTriggered.size(); ++i)
     {
-      channels.push_back(boost::asio::experimental::channel<void(boost::system::error_code)>{ioService, 1});
+      channels.push_back(
+          std::make_unique<boost::asio::experimental::channel<void(boost::system::error_code)>>(ioService, 1));
     }
 
     // Test argument matching
@@ -1044,7 +1045,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
         [&matchRulesTriggered, &channels](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
         {
           matchRulesTriggered[0] = true;
-          channels[0].async_send({}, boost::asio::detached);
+          channels[0]->async_send({}, boost::asio::detached);
           co_return;
         });
 
@@ -1056,12 +1057,12 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
           if (msg.GetHeader().GetObjectPath() == "/foo")
           {
             matchRulesTriggered[1] = true;
-            channels[1].async_send({}, boost::asio::detached);
+            channels[1]->async_send({}, boost::asio::detached);
           }
           else if (msg.GetHeader().GetObjectPath() == "/foo/bar")
           {
             matchRulesTriggered[2] = true;
-            channels[2].async_send({}, boost::asio::detached);
+            channels[2]->async_send({}, boost::asio::detached);
           }
           co_return;
         });
@@ -1074,27 +1075,27 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
                                   if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/")
                                   {
                                     matchRulesTriggered[3] = true;
-                                    channels[3].async_send({}, boost::asio::detached);
+                                    channels[3]->async_send({}, boost::asio::detached);
                                   }
                                   else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/")
                                   {
                                     matchRulesTriggered[4] = true;
-                                    channels[4].async_send({}, boost::asio::detached);
+                                    channels[4]->async_send({}, boost::asio::detached);
                                   }
                                   else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/")
                                   {
                                     matchRulesTriggered[5] = true;
-                                    channels[5].async_send({}, boost::asio::detached);
+                                    channels[5]->async_send({}, boost::asio::detached);
                                   }
                                   else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/cc/")
                                   {
                                     matchRulesTriggered[6] = true;
-                                    channels[6].async_send({}, boost::asio::detached);
+                                    channels[6]->async_send({}, boost::asio::detached);
                                   }
                                   else if (msg.GetSignature() == "o" && msg.Get<ObjectPath>() == "/aa/bb/cc")
                                   {
                                     matchRulesTriggered[7] = true;
-                                    channels[7].async_send({}, boost::asio::detached);
+                                    channels[7]->async_send({}, boost::asio::detached);
                                   }
                                   else
                                   {
@@ -1146,7 +1147,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
 
     for (auto& chann : channels)
     {
-      co_await chann.async_receive(boost::asio::use_awaitable);
+      co_await chann->async_receive(boost::asio::use_awaitable);
     }
 
     EXPECT_TRUE(std::ranges::all_of(matchRulesTriggered, [](bool b) { return b; }));
