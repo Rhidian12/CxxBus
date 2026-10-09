@@ -1035,7 +1035,7 @@ TEST_F(DBusConnectionTestSuite, TestMatchRules)
     std::vector<boost::asio::experimental::channel<void(boost::system::error_code)>> channels;
     for (size_t i{}; i < matchRulesTriggered.size(); ++i)
     {
-      channels.emplace_back(ioService, 1);
+      channels.push_back(boost::asio::experimental::channel<void(boost::system::error_code)>{ioService, 1});
     }
 
     // Test argument matching
