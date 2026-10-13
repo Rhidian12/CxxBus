@@ -59,6 +59,10 @@ Available targets are:
   Quality-of-life flag that sets both `USAN` and `ASAN`. Do not use this in production as it harms performance.
   Cannot be combined with `TSAN`
 
+## Documentation
+
+See [using-cxxbus](./docs/using-cxxbus.md) for documentation.
+
 ## Requirements
 
 - C++23 compiler, C++20 is partially supported, but prefer C++23.
