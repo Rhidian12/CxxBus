@@ -18,7 +18,7 @@ sdbus::ObjectPath const OBJECT_PATH = sdbus::ObjectPath{"/org/cxxbus/test"};
 sdbus::InterfaceName const INTERFACE_NAME = sdbus::InterfaceName{"org.cxxbus.test"};
 sdbus::MethodName const METHOD_NAME = sdbus::MethodName{"Benchmark"};
 
-static void BM_SDBusEmptyMessage(benchmark::State& state)
+static void SDBus_EmptyMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -41,7 +41,7 @@ static void BM_SDBusEmptyMessage(benchmark::State& state)
   serverConn->releaseName(SERVICE_NAME);
 }
 
-static void BM_StringMessage(benchmark::State& state)
+static void SDBus_StringMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -76,7 +76,7 @@ static void BM_StringMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-static void BM_SDBusBigStringMessage(benchmark::State& state)
+static void SDBus_BigStringMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -111,7 +111,7 @@ static void BM_SDBusBigStringMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-static void BM_SDBusNestedMapMessage(benchmark::State& state)
+static void SDBus_NestedMapMessage(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
   for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
@@ -155,7 +155,7 @@ static void BM_SDBusNestedMapMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-BENCHMARK(BM_SDBusEmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_SDBusBigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_SDBusNestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_NestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();
