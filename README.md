@@ -75,7 +75,6 @@ See [using-cxxbus](./docs/using-cxxbus.md) for documentation.
 Benchmark can be seen in the [benchmarks](./src/benchmarks/) folder. All benchmarks were run on an Arch Linux system with CPU + RAM TODO
 All benchmarks were run on Clang TODO VERSION via the CMake build command: `cmake -DCXXBUS_ENABLE_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -G Ninja -S . -B build`
 Every benchmark was run via the GoogleBenchmark command line: `<binary> --benchmark_report_aggregates_only=true --benchmark_repetitions=10 --benchmark_out_format=json --benchmark_out=<file>`
-All results displayed here are the average of 10 runs, with top and bottom 10% excluded.
 
 ## Future work
 
