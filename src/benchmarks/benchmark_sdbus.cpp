@@ -13,8 +13,6 @@
 #include <cstdint>
 #include <cstdlib>
 
-#include "StructToTuple.h"
-
 sdbus::ServiceName const SERVICE_NAME = sdbus::ServiceName{"org.cxxbus.test"};
 sdbus::ObjectPath const OBJECT_PATH = sdbus::ObjectPath{"/org/cxxbus/test"};
 sdbus::InterfaceName const INTERFACE_NAME = sdbus::InterfaceName{"org.cxxbus.test"};
@@ -145,6 +143,40 @@ static void SDBus_StructMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
+static void SDBus_NestedStructMessage(benchmark::State& state)
+{
+  auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
+  auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
+
+  obj->addVTable(sdbus::MethodVTableItem{METHOD_NAME,
+                                         sdbus::Signature{"((sdiqb)(sdiqb)(sdiqb))"},
+                                         {},
+                                         {},
+                                         {},
+                                         [](sdbus::MethodCall call) { call.createReply().send(); },
+                                         {}})
+      .forInterface(INTERFACE_NAME);
+
+  serverConn->enterEventLoopAsync();
+
+  auto clientConn = sdbus::createSessionBusConnection();
+  auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
+
+  using FooStruct = sdbus::Struct<std::string, double, int32_t, uint16_t, bool>;
+  auto fooStruct = FooStruct{"Hello World!", 1.123456789, 987654321, 12345, true};
+  using BarStruct = sdbus::Struct<FooStruct, FooStruct, FooStruct>;
+  auto barStruct = BarStruct{fooStruct, fooStruct, fooStruct};
+
+  for (auto _ : state)
+  {
+    auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
+    method << barStruct;
+    proxy->callMethod(method);
+  }
+
+  serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+}
+
 static void SDBus_NestedMapMessage(benchmark::State& state)
 {
   std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
@@ -193,4 +225,5 @@ BENCHMARK(SDBus_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(SDBus_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(SDBus_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(SDBus_StructMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_NestedStructMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(SDBus_NestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();
