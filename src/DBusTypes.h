@@ -130,6 +130,7 @@ namespace cxxbus
     uint32_t size() const;
 
     explicit operator std::string() const;
+    explicit operator std::string_view() const;
 
     std::string const& GetPath() const;
     char const* data() const;
@@ -151,6 +152,7 @@ namespace cxxbus
 
     uint32_t size() const;
     explicit operator std::string() const;
+    explicit operator std::string_view() const;
     std::string const& GetSignature() const;
     // Get the alignment of the contained signature
     uint8_t GetAlignmentOfSignature() const;
@@ -258,6 +260,7 @@ namespace cxxbus
 
     uint32_t size() const;
     explicit operator std::string() const;
+    explicit operator std::string_view() const;
     bool empty() const;
     char const* data() const;
     bool contains(char c) const;

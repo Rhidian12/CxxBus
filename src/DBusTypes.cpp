@@ -145,6 +145,11 @@ namespace cxxbus
     return m_path;
   }
 
+  ObjectPath::operator std::string_view() const
+  {
+    return m_path;
+  }
+
   std::string const& ObjectPath::GetPath() const
   {
     return m_path;
@@ -176,6 +181,11 @@ namespace cxxbus
   }
 
   Signature::operator std::string() const
+  {
+    return m_signature;
+  }
+
+  Signature::operator std::string_view() const
   {
     return m_signature;
   }
@@ -335,6 +345,11 @@ namespace cxxbus
   }
 
   DBusInterfaceName::operator std::string() const
+  {
+    return m_name;
+  }
+
+  DBusInterfaceName::operator std::string_view() const
   {
     return m_name;
   }
