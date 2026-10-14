@@ -75,6 +75,27 @@ See [using-cxxbus](./docs/using-cxxbus.md) for documentation.
 Benchmark can be seen in the [benchmarks](./src/benchmarks/) folder. All benchmarks were run on an Arch Linux system with CPU + RAM TODO
 All benchmarks were run on Clang TODO VERSION via the CMake build command: `cmake -DCXXBUS_ENABLE_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -G Ninja -S . -B build`
 Every benchmark was run via the GoogleBenchmark command line: `<binary> --benchmark_report_aggregates_only=true --benchmark_repetitions=10 --benchmark_out_format=json --benchmark_out=<file>`
+![benchmarks](https://github.com/Rhidian12/CxxBus/blob/main/benchmark-docs/results.png)
+Textual version of the benchmarks:
+
+- **EmptyMessage**
+  - CxxBus: 41497 ns (12% slower than SDBus)
+  - SDBus: 37102 ns
+- **StringMessage**
+  - CxxBus: 35095 ns (3% slower than SDBus)
+  - SDBus: 34019 ns
+- **BigStringMessage**
+  - CxxBus: 37262 ns (51% faster than SDBus)
+  - SDBus: 75426 ns
+- **StructMessage**
+  - CxxBus: 30725 ns (21% faster than SDBus)
+  - SDBus: 38771 ns
+- **NestedStructMessage**
+  - CxxBus: 38439 ns (6% slower than SDBus)
+  - SDBus: 36198 ns
+- **NestedMapMessage**
+  - CxxBus: 3147816 ns (63% faster than SDBus)
+  - SDBus: 8322149 ns
 
 ## Future work
 
