@@ -342,7 +342,7 @@ namespace cxxbus
   // this request. Must be non-zero value Array of struct of byte, variant are the header fields. The message type
   // specifies which fields are required Here we keep track of the set starting size of any DBus message: The 4 bytes,
   // the 2 u32's. We use this data to parse the DBus Message piece-by-piece
-  // We also read in the uint32_t of the array already
+  // We also read in the uint32_t of the array already which is our 3rd and final uint32_t
   inline static uint32_t constexpr FIRST_HEADER_PART_SIZE = sizeof(uint8_t) * 4 + sizeof(uint32_t) * 3;
 
   // Alignment boundary of the DBus Message Body (not the Header)
