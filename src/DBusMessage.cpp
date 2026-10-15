@@ -70,9 +70,8 @@ namespace cxxbus
       // non-zero value Array of struct of byte, variant are the header fields. The
       // message type specifies which fields are required
 
-      std::vector<byte> dbusMessage{};
-
       std::vector<std::tuple<uint8_t, FastVariant>> headerFields{};
+      headerFields.reserve(8);
       for (HeaderField const& headerField : HEADER_FIELDS)
       {
         if (headerField.decimalCode == HeaderFieldCode::SIGNATURE)
@@ -184,19 +183,11 @@ namespace cxxbus
               std::move(headerFields)                                // Our array of header fields
           };
 
-#if __cpp_lib_containers_ranges
-      dbusMessage.append_range(MarshalDBusType(header));
-#else
-      std::vector<byte> marshalledHeader{MarshalDBusType(header)};
-      dbusMessage.insert(dbusMessage.end(), marshalledHeader.begin(), marshalledHeader.end());
-#endif
+      std::vector<byte> dbusMessage{MarshalDBusType(header)};
       ApplyPadding(dbusMessage, MESSAGE_HEADER_PADDING);
 
-#if __cpp_lib_containers_ranges
-      dbusMessage.append_range(messageBody);
-#else
-      dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
-#endif
+      dbusMessage.resize(dbusMessage.size() + messageBody.size());
+      std::memcpy(dbusMessage.data() + dbusMessage.size() - messageBody.size(), messageBody.data(), messageBody.size());
 
       return dbusMessage;
     }
