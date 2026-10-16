@@ -4,7 +4,6 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
 #include <cstdint>
-#include <cstdlib>
 
 #include "StructToTuple.h"
 #include "src/DBusConnection.h"
@@ -193,51 +192,8 @@ static void CxxBus_NestedStructMessage(benchmark::State& state)
   ioContext.run();
 }
 
-static void CxxBus_NestedMapMessage(benchmark::State& state)
-{
-  std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
-  for (uint32_t i{}; i < 18; ++i)
-  {
-    for (uint32_t j{}; j < 3; ++j)
-    {
-      for (uint32_t k{}; k < 24; ++k)
-      {
-        for (uint32_t l{}; l < 32; ++l)
-        {
-          map[i][j][k][l] = rand() % 100;
-        }
-      }
-    }
-  }
-
-  boost::asio::io_context ioContext{};
-  auto work = [&ioContext, &state, &map]() -> boost::asio::awaitable<void>
-  {
-    auto serverConn = co_await cxxbus::DBusConnection::Create(ioContext, WELL_KNOWN_NAME, cxxbus::BusType::SESSION);
-    auto clientConn = co_await cxxbus::DBusConnection::Create(ioContext, std::nullopt, cxxbus::BusType::SESSION);
-
-    co_await serverConn->RegisterObjectPathHandler(
-        OBJECT_PATH, [serverConn](cxxbus::IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
-        { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
-
-    for (auto _ : state)
-    {
-      co_await clientConn->SendMessage(
-          cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName()).Parameter(map));
-    }
-
-    co_await serverConn->Close();
-    co_await clientConn->Close();
-  };
-
-  boost::asio::co_spawn(ioContext, work(), boost::asio::detached);
-
-  ioContext.run();
-}
-
 BENCHMARK(CxxBus_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(CxxBus_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(CxxBus_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(CxxBus_StructMessage)->UseRealTime()->MeasureProcessCPUTime();
 BENCHMARK(CxxBus_NestedStructMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(CxxBus_NestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();
