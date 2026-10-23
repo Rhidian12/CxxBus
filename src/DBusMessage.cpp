@@ -186,8 +186,8 @@ namespace cxxbus
       std::vector<byte> dbusMessage{MarshalDBusType(header)};
       ApplyPadding(dbusMessage, MESSAGE_HEADER_PADDING);
 
-      dbusMessage.resize(dbusMessage.size() + messageBody.size());
-      std::memcpy(dbusMessage.data() + dbusMessage.size() - messageBody.size(), messageBody.data(), messageBody.size());
+      dbusMessage.reserve(dbusMessage.size() + messageBody.size());
+      dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
 
       return dbusMessage;
     }
@@ -200,42 +200,6 @@ namespace cxxbus
     message.m_replySerial = incomingMessage.GetSerial();
     message.m_destination = incomingMessage.GetSender();
     return message;
-  }
-
-  DBusMessage& DBusMessage::Path(ObjectPath&& path)
-  {
-    m_path = std::move(path);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Path(ObjectPath const& path)
-  {
-    m_path = path;
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName&& interface)
-  {
-    m_interface = std::move(interface);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName const& interface)
-  {
-    m_interface = interface;
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Destination(std::string&& destination)
-  {
-    m_destination = std::move(destination);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Destination(std::string const& destination)
-  {
-    m_destination = destination;
-    return *this;
   }
 
   DBusMessage& DBusMessage::Flag(DBusMessageFlags flag)

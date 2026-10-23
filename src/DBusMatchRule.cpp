@@ -42,7 +42,7 @@ namespace cxxbus
   {
     constexpr char const* MESSAGE_TYPE_STRINGS[] = {"method_call", "method_return", "error", "signal"};
 
-    void WalkSignature(Signature const& signature, std::vector<byte> const& messageBody, uint32_t& pointer,
+    void WalkSignature(Signature const& signature, std::span<byte const> messageBody, uint32_t& pointer,
                        uint8_t& argIndex, std::unordered_map<uint8_t, std::string>& stringArgs,
                        std::unordered_map<uint8_t, ObjectPath>& objectPathArgs, bool allowedToAddArgs = true)
     {
@@ -429,7 +429,7 @@ namespace cxxbus
     {
       uint32_t pointer{};
       uint8_t argIndex{};
-      WalkSignature(*message.GetHeader().GetSignature(), message.GetRawData(), pointer, argIndex, stringArgs,
+      WalkSignature(*message.GetHeader().GetSignature(), message.GetMessageBody(), pointer, argIndex, stringArgs,
                     objectPathArgs);
     }
 

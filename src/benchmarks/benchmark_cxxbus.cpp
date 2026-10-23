@@ -30,7 +30,7 @@ static void CxxBus_EmptyMessage(benchmark::State& state)
     for (auto _ : state)
     {
       co_await clientConn->SendMessage(
-          std::move(cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName())));
+          cxxbus::DBusMessage::Method(METHOD_NAME, OBJECT_PATH).Destination(WELL_KNOWN_NAME.GetName()));
     }
 
     co_await serverConn->Close();

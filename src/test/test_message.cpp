@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <memory>
 
 #include "src/DBus.h"
 #include "src/DBusMessage.h"
@@ -24,13 +25,15 @@ namespace
     uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
     uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
+    std::unique_ptr<byte[]> fullMessage{std::make_unique_for_overwrite<byte[]>(fullMessageBytes.size())};
+    std::memcpy(fullMessage.get(), fullMessageBytes.data(), fullMessageBytes.size());
+
     return IncomingDBusMessage{
         DBusMessageHeader{
             std::span<byte const>{fullMessageBytes.begin(),
                                   fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
             serial, messageType, headerFieldArrLength, messageLength},
-        std::ranges::to<std::vector>(
-            fullMessageBytes | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
+        std::move(fullMessage), FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes};
   }
 }  // namespace
 
@@ -177,7 +180,7 @@ TEST_F(DBusMessageTestSuite, DeserializeHelloMessageRoundTrip)
   EXPECT_EQ(header.GetInterface(), "org.freedesktop.DBus");
   EXPECT_EQ(header.GetMember(), "Hello");
   EXPECT_FALSE(header.GetSignature().has_value());  // no body -> no SIGNATURE field
-  EXPECT_TRUE(message.GetRawData().empty());
+  EXPECT_TRUE(message.GetMessageBody().empty());
 }
 
 TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
@@ -255,8 +258,8 @@ TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
   // unmarshalling path using the signature we just read out of the
   // header -- ties this back to the UnmarshalDBusType tests.
   std::vector<byte> expectedBody{0x05, 0x00, 0x00, 0x00, ':', '1', '.', '4', '2', 0x00};
-  EXPECT_EQ(message.GetRawData(), expectedBody);
-  EXPECT_EQ(UnmarshalDBusType<std::string>(message.GetRawData(), header.GetSignature()->GetSignature()), ":1.42");
+  EXPECT_EQ((std::vector<byte>(message.GetMessageBody().begin(), message.GetMessageBody().end())), expectedBody);
+  EXPECT_EQ(UnmarshalDBusType<std::string>(message.GetMessageBody(), header.GetSignature()->GetSignature()), ":1.42");
 }
 
 // ---------------------------------------------------------------------

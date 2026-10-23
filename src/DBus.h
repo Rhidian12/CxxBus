@@ -644,9 +644,8 @@ namespace cxxbus
     {
       MarshalBasicFixedType<uint32_t>(value.size() * sizeof(ContainedType), dbusType);
       ApplyPadding(dbusType, GetAlignmentOfDBusType<ContainedType>());
-      size_t oldSize{dbusType.size()};
-      dbusType.resize(dbusType.size() + sizeof(ContainedType) * value.size());
-      std::memcpy(dbusType.data() + oldSize, value.data(), value.size() * sizeof(ContainedType));
+      dbusType.reserve(dbusType.size() + sizeof(ContainedType) * value.size());
+      dbusType.insert(dbusType.end(), value.begin(), value.end());
     }
     else
     {

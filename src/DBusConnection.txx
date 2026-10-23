@@ -95,7 +95,7 @@ namespace cxxbus
                               }
                               else
                               {
-                                promise.set_value(res);
+                                promise.set_value(std::move(res));
                               }
                             });
     }
@@ -527,7 +527,7 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::HandleReadMessage(IncomingDBusMessage&& message)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::HandleReadMessage(IncomingDBusMessage message)
   {
     std::shared_ptr<InternalState> state = m_state;
     DBusMessageHeader const& messageHeader = message.GetHeader();
@@ -576,8 +576,8 @@ namespace cxxbus
           {
             LOG_TRACE(LOGGER, "Rule '{}' matched incoming signal", info.rule.GetRule());
             boost::asio::io_context& ioContext{info.executeOnUserContext ? m_userIOContext : *m_state->ioContext};
-            auto invokeSignalHandlers = [](MatchRuleInfo info,
-                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+            auto invokeSignalHandlers = []<typename TMsg>(MatchRuleInfo info,
+                                                          TMsg message) -> boost::asio::awaitable<void>
             {
               for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& cb : info.callback)
               {
@@ -592,7 +592,7 @@ namespace cxxbus
               // invoke our signal handlers
               if constexpr (SingleThreaded)
               {
-                co_await invokeSignalHandlers(info, message);
+                co_await invokeSignalHandlers(info, std::cref(message));
               }
               else
               {
@@ -600,11 +600,12 @@ namespace cxxbus
                 // `m_userIOContext` while the DBusNameCache wants things to run on our internal thread
                 if (state->activeContext == ioContext.get_executor())
                 {
-                  co_await invokeSignalHandlers(info, message);
+                  co_await invokeSignalHandlers(info, std::cref(message));
                 }
                 else
                 {
-                  boost::asio::co_spawn(ioContext, invokeSignalHandlers(info, message), boost::asio::detached);
+                  boost::asio::co_spawn(ioContext, invokeSignalHandlers(info, message.DeepCopy()),
+                                        boost::asio::detached);
                 }
               }
             }
@@ -678,7 +679,7 @@ namespace cxxbus
         if constexpr (SingleThreaded)
         {
           // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
-          if (co_await invokeOnIncomingHandlers(std::move(state), message) == MessageHandled::YES)
+          if (co_await invokeOnIncomingHandlers(std::move(state), message.DeepCopy()) == MessageHandled::YES)
           {
             co_return;
           }
@@ -687,9 +688,8 @@ namespace cxxbus
         {
           // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
           // `m_userIOContext` so enqueue them on `m_userIOContext`
-          std::shared_ptr<IncomingDBusMessage> msg{std::make_shared<IncomingDBusMessage>(std::move(message))};
-          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), *msg),
-                                [this, msg](std::exception_ptr, MessageHandled handled) -> void
+          boost::asio::co_spawn(m_userIOContext, invokeOnIncomingHandlers(std::move(state), message.DeepCopy()),
+                                [this, message = std::move(message)](std::exception_ptr, MessageHandled handled) -> void
                                 {
                                   if (handled == MessageHandled::NO)
                                   {
@@ -697,7 +697,7 @@ namespace cxxbus
                                     boost::asio::co_spawn(
                                         m_state->activeContext,
                                         SendMessageNoReply(DBusMessage::Error(
-                                            *msg, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
+                                            message, DBusErrorName{"org.freedesktop.DBus.Error.UnknownMethod"},
                                             "The method called is not implemented by this connection")),
                                         boost::asio::detached);
                                   }
@@ -823,7 +823,7 @@ namespace cxxbus
           "reply"};
     }
 
-    co_return reply.value();
+    co_return std::move(reply).value();
   }
 
   template <bool SingleThreaded>
@@ -912,7 +912,7 @@ namespace cxxbus
           "reply"};
     }
 
-    return reply.value();
+    return std::move(reply).value();
   }
 
   template <bool SingleThreaded>
@@ -1325,18 +1325,20 @@ namespace cxxbus
   {
     struct Buffer
     {
-      std::vector<byte> data;
+      std::unique_ptr<byte[]> data;
       std::optional<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>
           currentHeader;
       uint32_t currSize;
       uint32_t nrOfRequiredBytesForFullMessage;
       uint32_t nrOfPaddingBytesAfterHeader;
+      uint32_t currCapacity;
 
       Buffer()
         : currSize()
         , nrOfRequiredBytesForFullMessage()
+        , currCapacity(4096)
       {
-        data.resize(4096);
+        data = std::make_unique_for_overwrite<byte[]>(currCapacity);
       }
 
       // Checks if we have enough bytes to parse a full message.
@@ -1355,7 +1357,7 @@ namespace cxxbus
         {
           currentHeader = UnmarshalDBusType<
               MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>(
-              std::span<byte const>{data.data(), FIRST_HEADER_PART_SIZE}, "yyyyuuu");
+              std::span<byte const>{data.get(), FIRST_HEADER_PART_SIZE}, "yyyyuuu");
 
           // fullHeaderLength is array length + first 16 bytes + padding to actual message
           uint32_t fullHeaderLength{currentHeader->GetType<6>() + FIRST_HEADER_PART_SIZE};
@@ -1365,27 +1367,61 @@ namespace cxxbus
           nrOfRequiredBytesForFullMessage = currentHeader->GetType<4>() + fullHeaderLength;
         }
 
+        if (currCapacity < nrOfRequiredBytesForFullMessage)
+        {
+          std::unique_ptr<byte[]> newBuff = std::make_unique_for_overwrite<byte[]>(nrOfRequiredBytesForFullMessage);
+          currCapacity = nrOfRequiredBytesForFullMessage;
+          std::memcpy(newBuff.get(), data.get(), currSize);
+          data = std::move(newBuff);
+          return false;
+        }
+
         // Do we have enough bytes in our buffer to parse a full message?
         return currSize >= nrOfRequiredBytesForFullMessage;
       }
 
       void ReallocBufferIfRequired()
       {
-        if (currSize >= data.size()) [[unlikely]]
+        if (currSize >= currCapacity) [[unlikely]]
         {
-          data.resize(data.size() * 2);
+          std::unique_ptr<byte[]> newBuff = std::make_unique_for_overwrite<byte[]>(currCapacity * 2);
+          currCapacity *= 2;
+          std::memcpy(newBuff.get(), data.get(), currSize);
+          data = std::move(newBuff);
         }
+      }
+
+      std::unique_ptr<byte[]> ReleaseBuffer()
+      {
+        std::unique_ptr<byte[]> buffToReturn;
+        uint32_t remainingBuffSize{currSize - nrOfRequiredBytesForFullMessage};
+
+        if (remainingBuffSize == 0)
+        {
+          buffToReturn = std::move(data);
+          currCapacity = 4096;
+          data = std::make_unique_for_overwrite<byte[]>(currCapacity);
+          currSize = 0;
+        }
+        else
+        {
+          currCapacity = remainingBuffSize;
+          currSize = remainingBuffSize;
+          std::unique_ptr<byte[]> newData{std::make_unique_for_overwrite<byte[]>(currCapacity)};
+          std::memcpy(newData.get(), data.get() + nrOfRequiredBytesForFullMessage, currSize);
+
+          buffToReturn = std::move(data);
+          data = std::move(newData);
+        }
+
+        return buffToReturn;
       }
 
       void ResetBuffer()
       {
-        // Overwrite our old data with the rest of our data
-        std::memmove(data.data(), data.data() + nrOfRequiredBytesForFullMessage,
-                     currSize - nrOfRequiredBytesForFullMessage);
-        currSize -= nrOfRequiredBytesForFullMessage;
+        currentHeader.reset();
         nrOfRequiredBytesForFullMessage = 0;
         nrOfPaddingBytesAfterHeader = 0;
-        currentHeader.reset();
       }
     };
 
@@ -1400,28 +1436,30 @@ namespace cxxbus
         {
           buffer.ReallocBufferIfRequired();
           buffer.currSize += co_await state->socket.async_read_some(
-              boost::asio::buffer(buffer.data.data() + buffer.currSize, buffer.data.size() - buffer.currSize),
+              boost::asio::buffer(buffer.data.get() + buffer.currSize, buffer.currCapacity - buffer.currSize),
               boost::asio::use_awaitable);
         }
 
         // We have a full message to parse!
 
         // Copy our message body
-        uint32_t messageLength = buffer.currentHeader->template GetType<4>();
+        // uint32_t messageLength = buffer.currentHeader->template GetType<4>();
         uint32_t headerFieldArrLength = buffer.currentHeader->template GetType<6>();
-        std::vector<byte> messageBody(messageLength);
-        std::memcpy(
-            messageBody.data(),
-            buffer.data.data() + FIRST_HEADER_PART_SIZE + headerFieldArrLength + buffer.nrOfPaddingBytesAfterHeader,
-            messageBody.size());
+        // std::vector<byte> messageBody(messageLength);
+        // std::memcpy(
+        //     messageBody.data(),
+        //     buffer.data.get() + FIRST_HEADER_PART_SIZE + headerFieldArrLength + buffer.nrOfPaddingBytesAfterHeader,
+        //     messageBody.size());
+
+        std::unique_ptr<byte[]> fullMessage{buffer.ReleaseBuffer()};
+        std::span<byte const> headerPart{fullMessage.get(),
+                                         fullMessage.get() + FIRST_HEADER_PART_SIZE + headerFieldArrLength};
 
         IncomingDBusMessage message{
-            DBusMessageHeader{std::span<byte const>{buffer.data.begin(), buffer.data.begin() + FIRST_HEADER_PART_SIZE +
-                                                                             headerFieldArrLength},
-                              buffer.currentHeader->template GetType<5>(),
+            DBusMessageHeader{headerPart, buffer.currentHeader->template GetType<5>(),
                               static_cast<DBusMessageType>(buffer.currentHeader->template GetType<1>()),
                               headerFieldArrLength, buffer.currentHeader->template GetType<4>()},
-            std::move(messageBody)};
+            std::move(fullMessage), FIRST_HEADER_PART_SIZE + headerFieldArrLength + buffer.nrOfPaddingBytesAfterHeader};
 
         boost::asio::co_spawn(state->activeContext, HandleReadMessage(std::move(message)), boost::asio::detached);
 

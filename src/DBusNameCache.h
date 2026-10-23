@@ -43,7 +43,7 @@ namespace cxxbus
     std::unordered_map<std::string, std::set<std::string>> m_wellKnownNames;
 
    private:
-    void OnNameOwnerChanged(IncomingDBusMessage message);
+    void OnNameOwnerChanged(IncomingDBusMessage const& message);
 
    public:
     DBusNameCache(DBusConnectionImpl<SingleThreaded>& conn);

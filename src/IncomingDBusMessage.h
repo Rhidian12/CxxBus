@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 #include "DBus.h"
@@ -79,12 +80,20 @@ namespace cxxbus
   class IncomingDBusMessage
   {
    private:
-    std::vector<uint8_t> m_messageBody;
+    std::unique_ptr<byte[]> m_fullMessage;
     DBusMessageHeader m_header;
+    uint32_t m_bodyOffset;
 
    public:
-    IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody);
+    IncomingDBusMessage(DBusMessageHeader header, std::unique_ptr<byte[]> fullMessage, uint32_t bodyOffset);
     IncomingDBusMessage() = default;
+
+    IncomingDBusMessage(IncomingDBusMessage const&) noexcept = delete;
+    IncomingDBusMessage& operator=(IncomingDBusMessage const&) noexcept = delete;
+    IncomingDBusMessage(IncomingDBusMessage&& other) noexcept;
+    IncomingDBusMessage& operator=(IncomingDBusMessage&& other) noexcept;
+
+    IncomingDBusMessage DeepCopy() const;
 
     std::optional<std::string> const& GetMember() const;
     uint32_t GetSerial() const;
@@ -95,7 +104,7 @@ namespace cxxbus
     template <IsDBusType T>
     T Get() const
     {
-      return UnmarshalDBusType<T>(m_messageBody, m_header.GetSignature()->GetSignature());
+      return UnmarshalDBusType<T>(GetMessageBody(), m_header.GetSignature()->GetSignature());
     }
 
     // Do we have any arguments in our message body?
@@ -103,7 +112,9 @@ namespace cxxbus
     bool HasArguments() const;
 
     // Only useful for debugging purposes
-    std::vector<byte> const& GetRawData() const;
+    std::unique_ptr<byte[]> const& GetRawData() const;
+
+    std::span<byte const> GetMessageBody() const;
 
     std::string GetInfo() const;
 

@@ -28,6 +28,7 @@
 #include <cassert>
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -256,10 +257,37 @@ namespace cxxbus
     return m_data.errorName;
   }
 
-  IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::vector<byte> messageBody)
-    : m_messageBody(std::move(messageBody))
+  IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::unique_ptr<byte[]> fullMessage,
+                                           uint32_t bodyOffset)
+    : m_fullMessage(std::move(fullMessage))
     , m_header(std::move(header))
+    , m_bodyOffset(bodyOffset)
   {
+  }
+
+  IncomingDBusMessage::IncomingDBusMessage(IncomingDBusMessage&& other) noexcept
+    : m_fullMessage(std::move(other.m_fullMessage))
+    , m_header(std::move(other.m_header))
+    , m_bodyOffset(other.m_bodyOffset)
+  {
+  }
+
+  IncomingDBusMessage& IncomingDBusMessage::operator=(IncomingDBusMessage&& other) noexcept
+  {
+    m_fullMessage = std::move(other.m_fullMessage);
+    m_header = std::move(other.m_header);
+    m_bodyOffset = other.m_bodyOffset;
+
+    return *this;
+  }
+
+  IncomingDBusMessage IncomingDBusMessage::DeepCopy() const
+  {
+    std::unique_ptr<byte[]> fullMessage{
+        std::make_unique_for_overwrite<byte[]>(m_bodyOffset + m_header.GetMessageLength())};
+    std::memcpy(fullMessage.get(), m_fullMessage.get(), m_header.GetMessageLength());
+
+    return IncomingDBusMessage{m_header, std::move(fullMessage), m_bodyOffset};
   }
 
   std::optional<std::string> const& IncomingDBusMessage::GetMember() const
@@ -289,12 +317,17 @@ namespace cxxbus
 
   bool IncomingDBusMessage::HasArguments() const
   {
-    return !m_messageBody.empty();
+    return m_header.GetMessageLength() > 0;
   }
 
-  std::vector<byte> const& IncomingDBusMessage::GetRawData() const
+  std::unique_ptr<byte[]> const& IncomingDBusMessage::GetRawData() const
   {
-    return m_messageBody;
+    return m_fullMessage;
+  }
+
+  std::span<byte const> IncomingDBusMessage::GetMessageBody() const
+  {
+    return std::span<byte const>{m_fullMessage.get() + m_bodyOffset, m_header.GetMessageLength()};
   }
 
   std::string IncomingDBusMessage::GetInfo() const
