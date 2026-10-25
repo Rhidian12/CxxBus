@@ -751,8 +751,11 @@ namespace cxxbus
     }
 
     // Write our actual message
-    co_await boost::asio::async_write(m_state->socket, boost::asio::buffer(message.Serialize(serial)),
-                                      boost::asio::use_awaitable);
+    co_await boost::asio::async_write(
+        m_state->socket,
+        std::array{boost::asio::buffer(message.Serialize(serial)), boost::asio::buffer(message.GetMessageBody())},
+        [](boost::system::error_code const& ec, size_t) -> size_t { return ec ? 0 : 1 << 30; },
+        boost::asio::use_awaitable);
 
     LOG_TRACE(LOGGER, "Sent message '{}' with serial '{}'", message.GetInfo(), serial);
 

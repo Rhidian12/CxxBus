@@ -186,8 +186,8 @@ namespace cxxbus
       std::vector<byte> dbusMessage{MarshalDBusType(header)};
       ApplyPadding(dbusMessage, MESSAGE_HEADER_PADDING);
 
-      dbusMessage.reserve(dbusMessage.size() + messageBody.size());
-      dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
+      // dbusMessage.reserve(dbusMessage.size() + messageBody.size());
+      // dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
 
       return dbusMessage;
     }
@@ -212,6 +212,11 @@ namespace cxxbus
   {
     return CreateDBusMessage(m_messageType, serial, m_messageBody, m_flags, m_method, m_path, m_interface,
                              m_destination, m_signature, m_errorName, m_replySerial);
+  }
+
+  std::vector<uint8_t> const& DBusMessage::GetMessageBody() const
+  {
+    return m_messageBody;
   }
 
   uint8_t DBusMessage::GetFlags() const

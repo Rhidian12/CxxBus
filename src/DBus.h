@@ -644,8 +644,8 @@ namespace cxxbus
     {
       MarshalBasicFixedType<uint32_t>(value.size() * sizeof(ContainedType), dbusType);
       ApplyPadding(dbusType, GetAlignmentOfDBusType<ContainedType>());
-      dbusType.reserve(dbusType.size() + sizeof(ContainedType) * value.size());
-      dbusType.insert(dbusType.end(), value.begin(), value.end());
+      dbusType.insert(dbusType.end(), reinterpret_cast<byte const*>(value.data()),
+                      reinterpret_cast<byte const*>(value.data()) + value.size() * sizeof(ContainedType));
     }
     else
     {

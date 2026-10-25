@@ -143,6 +143,7 @@ namespace cxxbus
     DBusMessage& operator=(DBusMessage&&) = default;
 
     std::vector<uint8_t> Serialize(uint32_t serial) const;
+    std::vector<uint8_t> const& GetMessageBody() const;
 
     uint8_t GetFlags() const;
 

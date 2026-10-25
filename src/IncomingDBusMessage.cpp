@@ -285,7 +285,7 @@ namespace cxxbus
   {
     std::unique_ptr<byte[]> fullMessage{
         std::make_unique_for_overwrite<byte[]>(m_bodyOffset + m_header.GetMessageLength())};
-    std::memcpy(fullMessage.get(), m_fullMessage.get(), m_header.GetMessageLength());
+    std::memcpy(fullMessage.get(), m_fullMessage.get(), m_bodyOffset + m_header.GetMessageLength());
 
     return IncomingDBusMessage{m_header, std::move(fullMessage), m_bodyOffset};
   }

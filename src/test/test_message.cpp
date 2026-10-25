@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
+#include "gtest/gtest.h"
 #include "src/DBus.h"
 #include "src/DBusMessage.h"
 #include "src/DBusTypes.h"
@@ -41,13 +43,41 @@ struct DBusMessageTestSuite : ::testing::Test
 {
 };
 
+::testing::AssertionResult VecEqual(std::vector<byte> const& a, std::vector<byte> const& b)
+{
+  if (a.size() != b.size())
+  {
+    std::optional<size_t> foundIndex{std::nullopt};
+    for (size_t i{}; i < a.size(); ++i)
+    {
+      if (a[i] != b[i] || i >= b.size())
+      {
+        foundIndex = i;
+        break;
+      }
+    }
+    return ::testing::AssertionFailure() << "Size mismatch. LHS: " << a.size() << " vs RHS: " << b.size()
+                                         << ". Vectors mismatch at index: " << foundIndex.value_or(a.size());
+  }
+
+  for (size_t i{}; i < a.size(); ++i)
+  {
+    if (a[i] != b[i])
+    {
+      return ::testing::AssertionFailure() << "Mismatch at index: " << i << ", LHS: " << a[i] << " vs RHS: " << b[i];
+    }
+  }
+
+  return ::testing::AssertionSuccess();
+}
+
 TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
 {
   DBusMessage msg{DBusMessage::Method("Hello", ObjectPath{"/org/freedesktop/DBus"})
                       .Interface(DBusInterfaceName{"org.freedesktop.DBus"})};
 
   // clang-format off
-  EXPECT_EQ(msg.Serialize(/*serial=*/1),
+  EXPECT_TRUE(VecEqual(msg.Serialize(/*serial=*/1),
             (std::vector<byte>{
                 // Fixed header
                 'l', 0x01, 0x00, 0x01,               // endian, type, flags, version
@@ -80,7 +110,7 @@ TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
                 0x00,                                  // NUL
  
                 0x00, 0x00,                            // pad to offset 96 (body start; body is empty)
-            }));
+            })));
   // clang-format on 
 }
  
@@ -89,7 +119,7 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
   DBusMessage msg{DBusMessage::Method("M", ObjectPath{"/o"}).Interface(DBusInterfaceName{"com.dbus.CxxTest"}).Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
  
   // clang-format off
-  EXPECT_EQ(msg.Serialize(/*serial=*/5),
+  EXPECT_TRUE(VecEqual(msg.Serialize(/*serial=*/5),
             (std::vector<byte>{
                 // Fixed header
                 'l', 0x01, 0x00, 0x01,   // endian, type, flags, version
@@ -128,8 +158,9 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
                 0x00,  // pad to offset 88 (body start)
  
                 // Body: uint32_t = 7
-                0x07, 0x00, 0x00, 0x00,
-            }));
+                // We no longer serialize the body in `Serialize()`, so its not there
+                // 0x07, 0x00, 0x00, 0x00,
+            })));
   // clang-format on
 }
 

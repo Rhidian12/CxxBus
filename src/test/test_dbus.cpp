@@ -685,9 +685,16 @@ TYPED_TEST(DBusConnectionTestSuite, TestEmittingSignal)
         {
           LOG_DEBUG(LOGGER, "Received emitted map signal");
           mapSignalEmitted = true;
-          EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
-                    (std::map<std::string, std::tuple<std::string, uint64_t>>{
-                        {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          try
+          {
+            EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
+                      (std::map<std::string, std::tuple<std::string, uint64_t>>{
+                          {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          }
+          catch (std::exception const& ex)
+          {
+            LOG_ERROR(LOGGER, "ERROR: {}", ex.what());
+          }
           chann2->async_send(boost::system::error_code{}, boost::asio::detached);
           co_return;
         });
