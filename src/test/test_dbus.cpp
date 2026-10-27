@@ -82,7 +82,8 @@ namespace
     uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
     uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
-    std::unique_ptr<byte[]> fullMessage{std::make_unique_for_overwrite<byte[]>(fullMessageBytes.size())};
+    MessageBuffer fullMessage{new byte[fullMessageBytes.size()]{},
+                              MessageBufferDeleter{MessageBufferDeleter::NotPartOfPoolTag}};
     std::memcpy(fullMessage.get(), fullMessageBytes.data(), fullMessageBytes.size());
 
     return IncomingDBusMessage{

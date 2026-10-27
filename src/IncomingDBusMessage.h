@@ -23,11 +23,11 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 
 #include "DBus.h"
 #include "DBusTypes.h"
+#include "MessageBuffer.h"
 
 namespace cxxbus
 {
@@ -80,12 +80,12 @@ namespace cxxbus
   class IncomingDBusMessage
   {
    private:
-    std::unique_ptr<byte[]> m_fullMessage;
+    MessageBuffer m_fullMessage;
     DBusMessageHeader m_header;
     uint32_t m_bodyOffset;
 
    public:
-    IncomingDBusMessage(DBusMessageHeader header, std::unique_ptr<byte[]> fullMessage, uint32_t bodyOffset);
+    IncomingDBusMessage(DBusMessageHeader header, MessageBuffer fullMessage, uint32_t bodyOffset);
     IncomingDBusMessage() = default;
 
     IncomingDBusMessage(IncomingDBusMessage const&) noexcept = delete;
@@ -112,7 +112,7 @@ namespace cxxbus
     bool HasArguments() const;
 
     // Only useful for debugging purposes
-    std::unique_ptr<byte[]> const& GetRawData() const;
+    MessageBuffer const& GetRawData() const;
 
     std::span<byte const> GetMessageBody() const;
 

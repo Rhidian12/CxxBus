@@ -28,7 +28,6 @@
 #include <cassert>
 #include <cstdint>
 #include <format>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -257,8 +256,7 @@ namespace cxxbus
     return m_data.errorName;
   }
 
-  IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, std::unique_ptr<byte[]> fullMessage,
-                                           uint32_t bodyOffset)
+  IncomingDBusMessage::IncomingDBusMessage(DBusMessageHeader header, MessageBuffer fullMessage, uint32_t bodyOffset)
     : m_fullMessage(std::move(fullMessage))
     , m_header(std::move(header))
     , m_bodyOffset(bodyOffset)
@@ -283,8 +281,8 @@ namespace cxxbus
 
   IncomingDBusMessage IncomingDBusMessage::DeepCopy() const
   {
-    std::unique_ptr<byte[]> fullMessage{
-        std::make_unique_for_overwrite<byte[]>(m_bodyOffset + m_header.GetMessageLength())};
+    uint32_t capacity{};  // we don't really care about this
+    MessageBuffer fullMessage{AllocateMessageBuffer(m_bodyOffset + m_header.GetMessageLength(), capacity)};
     std::memcpy(fullMessage.get(), m_fullMessage.get(), m_bodyOffset + m_header.GetMessageLength());
 
     return IncomingDBusMessage{m_header, std::move(fullMessage), m_bodyOffset};
@@ -320,7 +318,7 @@ namespace cxxbus
     return m_header.GetMessageLength() > 0;
   }
 
-  std::unique_ptr<byte[]> const& IncomingDBusMessage::GetRawData() const
+  MessageBuffer const& IncomingDBusMessage::GetRawData() const
   {
     return m_fullMessage;
   }

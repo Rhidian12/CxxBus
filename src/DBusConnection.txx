@@ -259,8 +259,8 @@ namespace cxxbus
     m_state->onIncomingSignal.clear();
     m_state->objectPathHandlers.clear();
     m_state->shouldQuit = true;
-    m_state->connectionReady = false;
 
+    m_state->connectionReady = false;
     LOG_TRACE(LOGGER, "Closing socket");
     if (m_state->socket.is_open())
     {
@@ -284,8 +284,8 @@ namespace cxxbus
     }
 
     LOG_ERROR(LOGGER, "Connection to the dbus-daemon was lost unexpectedly");
-
     m_state->connectionReady = false;
+
     co_await Close(DONT_HOP);
     boost::asio::co_spawn(
         m_userIOContext,
@@ -1316,10 +1316,16 @@ namespace cxxbus
 
     if (m_state->socket.is_open())
     {
-      // Hard shutdown the socket, this should cause the HandleConnectionLost() function to get called
-      boost::system::error_code ec;
-      std::ignore = m_state->socket.shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
-      return;
+      boost::asio::co_spawn(
+          m_state->activeContext,
+          [this]() -> boost::asio::awaitable<void>
+          {
+            // Hard shutdown the socket, this should cause the HandleConnectionLost() function to get called
+            boost::system::error_code ec;
+            std::ignore = m_state->socket.shutdown(boost::asio::local::stream_protocol::socket::shutdown_both, ec);
+            co_return;
+          },
+          boost::asio::detached);
     }
   }
 
@@ -1328,7 +1334,7 @@ namespace cxxbus
   {
     struct Buffer
     {
-      std::unique_ptr<byte[]> data;
+      MessageBuffer data;
       std::optional<MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t, uint32_t>>
           currentHeader;
       uint32_t currSize;
@@ -1341,7 +1347,7 @@ namespace cxxbus
         , nrOfRequiredBytesForFullMessage()
         , currCapacity(4096)
       {
-        data = std::make_unique_for_overwrite<byte[]>(currCapacity);
+        data = AllocateMessageBuffer(currCapacity, currCapacity);
       }
 
       // Checks if we have enough bytes to parse a full message.
@@ -1372,8 +1378,7 @@ namespace cxxbus
 
         if (currCapacity < nrOfRequiredBytesForFullMessage)
         {
-          std::unique_ptr<byte[]> newBuff = std::make_unique_for_overwrite<byte[]>(nrOfRequiredBytesForFullMessage);
-          currCapacity = nrOfRequiredBytesForFullMessage;
+          MessageBuffer newBuff = AllocateMessageBuffer(nrOfRequiredBytesForFullMessage, currCapacity);
           std::memcpy(newBuff.get(), data.get(), currSize);
           data = std::move(newBuff);
           return false;
@@ -1387,30 +1392,29 @@ namespace cxxbus
       {
         if (currSize >= currCapacity) [[unlikely]]
         {
-          std::unique_ptr<byte[]> newBuff = std::make_unique_for_overwrite<byte[]>(currCapacity * 2);
-          currCapacity *= 2;
+          MessageBuffer newBuff = AllocateMessageBuffer(currCapacity * 2, currCapacity);
           std::memcpy(newBuff.get(), data.get(), currSize);
           data = std::move(newBuff);
         }
       }
 
-      std::unique_ptr<byte[]> ReleaseBuffer()
+      MessageBuffer ReleaseBuffer()
       {
-        std::unique_ptr<byte[]> buffToReturn;
+        MessageBuffer buffToReturn;
         uint32_t remainingBuffSize{currSize - nrOfRequiredBytesForFullMessage};
 
         if (remainingBuffSize == 0)
         {
           buffToReturn = std::move(data);
           currCapacity = 4096;
-          data = std::make_unique_for_overwrite<byte[]>(currCapacity);
+          data = AllocateMessageBuffer(currCapacity, currCapacity);
           currSize = 0;
         }
         else
         {
           currCapacity = remainingBuffSize;
           currSize = remainingBuffSize;
-          std::unique_ptr<byte[]> newData{std::make_unique_for_overwrite<byte[]>(currCapacity)};
+          MessageBuffer newData{AllocateMessageBuffer(currCapacity, currCapacity)};
           std::memcpy(newData.get(), data.get() + nrOfRequiredBytesForFullMessage, currSize);
 
           buffToReturn = std::move(data);
@@ -1454,7 +1458,7 @@ namespace cxxbus
         //     buffer.data.get() + FIRST_HEADER_PART_SIZE + headerFieldArrLength + buffer.nrOfPaddingBytesAfterHeader,
         //     messageBody.size());
 
-        std::unique_ptr<byte[]> fullMessage{buffer.ReleaseBuffer()};
+        MessageBuffer fullMessage{buffer.ReleaseBuffer()};
         std::span<byte const> headerPart{fullMessage.get(),
                                          fullMessage.get() + FIRST_HEADER_PART_SIZE + headerFieldArrLength};
 

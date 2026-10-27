@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 
 #include "gtest/gtest.h"
@@ -9,6 +8,7 @@
 #include "src/DBusMessage.h"
 #include "src/DBusTypes.h"
 #include "src/IncomingDBusMessage.h"
+#include "src/MessageBuffer.h"
 
 using namespace cxxbus;
 
@@ -27,7 +27,8 @@ namespace
     uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
     uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
-    std::unique_ptr<byte[]> fullMessage{std::make_unique_for_overwrite<byte[]>(fullMessageBytes.size())};
+    MessageBuffer fullMessage{new byte[fullMessageBytes.size()]{},
+                              MessageBufferDeleter{MessageBufferDeleter::NotPartOfPoolTag}};
     std::memcpy(fullMessage.get(), fullMessageBytes.data(), fullMessageBytes.size());
 
     return IncomingDBusMessage{
@@ -323,3 +324,49 @@ TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
 //   ASSERT_EQ(header.GetHeaderFieldsLength(), 78u);
 // }
 // clang-format on
+//
+// TEST(MessageBufferTestSuite, SmallBuffersAreNotRoundedUp)
+// {
+//   MessageBuffer const buffer{AllocateMessageBuffer(100)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, 100u);
+// }
+//
+// TEST(MessageBufferTestSuite, LargeBuffersAreRoundedUpToTheGranularity)
+// {
+//   // 1048700 bytes is the size of a message with a 1 MiB array
+//   MessageBuffer const buffer{AllocateMessageBuffer(1048700)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, 17u * 64u * 1024u);
+//   EXPECT_GE(buffer.get_deleter().capacity, 1048700u);
+// }
+//
+// TEST(MessageBufferTestSuite, LargeBufferIsRecycledAfterItIsReleased)
+// {
+//   size_t const size{5 * 1024 * 1024 + 123};
+//
+//   byte* first{};
+//   {
+//     MessageBuffer const buffer{AllocateMessageBuffer(size)};
+//     first = buffer.get();
+//   }
+//
+//   MessageBuffer const again{AllocateMessageBuffer(size + 1000)};
+//   EXPECT_EQ(again.get(), first);
+//   EXPECT_GE(again.get_deleter().capacity, size + 1000);
+// }
+//
+// TEST(MessageBufferTestSuite, BuffersTooBigForThePoolAreFreedNormally)
+// {
+//   size_t const size{detail::LargeBufferPool::MAX_POOLED_SIZE + 1};
+//   MessageBuffer buffer{AllocateMessageBuffer(size)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, size);
+//   buffer.reset();  // must not end up in the pool
+//   EXPECT_EQ(buffer.get(), nullptr);
+// }
+//
+// TEST(MessageBufferTestSuite, PlainUniquePtrConvertsAndIsFreedWithDeleteArray)
+// {
+//   std::unique_ptr<byte[]> plain{std::make_unique_for_overwrite<byte[]>(10)};
+//   MessageBuffer converted{std::move(plain)};
+//   EXPECT_NE(converted.get(), nullptr);
+//   EXPECT_EQ(converted.get_deleter().capacity, 0u);
+// }
