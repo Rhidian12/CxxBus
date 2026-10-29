@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import json
 
-filenames = ["benchmark_results_cxxbus.json", "benchmark_results_sdbus.json"]
+filenames = input("Filenames to parse: ")
+filenames = filenames.split(" ")
+# filenames = ["benchmark_results_cxxbus.json", "benchmark_results_sdbus.json"]
 data: dict = {}
 
 names = []
@@ -51,7 +53,7 @@ for i in range(len(filenames)):
 ax.set_xticks(list_range)
 ax.set_xticklabels(names, rotation=45, ha="right")
 ax.set_ylabel("Real time (nanoseconds)")
-ax.set_yscale("log")
+# ax.set_yscale("log")
 ax.legend(title="CxxBus vs SDBus benchmarks")
 plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
 

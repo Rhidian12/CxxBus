@@ -82,8 +82,8 @@ static void SDBus_MassiveArray(benchmark::State& state)
   auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
   std::vector<uint8_t> data;
-  // 1MB of data
-  for (uint32_t i{}; i < 1024 * 1024; ++i)
+  // 10MB of data
+  for (uint32_t i{}; i < 10 * 1024 * 1024; ++i)
   {
     data.push_back(rand() % 200);
   }

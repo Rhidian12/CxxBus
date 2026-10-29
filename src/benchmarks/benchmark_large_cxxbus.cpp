@@ -64,8 +64,8 @@ static void CxxBus_MassiveArray(benchmark::State& state)
         { co_return co_await serverConn->SendMessageNoReply(cxxbus::DBusMessage::Reply(msg)); });
 
     std::vector<uint8_t> data;
-    // 1MB of data
-    for (uint32_t i{}; i < 1024 * 1024; ++i)
+    // 10MB of data
+    for (uint32_t i{}; i < 10 * 1024 * 1024; ++i)
     {
       data.push_back(rand() % 200);
     }
