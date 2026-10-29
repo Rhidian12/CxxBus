@@ -1,0 +1,163 @@
+{
+  "context": {
+    "date": "2026-10-29T19:26:22+01:00",
+    "host_name": "arch-rhidian-desktop",
+    "executable": "./build/bin/benchmark_large_cxxbus",
+    "num_cpus": 24,
+    "mhz_per_cpu": 4955,
+    "cpu_scaling_enabled": true,
+    "aslr_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 524288,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 33554432,
+        "num_sharing": 12
+      }
+    ],
+    "load_avg": [0.583984,0.525391,0.435547],
+    "library_version": "v1.10.0",
+    "library_build_type": "release",
+    "json_schema_version": 1
+  },
+  "benchmarks": [
+    {
+      "name": "CxxBus_NestedMapMessage/process_time/real_time_mean",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_NestedMapMessage/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 2.2538243883722308e+06,
+      "cpu_time": 6.7815801328903669e+05,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_NestedMapMessage/process_time/real_time_median",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_NestedMapMessage/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "median",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 2.2279729800669150e+06,
+      "cpu_time": 6.2999624584717606e+05,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_NestedMapMessage/process_time/real_time_stddev",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_NestedMapMessage/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 7.0272893786530563e+04,
+      "cpu_time": 7.3560993690909192e+04,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_NestedMapMessage/process_time/real_time_cv",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_NestedMapMessage/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "cv",
+      "aggregate_unit": "percentage",
+      "iterations": 10,
+      "real_time": 3.1179400732850991e-02,
+      "cpu_time": 1.0847176063605234e-01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_MassiveArray/process_time/real_time_mean",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_MassiveArray/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 2.4616304595959261e+06,
+      "cpu_time": 2.4156994043771042e+06,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_MassiveArray/process_time/real_time_median",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_MassiveArray/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "median",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 2.4150870858586733e+06,
+      "cpu_time": 2.3744382828282849e+06,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_MassiveArray/process_time/real_time_stddev",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_MassiveArray/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "aggregate_unit": "time",
+      "iterations": 10,
+      "real_time": 1.3493600549379122e+05,
+      "cpu_time": 1.3082286785366936e+05,
+      "time_unit": "ns"
+    },
+    {
+      "name": "CxxBus_MassiveArray/process_time/real_time_cv",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "CxxBus_MassiveArray/process_time/real_time",
+      "run_type": "aggregate",
+      "repetitions": 10,
+      "threads": 1,
+      "aggregate_name": "cv",
+      "aggregate_unit": "percentage",
+      "iterations": 10,
+      "real_time": 5.4815703538191027e-02,
+      "cpu_time": 5.4155275948914026e-02,
+      "time_unit": "ns"
+    }
+  ]
+}

@@ -20,7 +20,8 @@ add_library(cxxbus-lib  DBus.cpp
                         IncomingDBusMessage.cpp
                         DBusTypes.cpp
                         Log.cpp
-                        DBusMatchRule.cpp)
+                        DBusMatchRule.cpp
+                        MessageBuffer.cpp)
 
 target_include_directories(cxxbus-lib PUBLIC ${thirdparty-include-dir})
 target_link_libraries(cxxbus-lib PRIVATE pch-target)

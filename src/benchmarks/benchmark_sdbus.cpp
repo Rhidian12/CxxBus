@@ -11,14 +11,13 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
 #include <cstdint>
-#include <cstdlib>
 
 sdbus::ServiceName const SERVICE_NAME = sdbus::ServiceName{"org.cxxbus.test"};
 sdbus::ObjectPath const OBJECT_PATH = sdbus::ObjectPath{"/org/cxxbus/test"};
 sdbus::InterfaceName const INTERFACE_NAME = sdbus::InterfaceName{"org.cxxbus.test"};
 sdbus::MethodName const METHOD_NAME = sdbus::MethodName{"Benchmark"};
 
-static void BM_SDBusEmptyMessage(benchmark::State& state)
+static void SDBus_EmptyMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -41,7 +40,7 @@ static void BM_SDBusEmptyMessage(benchmark::State& state)
   serverConn->releaseName(SERVICE_NAME);
 }
 
-static void BM_StringMessage(benchmark::State& state)
+static void SDBus_StringMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -76,7 +75,7 @@ static void BM_StringMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-static void BM_SDBusBigStringMessage(benchmark::State& state)
+static void SDBus_BigStringMessage(benchmark::State& state)
 {
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
@@ -111,28 +110,13 @@ static void BM_SDBusBigStringMessage(benchmark::State& state)
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-static void BM_SDBusNestedMapMessage(benchmark::State& state)
+static void SDBus_StructMessage(benchmark::State& state)
 {
-  std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, std::map<uint32_t, uint32_t>>>> map{};
-  for (uint32_t plateNr{}; plateNr < 18; ++plateNr)
-  {
-    for (uint32_t bankNr{}; bankNr < 3; ++bankNr)
-    {
-      for (uint32_t powerLevel{}; powerLevel < 24; ++powerLevel)
-      {
-        for (uint32_t temperatureLevel{}; temperatureLevel < 32; ++temperatureLevel)
-        {
-          map[plateNr][bankNr][powerLevel][temperatureLevel] = rand() % 100;
-        }
-      }
-    }
-  }
-
   auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
   auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
 
   obj->addVTable(sdbus::MethodVTableItem{METHOD_NAME,
-                                         sdbus::Signature{"a{ua{ua{ua{uu}}}}"},
+                                         sdbus::Signature{"(sdiqb)"},
                                          {},
                                          {},
                                          {},
@@ -145,17 +129,55 @@ static void BM_SDBusNestedMapMessage(benchmark::State& state)
   auto clientConn = sdbus::createSessionBusConnection();
   auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
 
+  auto fooStruct =
+      sdbus::Struct<std::string, double, int32_t, uint16_t, bool>{"Hello World!", 1.123456789, 987654321, 12345, true};
+
   for (auto _ : state)
   {
     auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
-    method << map;
+    method << fooStruct;
     proxy->callMethod(method);
   }
 
   serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
 }
 
-BENCHMARK(BM_SDBusEmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_SDBusBigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
-BENCHMARK(BM_SDBusNestedMapMessage)->UseRealTime()->MeasureProcessCPUTime();
+static void SDBus_NestedStructMessage(benchmark::State& state)
+{
+  auto serverConn = sdbus::createSessionBusConnection(SERVICE_NAME);
+  auto obj = sdbus::createObject(*serverConn, OBJECT_PATH);
+
+  obj->addVTable(sdbus::MethodVTableItem{METHOD_NAME,
+                                         sdbus::Signature{"((sdiqb)(sdiqb)(sdiqb))"},
+                                         {},
+                                         {},
+                                         {},
+                                         [](sdbus::MethodCall call) { call.createReply().send(); },
+                                         {}})
+      .forInterface(INTERFACE_NAME);
+
+  serverConn->enterEventLoopAsync();
+
+  auto clientConn = sdbus::createSessionBusConnection();
+  auto proxy = sdbus::createProxy(*clientConn, SERVICE_NAME, OBJECT_PATH);
+
+  using FooStruct = sdbus::Struct<std::string, double, int32_t, uint16_t, bool>;
+  auto fooStruct = FooStruct{"Hello World!", 1.123456789, 987654321, 12345, true};
+  using BarStruct = sdbus::Struct<FooStruct, FooStruct, FooStruct>;
+  auto barStruct = BarStruct{fooStruct, fooStruct, fooStruct};
+
+  for (auto _ : state)
+  {
+    auto method = proxy->createMethodCall(INTERFACE_NAME, METHOD_NAME);
+    method << barStruct;
+    proxy->callMethod(method);
+  }
+
+  serverConn->releaseName(sdbus::ServiceName{"org.cxxbus.test"});
+}
+
+BENCHMARK(SDBus_EmptyMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_StringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_BigStringMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_StructMessage)->UseRealTime()->MeasureProcessCPUTime();
+BENCHMARK(SDBus_NestedStructMessage)->UseRealTime()->MeasureProcessCPUTime();

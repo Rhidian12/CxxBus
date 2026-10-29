@@ -183,7 +183,7 @@ namespace cxxbus
     {
       return ConstexprString<1>{"t"};
     }
-    else if constexpr (std::is_same_v<T, double>)
+    else if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>)
     {
       return ConstexprString<1>{"d"};
     }
@@ -221,6 +221,10 @@ namespace cxxbus
     else if constexpr (IsDBusMultipleCompleteTypes<T>)
     {
       return BuildMultipleCompleteTypesSignature<T, 0>();
+    }
+    else
+    {
+      static_assert(false);
     }
   }
 

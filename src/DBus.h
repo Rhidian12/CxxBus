@@ -359,19 +359,57 @@ namespace cxxbus
 
   class FastVariant
   {
+   public:
+    inline constexpr static uint32_t SMALL_BUFFER_SIZE = 8;
+
    private:
+    struct VariantData
+    {
+      Signature signature;
+      std::variant<std::array<byte, SMALL_BUFFER_SIZE>, std::string_view> data;
+      VariantVTable const* vTable;
+      uint8_t dataAlignment;
+    };
+
     struct DeserializedVariantData
     {
       Signature signature;
       std::span<byte const> data;
     };
 
-    std::variant<DeserializedVariantData, std::monostate> m_variantData;
+    std::variant<DeserializedVariantData, VariantData, std::monostate> m_variantData;
 
    public:
     FastVariant()
       : m_variantData{std::monostate{}}
     {
+    }
+
+    template <typename T>
+    static FastVariant Create(T&& value)
+    {
+      FastVariant variant;
+      if constexpr (std::is_trivially_copyable_v<std::remove_cvref_t<T>>)
+      {
+        static_assert(sizeof(std::remove_cvref_t<T>) <= SMALL_BUFFER_SIZE,
+                      "FastVariant only supports simple types of up to 8 bytes");
+
+        std::array<byte, SMALL_BUFFER_SIZE> buff{};
+        std::memcpy(buff.data(), &value, sizeof(std::remove_cvref_t<T>));
+        variant.m_variantData.emplace<VariantData>(std::string{GetTypeSignature<std::remove_cvref_t<T>>()},
+                                                   std::move(buff), &vTableInstance<T>,
+                                                   GetAlignmentOfDBusType<std::remove_cvref_t<T>>());
+
+        return variant;
+      }
+      else if constexpr (IsDBusBasicStringlikeType<T>)
+      {
+        variant.m_variantData.emplace<VariantData>(
+            std::string{GetTypeSignature<std::remove_cvref_t<T>>()}, std::string_view{value},
+            &vTableInstance<char const*, std::remove_cvref_t<T>>, GetAlignmentOfDBusType<std::remove_cvref_t<T>>());
+
+        return variant;
+      }
     }
 
     FastVariant(DeserializedVariantTag, Signature&& signature, std::span<byte const>&& data)
@@ -383,7 +421,12 @@ namespace cxxbus
     FastVariant(FastVariant const& other)
       : m_variantData(std::monostate{})
     {
-      if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
+      if (std::holds_alternative<VariantData>(other.m_variantData))
+      {
+        VariantData const& data = std::get<VariantData>(other.m_variantData);
+        m_variantData.emplace<VariantData>(data.signature, data.data, data.vTable, data.dataAlignment);
+      }
+      else if (std::holds_alternative<DeserializedVariantData>(other.m_variantData))
       {
         DeserializedVariantData const& data = std::get<DeserializedVariantData>(other.m_variantData);
         m_variantData.emplace<DeserializedVariantData>(data.signature, data.data);
@@ -413,35 +456,36 @@ namespace cxxbus
 
     Signature const& GetSignature() const
     {
-      if (std::holds_alternative<DeserializedVariantData>(m_variantData))
-      {
-        return std::get<DeserializedVariantData>(m_variantData).signature;
-      }
-      else
-      {
-        throw std::runtime_error{"Variant is in an invalid state"};
-      }
+      return std::get<DeserializedVariantData>(m_variantData).signature;
     }
+
     uint8_t GetDataAlignment() const
     {
-      if (std::holds_alternative<DeserializedVariantData>(m_variantData))
+      return 1;  // Deserialized data alignment is 1
+    }
+
+    void MarshalData(std::vector<byte>& dbusType) const
+    {
+      VariantData const& data = std::get<VariantData>(m_variantData);
+
+      // We marshal a variant by marshalling its signature followed by the data (with padding of course)
+      // Add signature + padding to data type
+      MarshalDBusTypeImpl(data.signature, dbusType);
+      ApplyPadding(dbusType, data.dataAlignment);
+
+      if (std::holds_alternative<std::array<byte, SMALL_BUFFER_SIZE>>(data.data))
       {
-        return 1;  // Deserialized data alignment is 1
+        data.vTable->marshalDataFunc(std::get<std::array<byte, SMALL_BUFFER_SIZE>>(data.data).data(), dbusType);
       }
       else
       {
-        throw std::runtime_error{"Variant is in an invalid state"};
+        data.vTable->marshalDataFunc(std::get<std::string_view>(data.data).data(), dbusType);
       }
     }
 
     template <IsDBusType T>
     T UnmarshalData() const
     {
-      if (!std::holds_alternative<DeserializedVariantData>(m_variantData))
-      {
-        throw VariantUnmarshalError{"Cannot unmarshal a non-deserialized variant"};
-      }
-
       DeserializedVariantData const& data = std::get<DeserializedVariantData>(m_variantData);
 
       if (std::string{GetTypeSignature<T>()} != data.signature)
@@ -600,9 +644,8 @@ namespace cxxbus
     {
       MarshalBasicFixedType<uint32_t>(value.size() * sizeof(ContainedType), dbusType);
       ApplyPadding(dbusType, GetAlignmentOfDBusType<ContainedType>());
-      size_t oldSize{dbusType.size()};
-      dbusType.resize(dbusType.size() + sizeof(ContainedType) * value.size());
-      std::memcpy(dbusType.data() + oldSize, value.data(), value.size() * sizeof(ContainedType));
+      dbusType.insert(dbusType.end(), reinterpret_cast<byte const*>(value.data()),
+                      reinterpret_cast<byte const*>(value.data()) + value.size() * sizeof(ContainedType));
     }
     else
     {
@@ -768,11 +811,7 @@ namespace cxxbus
     }
     else
     {
-      Logger logger{.logLevel = LogLevel::FATAL};
-      LOG_FATAL(logger, "Trying to marshal type '{}' which is not a known DBus basic or container type",
-                ConstexprTypeName<T>());
-      throw InternalError{std::format("Trying to marshal type '{}' which is not a known DBus basic or container type",
-                                      ConstexprTypeName<T>())};
+      static_assert(false, "Trying to marshal an unknown type");
     }
   }
 

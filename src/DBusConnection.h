@@ -159,7 +159,7 @@ namespace cxxbus
     boost::asio::awaitable<void> Connect(BusType busType);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
-    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage&& message);
+    boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
 
     boost::asio::awaitable<void> CloseData();
 

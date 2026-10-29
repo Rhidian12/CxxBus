@@ -23,5 +23,13 @@ define_test_or_benchmark(NAME benchmark_cxxbus
 
 define_test_or_benchmark(NAME benchmark_sdbus
                   SOURCES benchmark_sdbus.cpp
-                  LIBRARIES cxxbus-lib sdbus-c++
+                  LIBRARIES sdbus-c++)
+
+define_test_or_benchmark(NAME benchmark_large_cxxbus
+                  SOURCES benchmark_large_cxxbus.cpp
+                  LIBRARIES cxxbus-lib
                   INCLUDE_DIRS ${cxxbus-include-dir})
+
+define_test_or_benchmark(NAME benchmark_large_sdbus
+                  SOURCES benchmark_large_sdbus.cpp
+                  LIBRARIES sdbus-c++)
