@@ -207,7 +207,7 @@ TYPED_TEST(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     EXPECT_TRUE(reply.HasArguments());
 
 #ifdef GITHUB_ACTIONS
-    EXPECT_EQ(reply.Get<std::string>(),
+    EXPECT_EQ(reply.template Get<std::string>(),
               R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
