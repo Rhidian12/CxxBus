@@ -82,9 +82,10 @@ namespace cxxbus
     class LargeBufferPool
     {
      private:
-      inline static constexpr size_t MIN_POOLED_SIZE{128 * 1024};        // 128KiB
-      inline static constexpr size_t MAX_POOLED_SIZE{20 * 1024 * 1024};  // 20MiB
-      inline static constexpr size_t MAX_BUFFERS{8};                     // Max buffers we can maintain at once
+      inline static constexpr size_t MIN_POOLED_SIZE{CXXBUS_MIN_LARGE_BUFFER_SIZE * 1024};         // 128KiB by default
+      inline static constexpr size_t MAX_POOLED_SIZE{CXXBUS_MAX_LARGE_BUFFER_SIZE * 1024 * 1024};  // 20MiB by default
+      inline static constexpr size_t MAX_BUFFERS{
+          CXXBUS_NR_OF_LARGE_BUFFERS};  // Max buffers we can maintain at once. 8 by default
       inline static constexpr size_t GRANULARITY{
           64 * 1024};  // 64 KiB. Round up big allocations to this so that they try to re-use buffers
 

@@ -58,6 +58,19 @@ Available targets are:
 - `CXXBUS_SANITIZERS` [boolean] [Default: OFF]
   Quality-of-life flag that sets both `USAN` and `ASAN`. Do not use this in production as it harms performance.
   Cannot be combined with `TSAN`
+- `CXXBUS_MIN_LARGE_BUFFER_SIZE` [integer] [Default: 128KiB]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The lower this value, the more message payloads will qualify for the large buffer pool.
+  The higher this value, the less messages will get the special treatment.
+  Value is treated as KiB.
+- `CXXBUS_MAX_LARGE_BUFFER_SIZE` [integer] [Default: 20MiB]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The higher this value, the more message payloads will qualify for the large buffer pool.
+  The lower this value, the less messages will get the special treatment.
+  Value is treated as MiB.
+- `CXXBUS_NR_OF_LARGE_BUFFERS` [integer] [Default: 8]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The amount of buffers that CxxBus maintains. If all buffers are currently in use, then new large messages simply fall-back to `malloc()` / `free()`
 
 ## Documentation
 
