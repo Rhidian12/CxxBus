@@ -630,14 +630,17 @@ namespace cxxbus
       {
         LOG_TRACE(LOGGER, "Message's ObjectPath matches a handler");
 
-        auto invokeObjectPathHandlers = [](std::shared_ptr<InternalState> state,
-                                           IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        auto invokeObjectPathHandlers = [](std::shared_ptr<InternalState> state, IncomingDBusMessage message,
+                                           ObjectPath path) -> boost::asio::awaitable<void>
         {
-          for (auto const& [_, handlers] : state->objectPathHandlers)
+          for (auto const& [handlerPath, handlers] : state->objectPathHandlers)
           {
-            for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
+            if (handlerPath == path)
             {
-              co_await handler(message);
+              for (std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> const& handler : handlers)
+              {
+                co_await handler(message);
+              }
             }
           }
         };
@@ -646,13 +649,14 @@ namespace cxxbus
         if constexpr (SingleThreaded)
         {
           // In `SingleThreaded` mode we always run on `m_userIOContext` so just invoke our handlers immediately
-          co_await invokeObjectPathHandlers(std::move(state), std::move(message));
+          co_await invokeObjectPathHandlers(std::move(state), std::move(message), std::move(path));
         }
         else
         {
           // We always want to run them on `m_userIOContext` and we're guaranteed here to NOT be running on
           // `m_userIOContext` so enqueue them on `m_userIOContext`
-          boost::asio::co_spawn(m_userIOContext, invokeObjectPathHandlers(std::move(state), std::move(message)),
+          boost::asio::co_spawn(m_userIOContext,
+                                invokeObjectPathHandlers(std::move(state), std::move(message), std::move(path)),
                                 boost::asio::detached);
         }
 

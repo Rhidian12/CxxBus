@@ -1209,3 +1209,39 @@ TYPED_TEST(DBusConnectionTestSuite, TestMethodUnkown)
     co_await conn2->Close();
   };
 }
+
+TYPED_TEST(DBusConnectionTestSuite, TestOnlyCorrectPathHandlerIsCalled)
+{
+  this->coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    this->conn = co_await TypeParam::Create(this->ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await TypeParam::Create(this->ioService, std::nullopt, BusType::SESSION);
+
+    int triggered{};
+    co_await this->conn->RegisterObjectPathHandler(
+        ObjectPath{"/foo"},
+        [&triggered, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          LOG_DEBUG(LOGGER, "Handler got called");
+          ++triggered;
+          co_return co_await this->conn->SendMessageNoReply(DBusMessage::Reply(msg));
+        });
+
+    co_await this->conn->RegisterObjectPathHandler(
+        ObjectPath{"/bar"},
+        [&triggered, this](IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
+        {
+          LOG_DEBUG(LOGGER, "Handler got called");
+          ++triggered;
+          co_return co_await this->conn->SendMessageNoReply(DBusMessage::Reply(msg));
+        });
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/foo"}).Destination("com.dbus.CxxTest"));
+    EXPECT_EQ(triggered, 1);
+
+    co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/bar"}).Destination("com.dbus.CxxTest"));
+    EXPECT_EQ(triggered, 2);
+
+    co_await conn2->Close();
+  };
+}

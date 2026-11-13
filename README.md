@@ -8,6 +8,15 @@ CxxBus is a highly performant low-level DBus implementation written in C++20 and
 There is limited support for a synchronous API with the `MultithreadedDBusConnection`, however it is far less performant and I can only highly recommend to use the async API.
 Boost.Asio **is required for both** the asynchronous and synchronous API.
 
+This is a low-level library to build projects using DBus on top of. It does not provide implementations of any `org.Freedesktop.DBus` interfaces, therefore `org.freedesktop.DBus.Peer`, `org.freedesktop.DBus.Introspectable`, `org.freedesktop.DBus.Properties` and `org.freedesktop.DBus.ObjectManager` must be implemented by the user as needed.
+
+**Features:**
+
+- Create DBus clients that support sending messages, broadcasting signals, ...
+- Create DBus servers that can register message filters, receive incoming messages, ...
+- Easy-to-use API that represents the DBus specification
+- Highly performant asynchronous-first DBus Clients and Servers
+
 ## Building
 
 CxxBus is built using CMake:
