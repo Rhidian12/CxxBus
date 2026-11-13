@@ -182,9 +182,9 @@ namespace cxxbus
               .sender = senderIt == headerFields.cend()
                             ? std::nullopt
                             : std::optional{std::get<1>(*senderIt).UnmarshalData<std::string>()},
-              .destination = senderIt == headerFields.cend()
+              .destination = destinationIt == headerFields.cend()
                                  ? std::nullopt
-                                 : std::optional{std::get<1>(*senderIt).UnmarshalData<std::string>()},
+                                 : std::optional{std::get<1>(*destinationIt).UnmarshalData<std::string>()},
               .messageLength = messageLength,
               .headerFieldLength = headerFieldLength};
     }
