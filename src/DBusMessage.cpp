@@ -45,11 +45,11 @@ namespace cxxbus
     concept IsAcceptedMessageType =
         requires { requires T == DBusMessageType::METHOD_CALL || T == DBusMessageType::SIGNAL; };
 
-    std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::vector<byte> messageBody,
+    std::vector<byte> CreateDBusMessage(DBusMessageType msgType, uint32_t serial, std::span<byte const> messageBody,
                                         uint32_t messageFlags, std::optional<std::string> const& method,
                                         std::optional<ObjectPath> const& objectPath,
                                         std::optional<DBusInterfaceName> const& interface,
-                                        std::optional<std::string> destination,
+                                        std::optional<std::string> const& destination,
                                         std::optional<Signature> const& signature,
                                         std::optional<std::string> const& errorName,
                                         std::optional<uint32_t> const& replySerial)
@@ -70,9 +70,8 @@ namespace cxxbus
       // non-zero value Array of struct of byte, variant are the header fields. The
       // message type specifies which fields are required
 
-      std::vector<byte> dbusMessage{};
-
-      std::vector<std::tuple<uint8_t, Variant>> headerFields{};
+      std::vector<std::tuple<uint8_t, FastVariant>> headerFields{};
+      headerFields.reserve(8);
       for (HeaderField const& headerField : HEADER_FIELDS)
       {
         if (headerField.decimalCode == HeaderFieldCode::SIGNATURE)
@@ -87,7 +86,7 @@ namespace cxxbus
           continue;
         }
 
-        Variant variant{};
+        FastVariant variant{};
         switch (headerField.decimalCode)
         {
           case HeaderFieldCode::NONE:
@@ -105,7 +104,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("replySerial is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(replySerial.value());
+            variant = FastVariant::Create(replySerial.value());
             break;
           case HeaderFieldCode::ERROR_NAME:
             if (!errorName.has_value() || errorName->empty())
@@ -113,7 +112,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("ErrorName is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(errorName.value());
+            variant = FastVariant::Create(errorName.value());
             break;
           case HeaderFieldCode::PATH:
             if (!objectPath.has_value() || objectPath->Empty())
@@ -121,7 +120,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Path is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(*objectPath);
+            variant = FastVariant::Create(*objectPath);
             break;
           case HeaderFieldCode::INTERFACE:
             if (!interface.has_value() || interface->empty())
@@ -129,7 +128,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Interface is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(*interface);
+            variant = FastVariant::Create(*interface);
             break;
           case HeaderFieldCode::MEMBER:
             if (!method.has_value() || method->empty())
@@ -137,7 +136,7 @@ namespace cxxbus
               throw DBusSerializationError{
                   std::format("Method is required for message type {}", magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(*method);
+            variant = FastVariant::Create(*method);
             break;
           case HeaderFieldCode::SIGNATURE:
             if (!signature.has_value() || signature->Empty())
@@ -145,7 +144,7 @@ namespace cxxbus
               throw DBusSerializationError{std::format("Signature is required for message type {} with non-empty body",
                                                        magic_enum::enum_name(msgType))};
             }
-            variant = Variant::Create(*signature);
+            variant = FastVariant::Create(*signature);
             break;
         }
 
@@ -154,18 +153,18 @@ namespace cxxbus
 
       // Interface is often optional, but if provided, use it
       if (interface.has_value() &&
-          std::ranges::find_if(headerFields, [](std::tuple<uint8_t, Variant> const& field)
+          std::ranges::find_if(headerFields, [](std::tuple<uint8_t, FastVariant> const& field)
                                { return std::get<0>(field) == static_cast<uint8_t>(HeaderFieldCode::INTERFACE); }) ==
               headerFields.cend())
       {
         headerFields.push_back(
-            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::INTERFACE), Variant::Create(interface.value())));
+            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::INTERFACE), FastVariant::Create(interface.value())));
       }
 
       if (destination.has_value() && !destination->empty())
       {
-        headerFields.push_back(
-            std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION), Variant::Create(destination.value())));
+        headerFields.push_back(std::make_tuple(static_cast<uint8_t>(HeaderFieldCode::DESTINATION),
+                                               FastVariant::Create(destination.value())));
       }
 
 #if CXX_UNIT_TESTS
@@ -173,7 +172,7 @@ namespace cxxbus
 #endif  // CXX_UNIT_TESTS
 
       MultipleCompleteTypes<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t,
-                            std::vector<std::tuple<uint8_t, Variant>>>
+                            std::vector<std::tuple<uint8_t, FastVariant>>>
           header{
               static_cast<uint8_t>(Endianness::LITTLE_ENDIAN_TYPE),  // Endianness
               static_cast<uint8_t>(msgType),                         // Message Type
@@ -184,19 +183,11 @@ namespace cxxbus
               std::move(headerFields)                                // Our array of header fields
           };
 
-#if __cpp_lib_containers_ranges
-      dbusMessage.append_range(MarshalDBusType(header));
-#else
-      std::vector<byte> marshalledHeader{MarshalDBusType(header)};
-      dbusMessage.insert(dbusMessage.end(), marshalledHeader.begin(), marshalledHeader.end());
-#endif
+      std::vector<byte> dbusMessage{MarshalDBusType(header)};
       ApplyPadding(dbusMessage, MESSAGE_HEADER_PADDING);
 
-#if __cpp_lib_containers_ranges
-      dbusMessage.append_range(messageBody);
-#else
-      dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
-#endif
+      // dbusMessage.reserve(dbusMessage.size() + messageBody.size());
+      // dbusMessage.insert(dbusMessage.end(), messageBody.begin(), messageBody.end());
 
       return dbusMessage;
     }
@@ -211,42 +202,6 @@ namespace cxxbus
     return message;
   }
 
-  DBusMessage& DBusMessage::Path(ObjectPath&& path)
-  {
-    m_path = std::move(path);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Path(ObjectPath const& path)
-  {
-    m_path = path;
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName&& interface)
-  {
-    m_interface = std::move(interface);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Interface(DBusInterfaceName const& interface)
-  {
-    m_interface = interface;
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Destination(std::string&& destination)
-  {
-    m_destination = std::move(destination);
-    return *this;
-  }
-
-  DBusMessage& DBusMessage::Destination(std::string const& destination)
-  {
-    m_destination = destination;
-    return *this;
-  }
-
   DBusMessage& DBusMessage::Flag(DBusMessageFlags flag)
   {
     m_flags = m_flags | static_cast<uint8_t>(flag);
@@ -257,6 +212,11 @@ namespace cxxbus
   {
     return CreateDBusMessage(m_messageType, serial, m_messageBody, m_flags, m_method, m_path, m_interface,
                              m_destination, m_signature, m_errorName, m_replySerial);
+  }
+
+  std::vector<uint8_t> const& DBusMessage::GetMessageBody() const
+  {
+    return m_messageBody;
   }
 
   uint8_t DBusMessage::GetFlags() const

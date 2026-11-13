@@ -49,11 +49,11 @@ namespace cxxbus
             .Path(ObjectPath{"/org/freedesktop/DBus"})
             .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
             .Member("NameOwnerChanged"),
-        [self = std::weak_ptr{self}](IncomingDBusMessage message) -> boost::asio::awaitable<void>
+        [self = std::weak_ptr{self}](IncomingDBusMessage const& message) -> boost::asio::awaitable<void>
         {
           if (!self.expired())
           {
-            self.lock()->OnNameOwnerChanged(std::move(message));
+            self.lock()->OnNameOwnerChanged(message);
           }
           co_return;
         },
@@ -61,7 +61,7 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  void DBusNameCache<SingleThreaded>::OnNameOwnerChanged(IncomingDBusMessage message)
+  void DBusNameCache<SingleThreaded>::OnNameOwnerChanged(IncomingDBusMessage const& message)
   {
     MultipleCompleteTypes<std::string, std::string, std::string> const parameters{
         message.Get<MultipleCompleteTypes<std::string, std::string, std::string>>()};

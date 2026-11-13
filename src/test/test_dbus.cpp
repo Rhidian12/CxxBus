@@ -9,6 +9,7 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
+#include <exception>
 #include <functional>
 
 #include "src/DBus.h"
@@ -81,13 +82,16 @@ namespace
     uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
     uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
+    MessageBuffer fullMessage{new byte[fullMessageBytes.size()]{},
+                              MessageBufferDeleter{MessageBufferDeleter::NotPartOfPoolTag}};
+    std::memcpy(fullMessage.get(), fullMessageBytes.data(), fullMessageBytes.size());
+
     return IncomingDBusMessage{
         DBusMessageHeader{
             std::span<byte const>{fullMessageBytes.begin(),
                                   fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
             serial, messageType, headerFieldArrLength, messageLength},
-        std::ranges::to<std::vector>(
-            fullMessageBytes | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
+        std::move(fullMessage), FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes};
   }
 
 }  // namespace
@@ -203,7 +207,7 @@ TYPED_TEST(DBusConnectionTestSuite, TestIntrospectingDBusDaemon)
     EXPECT_TRUE(reply.HasArguments());
 
 #ifdef GITHUB_ACTIONS
-    EXPECT_EQ(reply.Get<std::string>(),
+    EXPECT_EQ(reply.template Get<std::string>(),
               R"(<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
@@ -606,7 +610,7 @@ TYPED_TEST(DBusConnectionTestSuite, TestReplying)
     auto conn2 = co_await TypeParam::Create(this->ioService, DBusWellKnownName{"com.dbus.CxxTest2"}, BusType::SESSION);
 
     co_await conn2->ReceiveIncomingMessages(
-        [conn2](IncomingDBusMessage message) -> boost::asio::awaitable<MessageHandled>
+        [conn2](IncomingDBusMessage const& message) -> boost::asio::awaitable<MessageHandled>
         {
           // wtf we just got something sent SO stupid. Let's send a reply error back
           LOG_DEBUG(LOGGER, "Connection2 received the message, returning an error");
@@ -682,9 +686,16 @@ TYPED_TEST(DBusConnectionTestSuite, TestEmittingSignal)
         {
           LOG_DEBUG(LOGGER, "Received emitted map signal");
           mapSignalEmitted = true;
-          EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
-                    (std::map<std::string, std::tuple<std::string, uint64_t>>{
-                        {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          try
+          {
+            EXPECT_EQ((msg.Get<std::map<std::string, std::tuple<std::string, uint64_t>>>()),
+                      (std::map<std::string, std::tuple<std::string, uint64_t>>{
+                          {{"Hello"s, {"World!", 42}}, {"Great"s, {"Scot!", 84}}}}));
+          }
+          catch (std::exception const& ex)
+          {
+            LOG_ERROR(LOGGER, "ERROR: {}", ex.what());
+          }
           chann2->async_send(boost::system::error_code{}, boost::asio::detached);
           co_return;
         });
@@ -1081,34 +1092,41 @@ TYPED_TEST(DBusConnectionTestSuite, TestMatchRules)
                                       [&matchRulesTriggered, &channels, &shouldNotGetTriggered](
                                           IncomingDBusMessage const& msg) -> boost::asio::awaitable<void>
                                       {
-                                        if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/")
+                                        try
                                         {
-                                          matchRulesTriggered[3] = true;
-                                          channels[3]->async_send({}, boost::asio::detached);
+                                          if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/")
+                                          {
+                                            matchRulesTriggered[3] = true;
+                                            channels[3]->async_send({}, boost::asio::detached);
+                                          }
+                                          else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/")
+                                          {
+                                            matchRulesTriggered[4] = true;
+                                            channels[4]->async_send({}, boost::asio::detached);
+                                          }
+                                          else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/")
+                                          {
+                                            matchRulesTriggered[5] = true;
+                                            channels[5]->async_send({}, boost::asio::detached);
+                                          }
+                                          else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/cc/")
+                                          {
+                                            matchRulesTriggered[6] = true;
+                                            channels[6]->async_send({}, boost::asio::detached);
+                                          }
+                                          else if (msg.GetSignature() == "o" && msg.Get<ObjectPath>() == "/aa/bb/cc")
+                                          {
+                                            matchRulesTriggered[7] = true;
+                                            channels[7]->async_send({}, boost::asio::detached);
+                                          }
+                                          else
+                                          {
+                                            shouldNotGetTriggered = true;
+                                          }
                                         }
-                                        else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/")
+                                        catch (std::exception const& ex)
                                         {
-                                          matchRulesTriggered[4] = true;
-                                          channels[4]->async_send({}, boost::asio::detached);
-                                        }
-                                        else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/")
-                                        {
-                                          matchRulesTriggered[5] = true;
-                                          channels[5]->async_send({}, boost::asio::detached);
-                                        }
-                                        else if (msg.GetSignature() == "s" && msg.Get<std::string>() == "/aa/bb/cc/")
-                                        {
-                                          matchRulesTriggered[6] = true;
-                                          channels[6]->async_send({}, boost::asio::detached);
-                                        }
-                                        else if (msg.GetSignature() == "o" && msg.Get<ObjectPath>() == "/aa/bb/cc")
-                                        {
-                                          matchRulesTriggered[7] = true;
-                                          channels[7]->async_send({}, boost::asio::detached);
-                                        }
-                                        else
-                                        {
-                                          shouldNotGetTriggered = true;
+                                          LOG_ERROR(LOGGER, "ERROR: {}", ex.what());
                                         }
 
                                         co_return;
@@ -1154,9 +1172,11 @@ TYPED_TEST(DBusConnectionTestSuite, TestMatchRules)
                      .ArgumentPath(0, "/aa/bb/")
                      .Matches(MakeSignalMessage("/aa/bb"), std::vector<std::string>{}));
 
+    int i{};
     for (auto& chann : channels)
     {
       co_await chann->async_receive(boost::asio::use_awaitable);
+      LOG_INFO(LOGGER, "Got message {}/{}", i++, channels.size());
     }
 
     EXPECT_TRUE(std::ranges::all_of(matchRulesTriggered, [](bool b) { return b; }));

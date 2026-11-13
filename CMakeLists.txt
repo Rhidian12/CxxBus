@@ -29,6 +29,9 @@ option(CXXBUS_ENABLE_BENCHMARKS "Build CxxBus Benchmarks" OFF)
 option(CXXBUS_DEV "Build CxxBus Unit Tests & Benchmarks" OFF)
 set(CXXBUS_LOGLEVEL "ERROR" CACHE STRING "Set the CxxBus loglevel")
 set(CXXBUS_MAX_CONCURRENT_MESSAGES 56 CACHE STRING "Set the max nr of concurrent messages CxxBus can handle. This is an optimisation. The higher this number, the more memory CxxBus uses")
+set(CXXBUS_MIN_LARGE_BUFFER_SIZE 128 CACHE STRING "Set the minimum size of a large buffer in CxxBus. This is used to handle large message payloads. The lower this number, the more messages will be pooled, at the cost of more memory usage. Value is in KiB")
+set(CXXBUS_MAX_LARGE_BUFFER_SIZE 20 CACHE STRING "Set the maximum size of a large buffer in CxxBus. This is used to handle large message payloads. The higher this number, the more messages will be pooled, at the cost of more memory usage. Value is in MiB")
+set(CXXBUS_NR_OF_LARGE_BUFFERS 8 CACHE STRING "Set the maximum amount of large buffers that CxxBus will use to handle large message payloads. The higher this number, the more concurrent messages can use a large buffer at the cost of more memory.")
 
 if(CXXBUS_SANITIZERS)
   set(CXXBUS_ASAN ON)
@@ -54,6 +57,9 @@ message(STATUS "  CXXBUS_ENABLE_BENCHMARKS: ${CXXBUS_ENABLE_BENCHMARKS}")
 message(STATUS "  CXXBUS_DEV: ${CXXBUS_DEV}")
 message(STATUS "  CXXBUS_LOGLEVEL: ${CXXBUS_LOGLEVEL}")
 message(STATUS "  CXXBUS_MAX_CONCURRENT_MESSAGES: ${CXXBUS_MAX_CONCURRENT_MESSAGES}")
+message(STATUS "  CXXBUS_MIN_LARGE_BUFFER_SIZE: ${CXXBUS_MIN_LARGE_BUFFER_SIZE}KiB")
+message(STATUS "  CXXBUS_MAX_LARGE_BUFFER_SIZE: ${CXXBUS_MAX_LARGE_BUFFER_SIZE}MiB")
+message(STATUS "  CXXBUS_NR_OF_LARGE_BUFFERS: ${CXXBUS_NR_OF_LARGE_BUFFERS}")
 message(STATUS "")
 
 if(CXXBUS_LOGLEVEL)
@@ -62,6 +68,18 @@ endif()
 
 if(CXXBUS_MAX_CONCURRENT_MESSAGES)
   add_compile_definitions(CXXBUS_MAX_CONCURRENT_MESSAGES=${CXXBUS_MAX_CONCURRENT_MESSAGES})
+endif()
+
+if(CXXBUS_MIN_LARGE_BUFFER_SIZE)
+  add_compile_definitions(CXXBUS_MIN_LARGE_BUFFER_SIZE=${CXXBUS_MIN_LARGE_BUFFER_SIZE})
+endif()
+
+if(CXXBUS_MAX_LARGE_BUFFER_SIZE)
+  add_compile_definitions(CXXBUS_MAX_LARGE_BUFFER_SIZE=${CXXBUS_MAX_LARGE_BUFFER_SIZE})
+endif()
+
+if(CXXBUS_NR_OF_LARGE_BUFFERS)
+  add_compile_definitions(CXXBUS_NR_OF_LARGE_BUFFERS=${CXXBUS_NR_OF_LARGE_BUFFERS})
 endif()
 
 if(CXXBUS_ASAN)

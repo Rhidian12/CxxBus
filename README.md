@@ -58,6 +58,19 @@ Available targets are:
 - `CXXBUS_SANITIZERS` [boolean] [Default: OFF]
   Quality-of-life flag that sets both `USAN` and `ASAN`. Do not use this in production as it harms performance.
   Cannot be combined with `TSAN`
+- `CXXBUS_MIN_LARGE_BUFFER_SIZE` [integer] [Default: 128KiB]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The lower this value, the more message payloads will qualify for the large buffer pool.
+  The higher this value, the less messages will get the special treatment.
+  Value is treated as KiB.
+- `CXXBUS_MAX_LARGE_BUFFER_SIZE` [integer] [Default: 20MiB]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The higher this value, the more message payloads will qualify for the large buffer pool.
+  The lower this value, the less messages will get the special treatment.
+  Value is treated as MiB.
+- `CXXBUS_NR_OF_LARGE_BUFFERS` [integer] [Default: 8]
+  Flag that controls the large buffer behaviour of CxxBus. When handling large message payloads, CxxBus uses a pool of large buffers to avoid spurious `malloc()` / `free()` calls.
+  The amount of buffers that CxxBus maintains. If all buffers are currently in use, then new large messages simply fall-back to `malloc()` / `free()`
 
 ## Documentation
 
@@ -70,9 +83,42 @@ See [using-cxxbus](./docs/using-cxxbus.md) for documentation.
 - `GTest` for the unit tests
 - `GoogleBenchmark` for the benchmarks
 
+## Benchmarks
+
+Benchmark can be seen in the [benchmarks](./src/benchmarks/) folder. All benchmarks were run on an Arch Linux system with CPU + RAM TODO
+All benchmarks were run on Clang TODO VERSION via the CMake build command: `cmake -DCXXBUS_ENABLE_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -G Ninja -S . -B build`
+Every benchmark was run via the GoogleBenchmark command line: `<binary> --benchmark_report_aggregates_only=true --benchmark_repetitions=10 --benchmark_out_format=json --benchmark_out=<file>`
+![benchmarks](https://github.com/Rhidian12/CxxBus/blob/main/benchmark-docs/results.png)
+![large_benchmarks](https://github.com/Rhidian12/CxxBus/blob/main/benchmark-docs/results_large.png)
+Textual version of the benchmarks:
+
+- **EmptyMessage**
+  - CxxBus: 30 100 ns
+  - SDBus:  30 143 ns
+- **StringMessage**
+  - CxxBus: 30 564 ns
+  - SDBus:  30 465 ns
+- **BigStringMessage**
+  - CxxBus: 37 936 ns **(~31% faster than SDBus)**
+  - SDBus:  55 042 ns
+- **StructMessage**
+  - CxxBus: 30 706 ns
+  - SDBus:  31 861 ns
+- **NestedStructMessage**
+  - CxxBus: 31 249 ns
+  - SDBus:  32 926 ns
+- **NestedMapMessage**
+  - CxxBus: 2 253 824 ns **(~61% faster than SDBus)**
+  - SDBus:  5 788 264 ns
+- **MassiveArray**
+  - CxxBus: 2 461 630 ns **(~18% faster than SDBus)**
+  - SDBus:  3 012 533 ns
+
 ## Future work
 
 - Support Unix Filedescriptors
 - Add better support for integrating an external eventloop (better coroutine support, not only `boost::asio::awaitable`)
 - More support for server addresses. Currently only `unix:path=` is supported
 - Windows support
+- Fully implement the authentication protocol
+- Use C++26 reflection to support structs instead of requiring tuples

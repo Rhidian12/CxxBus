@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <optional>
 
+#include "gtest/gtest.h"
 #include "src/DBus.h"
 #include "src/DBusMessage.h"
 #include "src/DBusTypes.h"
 #include "src/IncomingDBusMessage.h"
+#include "src/MessageBuffer.h"
 
 using namespace cxxbus;
 
@@ -24,13 +27,16 @@ namespace
     uint32_t remainingSizeToRead{FIRST_HEADER_PART_SIZE + headerFieldArrLength};
     uint32_t nrOfPaddingBytes = AddPaddingToSize(remainingSizeToRead, DBUS_MESSAGE_BODY_ALIGNMENT);
 
+    MessageBuffer fullMessage{new byte[fullMessageBytes.size()]{},
+                              MessageBufferDeleter{MessageBufferDeleter::NotPartOfPoolTag}};
+    std::memcpy(fullMessage.get(), fullMessageBytes.data(), fullMessageBytes.size());
+
     return IncomingDBusMessage{
         DBusMessageHeader{
             std::span<byte const>{fullMessageBytes.begin(),
                                   fullMessageBytes.begin() + FIRST_HEADER_PART_SIZE + headerFieldArrLength},
             serial, messageType, headerFieldArrLength, messageLength},
-        std::ranges::to<std::vector>(
-            fullMessageBytes | std::views::drop(FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes))};
+        std::move(fullMessage), FIRST_HEADER_PART_SIZE + headerFieldArrLength + nrOfPaddingBytes};
   }
 }  // namespace
 
@@ -38,13 +44,41 @@ struct DBusMessageTestSuite : ::testing::Test
 {
 };
 
+::testing::AssertionResult VecEqual(std::vector<byte> const& a, std::vector<byte> const& b)
+{
+  if (a.size() != b.size())
+  {
+    std::optional<size_t> foundIndex{std::nullopt};
+    for (size_t i{}; i < a.size(); ++i)
+    {
+      if (a[i] != b[i] || i >= b.size())
+      {
+        foundIndex = i;
+        break;
+      }
+    }
+    return ::testing::AssertionFailure() << "Size mismatch. LHS: " << a.size() << " vs RHS: " << b.size()
+                                         << ". Vectors mismatch at index: " << foundIndex.value_or(a.size());
+  }
+
+  for (size_t i{}; i < a.size(); ++i)
+  {
+    if (a[i] != b[i])
+    {
+      return ::testing::AssertionFailure() << "Mismatch at index: " << i << ", LHS: " << a[i] << " vs RHS: " << b[i];
+    }
+  }
+
+  return ::testing::AssertionSuccess();
+}
+
 TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
 {
   DBusMessage msg{DBusMessage::Method("Hello", ObjectPath{"/org/freedesktop/DBus"})
                       .Interface(DBusInterfaceName{"org.freedesktop.DBus"})};
 
   // clang-format off
-  EXPECT_EQ(msg.Serialize(/*serial=*/1),
+  EXPECT_TRUE(VecEqual(msg.Serialize(/*serial=*/1),
             (std::vector<byte>{
                 // Fixed header
                 'l', 0x01, 0x00, 0x01,               // endian, type, flags, version
@@ -77,7 +111,7 @@ TEST_F(DBusMessageTestSuite, SerializeHelloMessage)
                 0x00,                                  // NUL
  
                 0x00, 0x00,                            // pad to offset 96 (body start; body is empty)
-            }));
+            })));
   // clang-format on 
 }
  
@@ -86,7 +120,7 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
   DBusMessage msg{DBusMessage::Method("M", ObjectPath{"/o"}).Interface(DBusInterfaceName{"com.dbus.CxxTest"}).Parameter(MultipleCompleteTypes<uint32_t>(static_cast<uint32_t>(7)))};
  
   // clang-format off
-  EXPECT_EQ(msg.Serialize(/*serial=*/5),
+  EXPECT_TRUE(VecEqual(msg.Serialize(/*serial=*/5),
             (std::vector<byte>{
                 // Fixed header
                 'l', 0x01, 0x00, 0x01,   // endian, type, flags, version
@@ -125,8 +159,9 @@ TEST_F(DBusMessageTestSuite, SerializeMessageWithBodyIncludesSignatureField)
                 0x00,  // pad to offset 88 (body start)
  
                 // Body: uint32_t = 7
-                0x07, 0x00, 0x00, 0x00,
-            }));
+                // We no longer serialize the body in `Serialize()`, so its not there
+                // 0x07, 0x00, 0x00, 0x00,
+            })));
   // clang-format on
 }
 
@@ -177,7 +212,7 @@ TEST_F(DBusMessageTestSuite, DeserializeHelloMessageRoundTrip)
   EXPECT_EQ(header.GetInterface(), "org.freedesktop.DBus");
   EXPECT_EQ(header.GetMember(), "Hello");
   EXPECT_FALSE(header.GetSignature().has_value());  // no body -> no SIGNATURE field
-  EXPECT_TRUE(message.GetRawData().empty());
+  EXPECT_TRUE(message.GetMessageBody().empty());
 }
 
 TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
@@ -255,8 +290,8 @@ TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
   // unmarshalling path using the signature we just read out of the
   // header -- ties this back to the UnmarshalDBusType tests.
   std::vector<byte> expectedBody{0x05, 0x00, 0x00, 0x00, ':', '1', '.', '4', '2', 0x00};
-  EXPECT_EQ(message.GetRawData(), expectedBody);
-  EXPECT_EQ(UnmarshalDBusType<std::string>(message.GetRawData(), header.GetSignature()->GetSignature()), ":1.42");
+  EXPECT_EQ((std::vector<byte>(message.GetMessageBody().begin(), message.GetMessageBody().end())), expectedBody);
+  EXPECT_EQ(UnmarshalDBusType<std::string>(message.GetMessageBody(), header.GetSignature()->GetSignature()), ":1.42");
 }
 
 // ---------------------------------------------------------------------
@@ -289,3 +324,49 @@ TEST_F(DBusMessageTestSuite, DeserializeMethodReturnReplyWithBody)
 //   ASSERT_EQ(header.GetHeaderFieldsLength(), 78u);
 // }
 // clang-format on
+//
+// TEST(MessageBufferTestSuite, SmallBuffersAreNotRoundedUp)
+// {
+//   MessageBuffer const buffer{AllocateMessageBuffer(100)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, 100u);
+// }
+//
+// TEST(MessageBufferTestSuite, LargeBuffersAreRoundedUpToTheGranularity)
+// {
+//   // 1048700 bytes is the size of a message with a 1 MiB array
+//   MessageBuffer const buffer{AllocateMessageBuffer(1048700)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, 17u * 64u * 1024u);
+//   EXPECT_GE(buffer.get_deleter().capacity, 1048700u);
+// }
+//
+// TEST(MessageBufferTestSuite, LargeBufferIsRecycledAfterItIsReleased)
+// {
+//   size_t const size{5 * 1024 * 1024 + 123};
+//
+//   byte* first{};
+//   {
+//     MessageBuffer const buffer{AllocateMessageBuffer(size)};
+//     first = buffer.get();
+//   }
+//
+//   MessageBuffer const again{AllocateMessageBuffer(size + 1000)};
+//   EXPECT_EQ(again.get(), first);
+//   EXPECT_GE(again.get_deleter().capacity, size + 1000);
+// }
+//
+// TEST(MessageBufferTestSuite, BuffersTooBigForThePoolAreFreedNormally)
+// {
+//   size_t const size{detail::LargeBufferPool::MAX_POOLED_SIZE + 1};
+//   MessageBuffer buffer{AllocateMessageBuffer(size)};
+//   EXPECT_EQ(buffer.get_deleter().capacity, size);
+//   buffer.reset();  // must not end up in the pool
+//   EXPECT_EQ(buffer.get(), nullptr);
+// }
+//
+// TEST(MessageBufferTestSuite, PlainUniquePtrConvertsAndIsFreedWithDeleteArray)
+// {
+//   std::unique_ptr<byte[]> plain{std::make_unique_for_overwrite<byte[]>(10)};
+//   MessageBuffer converted{std::move(plain)};
+//   EXPECT_NE(converted.get(), nullptr);
+//   EXPECT_EQ(converted.get_deleter().capacity, 0u);
+// }

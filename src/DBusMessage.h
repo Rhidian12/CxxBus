@@ -26,6 +26,8 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "DBus.h"
@@ -100,21 +102,40 @@ namespace cxxbus
     }
     static DBusMessage Reply(IncomingDBusMessage const& incomingMessage);
 
-    DBusMessage& Path(ObjectPath&& path);
-    DBusMessage& Path(ObjectPath const& path);
-    DBusMessage& Interface(DBusInterfaceName&& interface);
-    DBusMessage& Interface(DBusInterfaceName const& interface);
-    DBusMessage& Destination(std::string&& destination);
-    DBusMessage& Destination(std::string const& destination);
-    DBusMessage& Flag(DBusMessageFlags flag);
-    template <typename T>
-    DBusMessage& Parameter(T&& value)
+    template <typename Self, typename TPath>
+      requires(std::same_as<std::remove_cvref_t<TPath>, ObjectPath>)
+    auto&& Path(this Self&& self, TPath&& path)
     {
-      m_signature = std::string{GetTypeSignature<std::remove_cvref_t<T>>()};
-      m_messageBody = MarshalDBusType<T>(std::forward<T>(value));
-
-      return *this;
+      self.m_path = std::forward<TPath>(path);
+      return std::forward<Self>(self);
     }
+
+    template <typename Self, typename TInterface>
+      requires(std::same_as<std::remove_cvref_t<TInterface>, DBusInterfaceName>)
+    auto&& Interface(this Self&& self, TInterface&& interface)
+    {
+      self.m_interface = std::forward<TInterface>(interface);
+      return std::forward<Self>(self);
+    }
+
+    template <typename Self, typename TDestination>
+      requires(std::constructible_from<std::string, std::remove_cvref_t<TDestination>>)
+    auto&& Destination(this Self&& self, TDestination&& destination)
+    {
+      self.m_destination = std::forward<TDestination>(destination);
+      return std::forward<Self>(self);
+    }
+
+    template <typename Self, typename TValue>
+    auto&& Parameter(this Self&& self, TValue&& value)
+    {
+      self.m_signature = std::string{GetTypeSignature<std::remove_cvref_t<TValue>>()};
+      self.m_messageBody = std::move(MarshalDBusType<TValue>(std::forward<TValue>(value)));
+
+      return std::forward<Self>(self);
+    }
+
+    DBusMessage& Flag(DBusMessageFlags flag);
 
     DBusMessage(DBusMessage const&) = default;
     DBusMessage(DBusMessage&&) = default;
@@ -122,6 +143,7 @@ namespace cxxbus
     DBusMessage& operator=(DBusMessage&&) = default;
 
     std::vector<uint8_t> Serialize(uint32_t serial) const;
+    std::vector<uint8_t> const& GetMessageBody() const;
 
     uint8_t GetFlags() const;
 
