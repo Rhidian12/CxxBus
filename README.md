@@ -89,26 +89,30 @@ Benchmark can be seen in the [benchmarks](./src/benchmarks/) folder. All benchma
 All benchmarks were run on Clang TODO VERSION via the CMake build command: `cmake -DCXXBUS_ENABLE_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -G Ninja -S . -B build`
 Every benchmark was run via the GoogleBenchmark command line: `<binary> --benchmark_report_aggregates_only=true --benchmark_repetitions=10 --benchmark_out_format=json --benchmark_out=<file>`
 ![benchmarks](https://github.com/Rhidian12/CxxBus/blob/main/benchmark-docs/results.png)
+![large_benchmarks](https://github.com/Rhidian12/CxxBus/blob/main/benchmark-docs/results_large.png)
 Textual version of the benchmarks:
 
 - **EmptyMessage**
-  - CxxBus: 41497 ns (12% slower than SDBus)
-  - SDBus: 37102 ns
+  - CxxBus: 30 100 ns
+  - SDBus:  30 143 ns
 - **StringMessage**
-  - CxxBus: 35095 ns (3% slower than SDBus)
-  - SDBus: 34019 ns
+  - CxxBus: 30 564 ns
+  - SDBus:  30 465 ns
 - **BigStringMessage**
-  - CxxBus: 37262 ns (51% faster than SDBus)
-  - SDBus: 75426 ns
+  - CxxBus: 37 936 ns **(~31% faster than SDBus)**
+  - SDBus:  55 042 ns
 - **StructMessage**
-  - CxxBus: 30725 ns (21% faster than SDBus)
-  - SDBus: 38771 ns
+  - CxxBus: 30 706 ns
+  - SDBus:  31 861 ns
 - **NestedStructMessage**
-  - CxxBus: 38439 ns (6% slower than SDBus)
-  - SDBus: 36198 ns
+  - CxxBus: 31 249 ns
+  - SDBus:  32 926 ns
 - **NestedMapMessage**
-  - CxxBus: 3147816 ns (63% faster than SDBus)
-  - SDBus: 8322149 ns
+  - CxxBus: 2 253 824 ns **(~61% faster than SDBus)**
+  - SDBus:  5 788 264 ns
+- **MassiveArray**
+  - CxxBus: 2 461 630 ns **(~18% faster than SDBus)**
+  - SDBus:  3 012 533 ns
 
 ## Future work
 
@@ -116,3 +120,5 @@ Textual version of the benchmarks:
 - Add better support for integrating an external eventloop (better coroutine support, not only `boost::asio::awaitable`)
 - More support for server addresses. Currently only `unix:path=` is supported
 - Windows support
+- Fully implement the authentication protocol
+- Use C++26 reflection to support structs instead of requiring tuples
