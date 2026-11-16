@@ -246,6 +246,8 @@ namespace cxxbus
     bool contains(char c) const;
 
     auto operator<=>(DBusWellKnownName const&) const noexcept = default;
+    bool operator==(DBusWellKnownName const& str) const noexcept = default;
+    bool operator==(std::string const& str) const noexcept;
   };
 
   class DBusInterfaceName

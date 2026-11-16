@@ -125,15 +125,16 @@ namespace cxxbus
   DBusConnectionImpl<SingleThreaded>::Create(boost::asio::io_context& userIOContext,
                                              std::optional<DBusWellKnownName> wellKnownName, BusType busType)
   {
-    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(userIOContext, std::move(wellKnownName))};
+    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(userIOContext)};
 
     if constexpr (SingleThreaded)
     {
-      co_await conn->Connect(busType);
+      co_await conn->Connect(busType, std::move(wellKnownName));
     }
     else
     {
-      co_await boost::asio::co_spawn(conn->m_state->activeContext, conn->Connect(busType), boost::asio::use_awaitable);
+      co_await boost::asio::co_spawn(conn->m_state->activeContext, conn->Connect(busType, std::move(wellKnownName)),
+                                     boost::asio::use_awaitable);
     }
 
     co_return conn;
@@ -144,9 +145,9 @@ namespace cxxbus
       boost::asio::io_context& userIOContext, std::optional<DBusWellKnownName> wellKnownName,
       std::function<boost::asio::awaitable<void>()> onConnectedCallback, BusType busType)
   {
-    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(userIOContext, std::move(wellKnownName))};
+    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(userIOContext)};
 
-    boost::asio::co_spawn(conn->m_state->activeContext, conn->Connect(busType),
+    boost::asio::co_spawn(conn->m_state->activeContext, conn->Connect(busType, std::move(wellKnownName)),
                           [&userIOContext, cb = std::move(onConnectedCallback)](std::exception_ptr e)
                           {
                             if (e)
@@ -167,16 +168,16 @@ namespace cxxbus
   std::shared_ptr<DBusConnectionImpl<SingleThreaded>> DBusConnectionImpl<SingleThreaded>::CreateSync(
       boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName, BusType busType)
   {
-    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(ioService, std::move(wellKnownName))};
+    std::shared_ptr<DBusConnectionImpl> conn{new DBusConnectionImpl(ioService)};
     WaitOnAsyncWork<void>(*conn->m_state->strand,
-                          [conn, busType]() -> boost::asio::awaitable<void> { return conn->Connect(busType); });
+                          [conn, busType, wellKnownName = std::move(wellKnownName)]() -> boost::asio::awaitable<void>
+                          { return conn->Connect(busType, std::move(wellKnownName)); });
 
     return conn;
   }
 
   template <bool SingleThreaded>
-  DBusConnectionImpl<SingleThreaded>::DBusConnectionImpl(boost::asio::io_context& ioService,
-                                                         std::optional<DBusWellKnownName> wellKnownName)
+  DBusConnectionImpl<SingleThreaded>::DBusConnectionImpl(boost::asio::io_context& ioService)
     : m_state()
     , m_userIOContext(ioService)
   {
@@ -205,7 +206,6 @@ namespace cxxbus
         .strand = std::move(strand),
         .socket = boost::asio::local::stream_protocol::socket(activeContext),
         .uniqueConnection = std::nullopt,
-        .wellKnownNames = {},
         .serial = 1,
         .matchRules = {},
         .nameCache = std::make_shared<DBusNameCache<SingleThreaded>>(*this),
@@ -216,11 +216,6 @@ namespace cxxbus
         .activeContext = activeContext,
         .shouldQuit = false,
         .readLoopFinished = boost::asio::experimental::channel<void(boost::system::error_code)>{activeContext}});
-
-    if (wellKnownName.has_value())
-    {
-      m_state->wellKnownNames.push_back(*wellKnownName);
-    }
 
     if constexpr (!SingleThreaded)
     {
@@ -244,7 +239,8 @@ namespace cxxbus
   {
     if constexpr (SingleThreaded)
     {
-      boost::asio::co_spawn(m_state->activeContext, Close(), boost::asio::detached);
+      CloseDataSync();
+      // boost::asio::co_spawn(m_state->activeContext, Close(), boost::asio::detached);
     }
     else
     {
@@ -253,7 +249,7 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::CloseData()
+  void DBusConnectionImpl<SingleThreaded>::CloseDataSync()
   {
     LOG_TRACE(LOGGER, "Closing channels and signals");
     m_state->onIncomingSignal.clear();
@@ -268,6 +264,12 @@ namespace cxxbus
       std::ignore = m_state->socket.close(ec);
     }
     LOG_TRACE(LOGGER, "Closed socket");
+  }
+
+  template <bool SingleThreaded>
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::CloseData()
+  {
+    CloseDataSync();
 
     co_await m_state->readLoopFinished.async_receive(boost::asio::use_awaitable);
     LOG_TRACE(LOGGER, "Read loop has fully finished");
@@ -316,7 +318,7 @@ namespace cxxbus
         co_await RemoveMatchRule(ruleInfo.rule, DONT_HOP);
       }
 
-      std::vector<DBusWellKnownName> names{m_state->wellKnownNames};
+      std::vector<DBusWellKnownName> names{GetWellKnownNames()};
       // Release our well-known name from the dbus-daemon
       LOG_TRACE(LOGGER, "Releasing our well-known name");
       for (DBusWellKnownName name : names)
@@ -409,7 +411,8 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::Connect(BusType busType)
+  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::Connect(
+      BusType busType, std::optional<DBusWellKnownName> wellKnownNameToRequest)
   {
     LOG_TRACE(LOGGER, "Starting connection coroutine");
     std::weak_ptr<DBusConnectionImpl> weakThis{this->shared_from_this()};
@@ -462,52 +465,6 @@ namespace cxxbus
 
     LOG_INFO(LOGGER, "Unique Connection ID: {}", m_state->uniqueConnection->GetName());
 
-    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
-
-    // Now, request a well-known name from the dbus-daemon
-    for (DBusWellKnownName name : m_state->wellKnownNames)
-    {
-      reply = co_await SendMessageInternal(
-          std::move(DBusMessage::Method("RequestName", ObjectPath{"/org/freedesktop/DBus"})
-                        .Interface(DBusInterfaceName{"org.freedesktop.DBus"})
-                        .Destination("org.freedesktop.DBus")
-                        .Parameter(MultipleCompleteTypes<std::string, uint32_t>{
-                            name.GetName(), static_cast<uint32_t>(WellKnownNameFlag::NONE)})));
-
-      if (!reply.has_value())
-      {
-        LOG_FATAL(LOGGER,
-                  "Internal error: RequestName() should not be able to return without having received a "
-                  "reply");
-        throw InternalError{
-            "Internal error: RequestName() should not be able to return without having received a "
-            "reply"};
-      }
-
-      uint32_t const ret = reply->Get<uint32_t>();
-      switch (ret)
-      {
-        case 1:
-          LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
-          break;
-        case 2:
-          LOG_ERROR(LOGGER,
-                    "Well-known name '{}' is already owned by another connection and we did "
-                    "not ask to replace the name",
-                    name.GetName());
-          break;
-        case 3:
-          LOG_ERROR(LOGGER, "The well-known name '{}' already has an owner", name.GetName());
-          break;
-        case 4:
-          LOG_DEBUG(LOGGER, "We're already owner of our well-known name");
-          break;
-        default:
-          LOG_ERROR(LOGGER, "Unknown return value from 'RequestName()': {}", ret);
-          break;
-      }
-    }
-
     LOG_TRACE(LOGGER, "Connection handshake completed.");
 
     CXX_BUS_EXIT_IF_EXPIRED(weakThis)
@@ -518,10 +475,14 @@ namespace cxxbus
       co_await m_state->connectionCompleted.async_send(boost::system::error_code{}, boost::asio::use_awaitable);
     }
 
-    CXX_BUS_EXIT_IF_EXPIRED(weakThis)
-
     LOG_TRACE(LOGGER, "Subscribing to NameOwnerChanged signal");
     co_await m_state->nameCache->SubscribeToNameChanges();
+
+    // Now, request a well-known name from the dbus-daemon
+    if (wellKnownNameToRequest.has_value())
+    {
+      co_await RequestWellKnownName(wellKnownNameToRequest.value(), WellKnownNameFlag::NONE);
+    }
 
     co_return;
   }
@@ -1129,11 +1090,11 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(DBusWellKnownName name,
-                                                                                            WellKnownNameFlag flags)
+  boost::asio::awaitable<RequestNameResult> DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameImpl(
+      DBusWellKnownName name, WellKnownNameFlag flags)
   {
     {
-      if (std::ranges::contains(m_state->wellKnownNames, name))
+      if (std::ranges::contains(GetWellKnownNames(), name))
       {
         throw std::runtime_error{std::format("This connection already owns the name '{}'", name.GetName())};
       }
@@ -1150,41 +1111,39 @@ namespace cxxbus
     {
       case 1:
         LOG_DEBUG(LOGGER, "Successfully acquired well-known name '{}'", name.GetName());
-        break;
+        co_return RequestNameResult::ACQUIRED;
       case 2:
-        LOG_ERROR(LOGGER,
-                  "Well-known name '{}' is already owned by another connection and we did "
-                  "not ask to replace the name",
+        LOG_DEBUG(LOGGER,
+                  "Well-known name '{}' is already owned by another connection, so our name request has been queued",
                   name.GetName());
-        break;
+        co_return RequestNameResult::QUEUED;
       case 3:
-        LOG_ERROR(LOGGER, "The well-known name '{}' already has an owner", name.GetName());
-        break;
+        LOG_ERROR(LOGGER,
+                  "The well-known name '{}' already has an owner and the current owner has not set "
+                  "DBUS_NAME_FLAG_ALLOW_REPLACEMENT",
+                  name.GetName());
+        co_return RequestNameResult::NOT_QUEUED_NOT_RECEIVED;
       case 4:
         LOG_DEBUG(LOGGER, "We're already owner of our well-known name");
-        break;
+        co_return RequestNameResult::ALREADY_OWNER;
       default:
         LOG_ERROR(LOGGER, "Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>());
-        break;
+        throw InternalError{std::format("Unknown return value from 'RequestName()': {}", reply.Get<uint32_t>())};
     }
-
-    m_state->wellKnownNames.push_back(name);
-
-    co_return;
   }
 
   template <bool SingleThreaded>
-  boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(DBusWellKnownName name,
-                                                                                        WellKnownNameFlag flags)
+  boost::asio::awaitable<RequestNameResult> DBusConnectionImpl<SingleThreaded>::RequestWellKnownName(
+      DBusWellKnownName name, WellKnownNameFlag flags)
   {
     if constexpr (SingleThreaded)
     {
-      co_await RequestWellKnownNameImpl(std::move(name), flags);
+      co_return co_await RequestWellKnownNameImpl(std::move(name), flags);
     }
     else
     {
-      co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name), flags),
-                                     boost::asio::use_awaitable);
+      co_return co_await boost::asio::co_spawn(m_state->activeContext, RequestWellKnownNameImpl(std::move(name), flags),
+                                               boost::asio::use_awaitable);
     }
   }
 
@@ -1198,7 +1157,7 @@ namespace cxxbus
   template <bool SingleThreaded>
   boost::asio::awaitable<void> DBusConnectionImpl<SingleThreaded>::ReleaseWellKnownNameImpl(DBusWellKnownName name)
   {
-    if (!std::ranges::contains(m_state->wellKnownNames, name))
+    if (!std::ranges::contains(GetWellKnownNames(), name))
     {
       throw std::runtime_error{std::format("This connection does not own the name '{}'", name.GetName())};
     }
@@ -1228,9 +1187,6 @@ namespace cxxbus
         break;
     }
 
-    auto it = std::ranges::remove(m_state->wellKnownNames, name);
-    m_state->wellKnownNames.erase(it.begin(), it.end());
-
     co_return;
   }
 
@@ -1256,10 +1212,12 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  void DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags)
+  RequestNameResult DBusConnectionImpl<SingleThreaded>::RequestWellKnownNameSync(DBusWellKnownName name,
+                                                                                 WellKnownNameFlag flags)
   {
-    WaitOnAsyncWork<void>(*m_state->strand, [this, name = std::move(name), flags] -> boost::asio::awaitable<void>
-                          { return RequestWellKnownNameImpl(std::move(name), flags); });
+    return WaitOnAsyncWork<RequestNameResult>(
+        *m_state->strand, [this, name = std::move(name), flags] -> boost::asio::awaitable<RequestNameResult>
+        { co_return co_await RequestWellKnownNameImpl(std::move(name), flags); });
   }
 
   template <bool SingleThreaded>
@@ -1294,10 +1252,14 @@ namespace cxxbus
   }
 
   template <bool SingleThreaded>
-  std::vector<DBusWellKnownName> const& DBusConnectionImpl<SingleThreaded>::GetWellKnownNames() const
+  std::vector<DBusWellKnownName> DBusConnectionImpl<SingleThreaded>::GetWellKnownNames() const
   {
-    std::unique_lock<std::mutex> lock{m_state->mutex};
-    return m_state->wellKnownNames;
+    auto vec{m_state->nameCache->GetWellKnownNames(m_state->uniqueConnection.value().GetName())};
+    vec.erase(vec.begin());
+    std::vector<DBusWellKnownName> wellKnownNames;
+    std::ranges::transform(vec, std::back_inserter(wellKnownNames),
+                           [](std::string const& str) { return DBusWellKnownName{str}; });
+    return wellKnownNames;
   }
 
   template <bool SingleThreaded>
@@ -1453,14 +1415,7 @@ namespace cxxbus
 
         // We have a full message to parse!
 
-        // Copy our message body
-        // uint32_t messageLength = buffer.currentHeader->template GetType<4>();
         uint32_t headerFieldArrLength = buffer.currentHeader->template GetType<6>();
-        // std::vector<byte> messageBody(messageLength);
-        // std::memcpy(
-        //     messageBody.data(),
-        //     buffer.data.get() + FIRST_HEADER_PART_SIZE + headerFieldArrLength + buffer.nrOfPaddingBytesAfterHeader,
-        //     messageBody.size());
 
         MessageBuffer fullMessage{buffer.ReleaseBuffer()};
         std::span<byte const> headerPart{fullMessage.get(),

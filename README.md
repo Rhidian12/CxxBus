@@ -134,3 +134,4 @@ Textual version of the benchmarks:
 - Windows support
 - Fully implement the authentication protocol
 - Use C++26 reflection to support structs instead of requiring tuples
+- Support Big-endian encoding
