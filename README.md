@@ -135,3 +135,4 @@ Textual version of the benchmarks:
 - Fully implement the authentication protocol
 - Use C++26 reflection to support structs instead of requiring tuples
 - Support Big-endian encoding
+- Support peer-to-peer connections
