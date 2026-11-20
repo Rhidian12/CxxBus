@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/experimental/basic_channel.hpp>
+#include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/system_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
@@ -1241,6 +1243,61 @@ TYPED_TEST(DBusConnectionTestSuite, TestOnlyCorrectPathHandlerIsCalled)
 
     co_await conn2->SendMessage(DBusMessage::Method("Foo", ObjectPath{"/bar"}).Destination("com.dbus.CxxTest"));
     EXPECT_EQ(triggered, 2);
+
+    co_await conn2->Close();
+  };
+}
+
+TYPED_TEST(DBusConnectionTestSuite, TestNameRequesting)
+{
+  this->coroutineToRun = [this]() -> boost::asio::awaitable<void>
+  {
+    this->conn = co_await TypeParam::Create(this->ioService, DBusWellKnownName{"com.dbus.CxxTest"}, BusType::SESSION);
+    auto conn2 = co_await TypeParam::Create(this->ioService, std::nullopt, BusType::SESSION);
+
+    boost::asio::experimental::channel<void(boost::system::error_code)> chann{this->ioService, 1};
+    co_await conn2->AddMatchRule(DBusMatchRule::Create().Member("NameAcquired"),
+                                 [&chann](IncomingDBusMessage const&) -> boost::asio::awaitable<void>
+                                 {
+                                   chann.async_send(boost::system::error_code{}, boost::asio::detached);
+                                   co_return;
+                                 });
+
+    // Request a name without specifying that we want to replace it. This should cause our request to get queued.
+    EXPECT_EQ(co_await conn2->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"}, WellKnownNameFlag::NONE),
+              RequestNameResult::QUEUED);
+
+    // Now release the queued name. This should cause it to get registered
+    co_await this->conn->ReleaseWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"});
+    co_await chann.async_receive(boost::asio::use_awaitable);
+    EXPECT_TRUE(std::ranges::contains(conn2->GetWellKnownNames(), DBusWellKnownName{"com.dbus.CxxTest"}));
+
+    // Now our original connection re-requests its name, but does not want to queue. This should cause our request to
+    // instantly be "rejected"
+    EXPECT_EQ(co_await this->conn->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"},
+                                                        WellKnownNameFlag::DO_NOT_QUEUE),
+              RequestNameResult::NOT_QUEUED_NOT_RECEIVED);
+
+    // Now, our original connection is once again re-requesting its name and specifying 'REPLACE_EXISTING'. The current
+    // owner has not set 'ALLOW_REPLACEMENT' so our request should get queued
+    EXPECT_EQ(co_await this->conn->RequestWellKnownName(
+                  DBusWellKnownName{"com.dbus.CxxTest"},
+                  WellKnownNameFlag::REPLACE_EXISTING | WellKnownNameFlag::ALLOW_REPLACEMENT),
+              RequestNameResult::QUEUED);
+
+    // Let our original connection regain its name by our new connection releasing the name
+    co_await conn2->ReleaseWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"});
+
+    // Our original connection has the name, but now our new connection wants it back.
+    // Our old connection set 'ALLOW_REPLACEMENT' and we'll be specifying 'REPLACE_EXISTING', so we should get it
+    // immediately
+    EXPECT_EQ(co_await conn2->RequestWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"},
+                                                   WellKnownNameFlag::REPLACE_EXISTING),
+              RequestNameResult::ACQUIRED);
+
+    co_await conn2->ReleaseWellKnownName(DBusWellKnownName{"com.dbus.CxxTest"});
+    co_await chann.async_receive(boost::asio::use_awaitable);
+    EXPECT_FALSE(std::ranges::contains(conn2->GetWellKnownNames(), DBusWellKnownName{"com.dbus.CxxTest"}));
 
     co_await conn2->Close();
   };

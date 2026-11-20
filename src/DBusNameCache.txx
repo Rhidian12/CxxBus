@@ -91,7 +91,7 @@ namespace cxxbus
 
     if (!uniqueName.empty())
     {
-      m_wellKnownNames[uniqueName].insert(std::move(wellKnownName));
+      m_wellKnownNames[uniqueName].insert(wellKnownName);
     }
   }
 

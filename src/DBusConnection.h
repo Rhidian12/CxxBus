@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <boost/asio.hpp>
@@ -68,7 +69,8 @@ namespace cxxbus
     ALLOW_REPLACEMENT = 0x01,
 
     // When requesting a new name, try to replace the current owner of the name if there is one. If this flag is not
-    // set, the name can only be acquired if there is no owner yet.
+    // set and there is a current owner of the requested name, then our request gets put in a queue.
+    // Using this flag results in jumping the queue and immediatelly grabbing the name if it becomes available.
     REPLACE_EXISTING = 0x02,
 
     // Without this flag, if a name is requested that is already owned, the requesting application will be placed in a
@@ -77,6 +79,27 @@ namespace cxxbus
     // If this flag is not specified, the application will not be put in the queue, and the name request will simply
     // fail
     DO_NOT_QUEUE = 0x04,
+  };
+
+  enum class RequestNameResult : uint8_t
+  {
+    // The requested name has been acquired, replacing any previous owner (if any).
+    // Per DBus Spec, the conventional name is DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER
+    ACQUIRED = 0x01,
+
+    // The requested name already has an owner. 'DO_NOT_QUEUE' was specified by us and either we did not specify
+    // 'REPLACE_EXISTING' or the current owner did not specify 'ALLOW_REPLACEMENT'.
+    // Per DBus Spec, the conventional name is DBUS_REQUEST_NAME_REPLY_IN_QUEUE
+    QUEUED = 0x02,
+
+    // The requested name already has an owner. 'DO_NOT_QUEUE' was specified by us and either 'ALLOW_REPLACEMENT' was
+    // not specified by the current owner or we did not specify 'REPLACE_EXISTING'
+    // Per DBus Spec, the conventional name is DBUS_REQUEST_NAME_REPLY_EXISTS
+    NOT_QUEUED_NOT_RECEIVED = 0x03,
+
+    // We're already the owner of this name.
+    // Per DBus Spec, the conventional name is DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER
+    ALREADY_OWNER = 0x04
   };
 
   template <bool SingleThreaded /* = true */>
@@ -131,7 +154,6 @@ namespace cxxbus
       std::unique_ptr<boost::asio::strand<typename boost::asio::io_context::executor_type>> strand;
       boost::asio::local::stream_protocol::socket socket;
       std::optional<DBusUniqueConnectionName> uniqueConnection;
-      std::vector<DBusWellKnownName> wellKnownNames;
       uint32_t serial;
       std::vector<MatchRuleInfo> matchRules;
       std::shared_ptr<DBusNameCache<SingleThreaded>> nameCache;
@@ -156,17 +178,18 @@ namespace cxxbus
 
    private:
     boost::asio::awaitable<void> AuthenticateDBusConnectionImpl();
-    boost::asio::awaitable<void> Connect(BusType busType);
+    boost::asio::awaitable<void> Connect(BusType busType, std::optional<DBusWellKnownName> wellKnownNameToRequest);
     boost::asio::awaitable<void> SendLoop();
     boost::asio::awaitable<void> ReadLoop();
     boost::asio::awaitable<void> HandleReadMessage(IncomingDBusMessage message);
 
     boost::asio::awaitable<void> CloseData();
+    void CloseDataSync();
 
     boost::asio::awaitable<void> HandleConnectionLost();
 
    private:
-    DBusConnectionImpl(boost::asio::io_context& ioService, std::optional<DBusWellKnownName> wellKnownName);
+    DBusConnectionImpl(boost::asio::io_context& ioService);
 
     // Does not wait for the connection to be ready -> Can be used internally to set up the connection.
     // Prefer 'SendMessage()' whenever possible
@@ -174,7 +197,7 @@ namespace cxxbus
 
     boost::asio::awaitable<IncomingDBusMessage> SendMessageImpl(DBusMessage message);
     boost::asio::awaitable<void> SendMessageNoReplyImpl(DBusMessage message);
-    boost::asio::awaitable<void> RequestWellKnownNameImpl(DBusWellKnownName name, WellKnownNameFlag flags);
+    boost::asio::awaitable<RequestNameResult> RequestWellKnownNameImpl(DBusWellKnownName name, WellKnownNameFlag flags);
     boost::asio::awaitable<void> ReleaseWellKnownNameImpl(DBusWellKnownName name);
     boost::asio::awaitable<void> AddMatchRuleImpl(
         DBusMatchRule rule, std::function<boost::asio::awaitable<void>(IncomingDBusMessage const&)> callback,
@@ -241,13 +264,13 @@ namespace cxxbus
     IncomingDBusMessage SendMessageSync(DBusMessage message);
     void SendMessageNoReplySync(DBusMessage message);
 
-    boost::asio::awaitable<void> RequestWellKnownName(DBusWellKnownName name, WellKnownNameFlag flags);
+    boost::asio::awaitable<RequestNameResult> RequestWellKnownName(DBusWellKnownName name, WellKnownNameFlag flags);
     boost::asio::awaitable<void> ReleaseWellKnownName(DBusWellKnownName name);
 
-    void RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags);
+    RequestNameResult RequestWellKnownNameSync(DBusWellKnownName name, WellKnownNameFlag flags);
     void ReleaseWellKnownNameSync(DBusWellKnownName name);
 
-    std::vector<DBusWellKnownName> const& GetWellKnownNames() const;
+    std::vector<DBusWellKnownName> GetWellKnownNames() const;
 
     bool IsConnected() const;
 

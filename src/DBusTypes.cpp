@@ -308,6 +308,11 @@ namespace cxxbus
     return m_name.contains(c);
   }
 
+  bool DBusWellKnownName::operator==(std::string const& str) const noexcept
+  {
+    return m_name == str;
+  }
+
   DBusInterfaceName::DBusInterfaceName(std::string interfaceName)
     : m_name()
   {

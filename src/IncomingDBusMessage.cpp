@@ -44,6 +44,12 @@ namespace cxxbus
                                                      DBusMessageType messageType, uint32_t headerFieldLength,
                                                      uint32_t messageLength)
     {
+      if (dbusMessage.front() != 'l')
+      {
+        LOG_FATAL(LOGGER, "CxxBus does not support big-endian messages...");
+        throw InternalError{"CxxBus does not support big-endian messages... Support to be added"};
+      }
+
       uint32_t arrPointer{FIRST_HEADER_PART_SIZE - sizeof(uint32_t)};
       std::vector<std::tuple<uint8_t, FastVariant>> headerFields =
           UnmarshalDBusType<std::vector<std::tuple<uint8_t, FastVariant>>>(dbusMessage, "a(yv)", arrPointer);
